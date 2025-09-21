@@ -1,0 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+html,
+body {
+  @apply bg-white dark:bg-gray-950;
+
+  @media (prefers-color-scheme: dark) {
+    color-scheme: dark;
+  }
+}
+
+.logo-text {
+  font-family: 'Fugaz One', cursive;
+}
