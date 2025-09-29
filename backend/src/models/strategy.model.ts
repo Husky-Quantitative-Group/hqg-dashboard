@@ -4,8 +4,13 @@ const StrategySchema = new Schema(
   {
     strategyId: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    description: String,
-    owner: String,
+    description: { type: String },
+    owner: { type: String },
+    project: { type: String, required: true },
+    repository: { type: String, required: true },
+    branch: { type: String, required: true },
+    githubPath: { type: String, required: true },
+    htmlUrl: { type: String, required: true },
     tags: { type: [String], default: [] },
   },
   {
