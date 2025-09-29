@@ -9,8 +9,8 @@
     "start:backend": "node backend/src/index.ts",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:backend": "npm run dev --prefix backend",
-    "start:db": "(docker start dev-postgres-hqg 2>/dev/null || docker run --name dev-postgres-hqg -e POSTGRES_USER=hqg -e POSTGRES_PASSWORD=devpass -e POSTGRES_DB=hqg_dashboard -p 5432:5432 -v hqg-dashboard-pgdata:/var/lib/postgresql/data -d postgres:16)",
-    "reset:db": "docker rm -f dev-postgres-hqg && docker volume rm hqg-dashboard-pgdata",
+    "start:db": "(docker start dev-mongo-hqg 2>/dev/null || docker run --name dev-mongo-hqg -e MONGO_INITDB_DATABASE=hqg_dashboard -p 27017:27017 -v hqg-dashboard-mongo-data:/data/db -d mongo:7)",
+    "reset:db": "docker rm -f dev-mongo-hqg && docker volume rm hqg-dashboard-mongo-data",
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
     "prod": "npm run build:frontend && npm run start:backend"
   },

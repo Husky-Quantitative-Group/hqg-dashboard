@@ -1,5 +1,4 @@
 import express from "express";
-import { prisma } from "./db";
 import { strategiesRouter } from "./routes/strategies.routes";
 
 const app = express();
