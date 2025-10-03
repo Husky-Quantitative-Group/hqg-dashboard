@@ -18,6 +18,7 @@
     "typescript": "^5.9.2"
   },
   "scripts": {
-    "dev": "nodemon src/index.ts"
+    "dev": "nodemon src/index.ts",
+    "populate:strategies": "ts-node --project tsconfig.json --esm scripts/fetch_strategies.ts"
   }
 }
