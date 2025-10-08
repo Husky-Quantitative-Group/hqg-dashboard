@@ -1,198 +1,54 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { fetchStrategies, type Strategy } from "../api";
 
 export default function DarkStripedStrategiesTable() {
   const [entriesCount, setEntriesCount] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Sample data for strategies
-  const strategies = [
-    {
-      id: 1,
-      name: "Momentum Alpha Strategy",
-      user: "John Martinez",
-      status: "Active",
-      date: "15 Mar, 2024",
-      sharpe: "2.34",
-      sortino: "3.12",
-      psr: "0.89",
-      tags: ["Momentum", "Equity"],
-    },
-    {
-      id: 2,
-      name: "Mean Reversion Bot",
-      user: "Sarah Chen",
-      status: "Paused",
-      date: "12 Mar, 2024",
-      sharpe: "1.78",
-      sortino: "2.45",
-      psr: "0.76",
-      tags: ["Mean Reversion", "Bonds"],
-    },
-    {
-      id: 3,
-      name: "Pairs Trading Algorithm",
-      user: "Mike Thompson",
-      status: "Active",
-      date: "08 Mar, 2024",
-      sharpe: "3.21",
-      sortino: "4.05",
-      psr: "0.94",
-      tags: ["Pairs Trading", "Market Neutral"],
-    },
-    {
-      id: 4,
-      name: "Volatility Harvester",
-      user: "Emma Rodriguez",
-      status: "Draft",
-      date: "05 Mar, 2024",
-      sharpe: "2.67",
-      sortino: "3.33",
-      psr: "0.87",
-      tags: ["Volatility", "Options"],
-    },
-    {
-      id: 5,
-      name: "Trend Following System",
-      user: "David Wilson",
-      status: "Active",
-      date: "28 Feb, 2024",
-      sharpe: "1.95",
-      sortino: "2.78",
-      psr: "0.81",
-      tags: ["Trend Following"],
-    },
-    {
-      id: 6,
-      name: "Statistical Arbitrage",
-      user: "Lisa Anderson",
-      status: "Active",
-      date: "25 Feb, 2024",
-      sharpe: "2.89",
-      sortino: "3.67",
-      psr: "0.92",
-      tags: ["Arbitrage", "Statistical"],
-    },
-    {
-      id: 7,
-      name: "Crypto Momentum Bot",
-      user: "Alex Garcia",
-      status: "Paused",
-      date: "20 Feb, 2024",
-      sharpe: "1.45",
-      sortino: "2.01",
-      psr: "0.73",
-      tags: ["Crypto", "Momentum"],
-    },
-    {
-      id: 8,
-      name: "Options Strategy Alpha",
-      user: "Jennifer Davis",
-      status: "Active",
-      date: "18 Feb, 2024",
-      sharpe: "2.12",
-      sortino: "2.89",
-      psr: "0.85",
-      tags: ["Options", "Alpha"],
-    },
-    {
-      id: 9,
-      name: "Momentum Alpha Strategy",
-      user: "John Martinez",
-      status: "Archived",
-      date: "15 Mar, 2024",
-      sharpe: "2.34",
-      sortino: "3.12",
-      psr: "0.89",
-      tags: ["Momentum", "Equity"],
-    },
-    {
-      id: 10,
-      name: "Momentum Alpha Strategy",
-      user: "John Martinez",
-      status: "Paper Live",
-      date: "15 Mar, 2024",
-      sharpe: "2.34",
-      sortino: "3.12",
-      psr: "0.89",
-      tags: ["Momentum", "Equity"],
-    },
-    {
-      id: 11,
-      name: "Momentum Alpha Strategy",
-      user: "John Martinez",
-      status: "Active",
-      date: "15 Mar, 2024",
-      sharpe: "2.34",
-      sortino: "3.12",
-      psr: "0.89",
-      tags: ["Momentum", "Equity"],
-    },
-  ];
+  useEffect(() => {
+    const loadStrategies = async () => {
+      setIsLoading(true);
+      try {
+        const data = await fetchStrategies();
+        setStrategies(data);
+      } catch (error) {
+        console.error("Failed to load strategies", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  // Map status to bubble style and label
-  const getStatusBubble = (status: string) => {
-    switch (status) {
-      case "Live":
-      case "Active":
-        return {
-          label: "Live",
-          bg: "bg-green-100",
-          text: "text-green-700",
-          dot: "bg-green-600",
-        };
-      case "Offline":
-      case "Paused":
-        return {
-          label: "Offline",
-          bg: "bg-gray-200",
-          text: "text-gray-600",
-          dot: "bg-gray-500",
-        };
-      case "Archived":
-        return {
-          label: "Archived",
-          bg: "bg-yellow-100",
-          text: "text-yellow-700",
-          dot: "bg-yellow-500",
-        };
-      case "Paper Live":
-        return {
-          label: "Paper Live",
-          bg: "bg-blue-100",
-          text: "text-blue-700",
-          dot: "bg-blue-500",
-        };
-      case "Template":
-      case "Draft":
-        return {
-          label: "Template",
-          bg: "bg-purple-100",
-          text: "text-purple-700",
-          dot: "bg-purple-500",
-        };
-      default:
-        return {
-          label: status,
-          bg: "bg-gray-200",
-          text: "text-gray-600",
-          dot: "bg-gray-500",
-        };
+    void loadStrategies();
+  }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, entriesCount]);
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+
+  const filteredStrategies = useMemo(() => {
+    if (!normalizedSearch) {
+      return strategies;
     }
-  };
 
-  // Filter strategies based on search term
-  const filteredStrategies = strategies.filter(
-    (strategy) =>
-      strategy.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      strategy.user.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      strategy.tags.some((tag) =>
-        tag.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-  );
+    return strategies.filter((strategy) => {
+      const owner = strategy.owner?.toLowerCase() ?? "";
+      return (
+        strategy.name.toLowerCase().includes(normalizedSearch) ||
+        strategy.project.toLowerCase().includes(normalizedSearch) ||
+        strategy.repository.toLowerCase().includes(normalizedSearch) ||
+        strategy.branch.toLowerCase().includes(normalizedSearch) ||
+        owner.includes(normalizedSearch) ||
+        strategy.tags.some((tag) => tag.toLowerCase().includes(normalizedSearch))
+      );
+    });
+  }, [normalizedSearch, strategies]);
 
-  // Calculate pagination
-  const totalPages = Math.ceil(filteredStrategies.length / entriesCount);
+  const totalPages = Math.max(1, Math.ceil(filteredStrategies.length / entriesCount));
   const startIndex = (currentPage - 1) * entriesCount;
   const paginatedStrategies = filteredStrategies.slice(
     startIndex,
@@ -200,12 +56,13 @@ export default function DarkStripedStrategiesTable() {
   );
 
   const handlePageChange = (page: number) => {
-    setCurrentPage(page);
+    const nextPage = Math.min(Math.max(page, 1), totalPages);
+    setCurrentPage(nextPage);
   };
 
   const handleEntriesChange = (newCount: string) => {
-    setEntriesCount(parseInt(newCount));
-    setCurrentPage(1); // Reset to first page when changing entries count
+    const parsed = parseInt(newCount, 10);
+    setEntriesCount(Number.isNaN(parsed) ? 10 : parsed);
   };
 
   return (
@@ -272,7 +129,7 @@ export default function DarkStripedStrategiesTable() {
                   </svg>
                 </th>
                 <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">
-                  User
+                  Project
                   <svg
                     className="inline ml-1 w-3 h-3"
                     fill="currentColor"
@@ -286,7 +143,7 @@ export default function DarkStripedStrategiesTable() {
                   </svg>
                 </th>
                 <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">
-                  Status
+                  Repository
                   <svg
                     className="inline ml-1 w-3 h-3"
                     fill="currentColor"
@@ -300,7 +157,7 @@ export default function DarkStripedStrategiesTable() {
                   </svg>
                 </th>
                 <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">
-                  Date
+                  Branch
                   <svg
                     className="inline ml-1 w-3 h-3"
                     fill="currentColor"
@@ -314,7 +171,7 @@ export default function DarkStripedStrategiesTable() {
                   </svg>
                 </th>
                 <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">
-                  Sharpe
+                  Owner
                   <svg
                     className="inline ml-1 w-3 h-3"
                     fill="currentColor"
@@ -328,21 +185,7 @@ export default function DarkStripedStrategiesTable() {
                   </svg>
                 </th>
                 <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">
-                  Sortino
-                  <svg
-                    className="inline ml-1 w-3 h-3"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </th>
-                <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">
-                  PSR
+                  Updated
                   <svg
                     className="inline ml-1 w-3 h-3"
                     fill="currentColor"
@@ -361,67 +204,101 @@ export default function DarkStripedStrategiesTable() {
               </tr>
             </thead>
             <tbody>
-              {paginatedStrategies.map((strategy, index) => (
-                <tr
-                  key={strategy.id}
-                  className={`border-b border-slate-800 hover:bg-slate-600/50 transition-colors ${
-                    index % 2 === 0 ? "bg-slate-950/80" : "bg-slate-900/80"
-                  }`}
-                >
-                  <td className="py-4 px-4">
-                    <div className="text-white font-medium">
-                      {strategy.name}
-                    </div>
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="text-gray-300">{strategy.user}</div>
-                  </td>
-                  <td className="py-4 px-4">
-                    {(() => {
-                      const bubble = getStatusBubble(strategy.status);
-                      return (
-                        <span
-                          className={`inline-flex items-center px-4 py-1 rounded-full font-medium text-sm ${bubble.bg} ${bubble.text}`}
-                          style={{ minWidth: 70, justifyContent: "center" }}
-                        >
-                          <span
-                            className={`w-3 h-3 rounded-full mr-2 ${bubble.dot}`}
-                          ></span>
-                          {bubble.label}
-                        </span>
-                      );
-                    })()}
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="text-gray-300">{strategy.date}</div>
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="text-white font-medium">
-                      {strategy.sharpe}
-                    </div>
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="text-white font-medium">
-                      {strategy.sortino}
-                    </div>
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="text-white font-medium">{strategy.psr}</div>
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="flex flex-wrap gap-1">
-                      {strategy.tags.map((tag, tagIndex) => (
-                        <span
-                          key={tagIndex}
-                          className="inline-flex items-center px-2 py-1 text-xs font-medium bg-blue-900/50 text-blue-300 rounded border border-blue-700"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
+              {isLoading ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="py-6 px-4 text-center text-gray-400 text-sm"
+                  >
+                    Loading strategies...
                   </td>
                 </tr>
-              ))}
+              ) : paginatedStrategies.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="py-6 px-4 text-center text-gray-400 text-sm"
+                  >
+                    No strategies found.
+                  </td>
+                </tr>
+              ) : (
+                paginatedStrategies.map((strategy, index) => (
+                  <tr
+                    key={strategy.strategyId}
+                    className={`border-b border-slate-800 hover:bg-slate-600/50 transition-colors ${
+                      index % 2 === 0 ? "bg-slate-950/80" : "bg-slate-900/80"
+                    }`}
+                  >
+                    <td className="py-4 px-4 align-middle">
+                      <div className="flex h-full flex-col items-center justify-center text-center">
+                        <a
+                          href={strategy.htmlUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-white font-medium hover:underline"
+                        >
+                          {strategy.name}
+                        </a>
+                        <div className="mt-2 flex w-full justify-start">
+                          <a
+                            href={strategy.htmlUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center text-gray-400 hover:text-white"
+                            aria-label={`Open ${strategy.name} on GitHub`}
+                            title="View on GitHub"
+                          >
+                            <svg
+                              className="w-5 h-5"
+                              role="img"
+                              viewBox="0 0 24 24"
+                              xmlns="http://www.w3.org/2000/svg"
+                              aria-hidden="true"
+                            >
+                              <path
+                                fill="currentColor"
+                                d="M12 .297a12 12 0 00-3.797 23.406c.6.111.82-.261.82-.58v-2.234c-3.338.726-4.042-1.416-4.042-1.416-.546-1.387-1.332-1.758-1.332-1.758-1.089-.745.082-.73.082-.73 1.205.085 1.84 1.238 1.84 1.238 1.07 1.834 2.809 1.304 3.495.997.108-.775.42-1.305.763-1.605-2.665-.304-5.466-1.333-5.466-5.932 0-1.31.468-2.381 1.236-3.221-.124-.303-.536-1.523.118-3.176 0 0 1.008-.322 3.3 1.23a11.458 11.458 0 013.003-.403c1.02.005 2.047.138 3.003.403 2.291-1.552 3.297-1.23 3.297-1.23.656 1.653.244 2.873.12 3.176.77.84 1.235 1.91 1.235 3.22 0 4.61-2.804 5.625-5.476 5.922.43.372.823 1.103.823 2.222v3.293c0 .322.218.697.825.579A12 12 0 0012 .297"
+                              />
+                            </svg>
+                          </a>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="text-gray-300">{strategy.project}</div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="text-gray-300">{strategy.repository}</div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="text-gray-300">{strategy.branch}</div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="text-white font-medium">
+                        {strategy.owner ?? "—"}
+                      </div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="text-gray-300">
+                        {new Date(strategy.updatedAt).toLocaleDateString()}
+                      </div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="flex flex-wrap gap-1">
+                        {strategy.tags.map((tag, tagIndex) => (
+                          <span
+                            key={tagIndex}
+                            className="inline-flex items-center px-2 py-1 text-xs font-medium bg-blue-900/50 text-blue-300 rounded border border-blue-700"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -448,7 +325,7 @@ export default function DarkStripedStrategiesTable() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage === 1}
+              disabled={currentPage <= 1}
               className="px-3 py-1 rounded bg-slate-700 text-gray-300 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Previous
@@ -470,7 +347,7 @@ export default function DarkStripedStrategiesTable() {
 
             <button
               onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage === totalPages}
+              disabled={currentPage >= totalPages}
               className="px-3 py-1 rounded bg-slate-700 text-gray-300 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Next

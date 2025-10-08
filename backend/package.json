@@ -9,6 +9,7 @@
     "yaml": "^2.6.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/node": "^24.5.2",
     "nodemon": "^3.1.10",
@@ -19,6 +20,6 @@
   },
   "scripts": {
     "dev": "nodemon src/index.ts",
-    "populate:strategies": "ts-node --project tsconfig.json --esm scripts/fetch_strategies.ts"
+    "populate:strategies": "npx ts-node scripts/fetch_strategies.ts"
   }
 }
