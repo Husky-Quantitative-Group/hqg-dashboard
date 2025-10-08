@@ -17,7 +17,7 @@ export interface Strategy {
 }
 
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? "",
+  baseURL: "http://localhost:5000",
 });
 
 export const fetchStrategies = async (): Promise<Strategy[]> => {

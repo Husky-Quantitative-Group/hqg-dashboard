@@ -1,3 +1,5 @@
+// This file was pretty much completely AI generated - josef-karpinski - 2025-09-29
+
 import { config as loadEnv } from "dotenv";
 import https from "node:https";
 import mongoose from "mongoose";
