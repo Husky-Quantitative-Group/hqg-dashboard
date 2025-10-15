@@ -53,7 +53,7 @@ DATABASE_URL=mongodb://localhost:27017/hqg_dashboard
 HQG_STRATEGIES_GITHUB_TOKEN=...
 ```
 
-HQG_STRATEGIES_GITHUB_TOKEN guide can be found [here](docs/guides/github_tokens.md).
+HQG_STRATEGIES_GITHUB_TOKEN guide can be found [here](guides/github_tokens.md).
 
 ---
 
@@ -110,7 +110,7 @@ npm run populate:strategies
 Populate the database with the strategies from [hqg-strategies](https://github.com/Husky-Quantitative-Group/hqg-strategies)
 
 **REQUIRED:** `HQG_STRATEGIES_GITHUB_TOKEN` in `.env`
-See [docs/guides/github_tokens.md](docs/guides/github_tokens.md)
+See [docs/guides/github_tokens.md](guides/github_tokens.md)
 
 ---
 
