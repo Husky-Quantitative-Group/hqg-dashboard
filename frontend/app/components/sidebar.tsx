@@ -115,9 +115,8 @@ export default function Sidebar() {
         <Section
           title="Dashboard"
           items={[
-            { label: "Overview", to: "/" },
+            { label: "Home", to: "/" },
             { label: "Strategies", to: "/strategies" }, // only real page for now
-            { label: "Reports", to: "/reports" },
             { label: "Projects", to: "/projects" },
             { label: "Portfolio", to: "/portfolio" },
           ]}
