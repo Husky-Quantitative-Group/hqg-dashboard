@@ -11,6 +11,7 @@ export default [
     route("sandbox", "routes/sandbox.tsx"),
     route("datasets", "routes/datasets.tsx"),
     route("docs", "routes/docs.tsx"),
+    route("create-strategy", "routes/create-strategy.tsx"),
     
   ]),
 

@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import StrategyTable from "../components/strategy-table";
 import { fetchStrategies, type Strategy } from "../api";
+import { useNavigate } from "react-router-dom";
 
 export default function Strategies() {
+  const navigate = useNavigate();
+
   const [entriesCount, setEntriesCount] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -74,7 +77,10 @@ export default function Strategies() {
             <h2 className="text-4xl font-bold text-white tracking-tight">
               Strategies
             </h2>
-            <button className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-md font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-slate-900">
+            <button 
+              className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-md font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-slate-900"
+              onClick={() => navigate("/create-strategy")}
+            >
               Create Strategy
             </button>
           </div>

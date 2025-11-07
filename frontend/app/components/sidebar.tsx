@@ -95,7 +95,7 @@ export default function Sidebar() {
       <div className="px-5 pt-5 pb-4">
         <div className="flex items-center gap-4">
           <img src="/hqg-logo.png" className="w-[42px] h-auto object-contain rounded-xl shadow" />
-          <span className="logo-text text-2xl font-black tracking-wide">HQG Vault</span>
+          <span className="logo-text text-2xl font-black tracking-wide">HQG Dash</span>
         </div>
       </div>
 
