@@ -5,6 +5,12 @@ export default [
   route("", "layouts/DashboardLayout.tsx", [
     index("routes/home.tsx"),
     route("strategies", "routes/strategies.tsx"),
+    route("strategies/:strategyId", "routes/strategy/layout.tsx", [
+      index("routes/strategy/overview.tsx"),
+      route("code", "routes/strategy/code.tsx"),
+      route("artifacts", "routes/strategy/artifacts.tsx"),
+      route("results", "routes/strategy/results.tsx"),
+    ]),
     route("projects", "routes/projects.tsx"),
     route("portfolio", "routes/portfolio.tsx"),
     
