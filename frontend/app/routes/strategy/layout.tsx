@@ -54,41 +54,11 @@ function cloneArtifacts(items: StrategyArtifact[]): StrategyArtifact[] {
   return items.map((artifact) => ({ ...artifact }));
 }
 
-
-type ShortcutHandlers = {
-  onSave: () => void;
-  onRun: () => void;
-};
-
-function useKeyboardShortcuts({ onSave, onRun }: ShortcutHandlers) {
-  useEffect(() => {
-    const handleKeydown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey)) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-      if (key === "s") {
-        event.preventDefault();
-        onSave();
-      } else if (key === "r") {
-        event.preventDefault();
-        onRun();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeydown);
-    return () => window.removeEventListener("keydown", handleKeydown);
-  }, [onSave, onRun]);
-}
-
 export default function StrategyLayout() {
   const { strategyId = "1" } = useParams<{ strategyId?: string }>();
   const [strategy, setStrategy] = useState<WorkspaceStrategy | null>(null);
   const [files, setFiles] = useState<StrategyFile[]>([]);
-  const [lastSavedFiles, setLastSavedFiles] = useState<StrategyFile[]>([]);
   const [artifacts, setArtifacts] = useState<StrategyArtifact[]>([]);
-  const [lastSavedArtifacts, setLastSavedArtifacts] = useState<StrategyArtifact[]>([]);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [runs, setRuns] = useState<StrategyRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -124,9 +94,7 @@ export default function StrategyLayout() {
         const artifactSnapshot = cloneArtifacts(payload.strategy.artifacts);
         setStrategy(payload.strategy);
         setFiles(fileSnapshot);
-        setLastSavedFiles(fileSnapshot);
         setArtifacts(artifactSnapshot);
-        setLastSavedArtifacts(artifactSnapshot);
         setSelectedFilePath(
           payload.strategy.files.find((file) => file.isEntrypoint)?.path ?? payload.strategy.files[0]?.path ?? null
         );
@@ -210,8 +178,6 @@ export default function StrategyLayout() {
         artifacts: artifactSnapshot,
       });
       setStrategy(updatedStrategy);
-      setLastSavedFiles(snapshot);
-      setLastSavedArtifacts(artifactSnapshot);
       setIsDirty(false);
       setAutosaveMessage("All changes saved");
       addToast("Workspace saved", "success");
@@ -251,8 +217,6 @@ export default function StrategyLayout() {
         setIsRunning(false);
       });
   }, [addToast, isRunning, runs.length, strategy]);
-
-  useKeyboardShortcuts({ onSave: handleSave, onRun: handleRun });
 
   const surface = "border border-slate-800/70 bg-slate-950/60";
   const navSurface = "bg-slate-900/60";
