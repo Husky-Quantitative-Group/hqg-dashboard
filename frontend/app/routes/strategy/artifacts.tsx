@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { useStrategyWorkspace, type ArtifactType } from "./layout";
+import { useStrategyWorkspace } from "./layout";
+import type { ArtifactType } from "../../api";
 
 const ARTIFACT_TYPES = [
   { label: "Dataset", value: "dataset" },
