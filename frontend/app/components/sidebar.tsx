@@ -122,15 +122,6 @@ export default function Sidebar() {
             { label: "Portfolio", to: "/portfolio" },
           ]}
         />
-
-        <Section
-          title="Tools"
-          items={[
-            { label: "Sandbox", to: "/sandbox"},
-            { label: "Datasets", to: "/datasets" },
-            { label: "Docs / API", to: "/docs"}
-          ]}
-        />
       </nav>
 
       {/* Bottom */}
