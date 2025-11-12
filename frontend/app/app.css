@@ -1,19 +1,37 @@
 @import url('https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap');
-
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  
+  /* Dark purple theme matching sidebar */
+  --color-background: oklch(10% 0.02 285);
+  --color-foreground: oklch(95% 0 0);
+  --color-card: oklch(12% 0.02 285);
+  --color-card-foreground: oklch(95% 0 0);
+  --color-popover: oklch(12% 0.02 285);
+  --color-popover-foreground: oklch(95% 0 0);
+  --color-primary: oklch(65% 0.25 310);
+  --color-primary-foreground: oklch(98% 0 0);
+  --color-secondary: oklch(18% 0.02 285);
+  --color-secondary-foreground: oklch(95% 0 0);
+  --color-muted: oklch(18% 0.02 285);
+  --color-muted-foreground: oklch(60% 0.01 285);
+  --color-accent: oklch(18% 0.02 285);
+  --color-accent-foreground: oklch(95% 0 0);
+  --color-destructive: oklch(60% 0.2 25);
+  --color-destructive-foreground: oklch(98% 0 0);
+  --color-border: oklch(20% 0.02 285);
+  --color-input: oklch(20% 0.02 285);
+  --color-input-background: oklch(15% 0.02 285);
+  --color-ring: oklch(65% 0.25 310);
 }
 
 html,
 body {
-  @apply bg-white dark:bg-gray-950;
-
-  @media (prefers-color-scheme: dark) {
-    color-scheme: dark;
-  }
+  background-color: rgb(8 16 40);
+  color: rgb(226 232 240);
 }
 
 .logo-text {
