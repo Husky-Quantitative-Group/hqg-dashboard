@@ -57,8 +57,8 @@ export default function StrategyOverview() {
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-5 lg:grid-cols-3">
-        <div className={`col-span-2 rounded-2xl ${surface} p-6`}>
+      <section className="grid gap-5">
+        <div className={`rounded-2xl ${surface} p-6`}>
           <header className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Overview</p>
@@ -103,31 +103,6 @@ export default function StrategyOverview() {
               </div>
             </div>
           </div>
-        </div>
-
-        <div className={`rounded-2xl ${surface} p-6`}>
-          <h3 className="text-base font-semibold">Quick actions</h3>
-          <p className={`mt-1 text-sm ${mutedColor}`}>Jump directly into the workspace or trigger a dry run.</p>
-          <div className="mt-5 space-y-3">
-            <button type="button" onClick={() => navigate("code")} className={quickButtonClass}>
-              Open Code Workspace
-            </button>
-            <button
-              type="button"
-              onClick={handleRun}
-              disabled={isRunning}
-              className={`w-full rounded-xl px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
-                isRunning
-                  ? "cursor-not-allowed opacity-60"
-                  : "bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-white"
-              }`}
-            >
-              {isRunning ? "Running…" : "Run Strategy"}
-            </button>
-          </div>
-          <p className={`mt-6 text-xs ${mutedColor}`}>
-            Autosave keeps drafts synced; runs execute against mocked data so you can iterate safely.
-          </p>
         </div>
       </section>
 
