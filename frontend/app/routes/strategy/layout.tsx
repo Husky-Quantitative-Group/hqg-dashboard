@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useOutletContext, useParams } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchStrategyWorkspace,
@@ -57,6 +57,7 @@ function cloneArtifacts(items: StrategyArtifact[]): StrategyArtifact[] {
 
 export default function StrategyLayout() {
   const { strategyId = "1" } = useParams<{ strategyId?: string }>();
+  const navigate = useNavigate();
   const [strategy, setStrategy] = useState<WorkspaceStrategy | null>(null);
   const [files, setFiles] = useState<StrategyFile[]>([]);
   const [artifacts, setArtifacts] = useState<StrategyArtifact[]>([]);
@@ -299,31 +300,19 @@ export default function StrategyLayout() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => {
-                handleSave();
-                handleRun();
-              }}
-              disabled={isSaving || isRunning || !isDirty}
+              disabled={isSaving || !isDirty}
               className={`rounded-xl px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
-                isSaving || isRunning || !isDirty
-                  ? "cursor-not-allowed opacity-60"
-                  : "bg-gradient-to-r from-fuchsia-600 to-indigo-500"
+                isSaving || !isDirty ? "cursor-not-allowed bg-slate-700/60 text-slate-300" : "bg-gradient-to-r from-fuchsia-600 to-indigo-500"
               }`}
             >
-              {isRunning ? "Running…" : "Save & Run"}
+              Save New Version
             </button>
             <button
               type="button"
-              onClick={() => {
-                handleSave();
-                window.history.back();
-              }}
-              disabled={isSaving || !isDirty}
-              className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
-                isSaving || !isDirty ? "cursor-not-allowed opacity-60" : "border-slate-600 hover:bg-slate-900"
-              }`}
+              onClick={() => navigate("/strategies")}
+              className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
             >
-              Save & Close
+              Close
             </button>
           </div>
         </div>
