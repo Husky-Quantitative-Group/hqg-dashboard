@@ -6,7 +6,7 @@ import {
   startStrategyRunExecution,
   type StrategyArtifact,
   type StrategyFile,
-  type StrategyRun,
+  type BacktestResult,
   type WorkspaceStrategy,
 } from "../../api";
 
@@ -30,9 +30,9 @@ export type StrategyWorkspaceContext = {
   isDirty: boolean;
   handleRun: () => void;
   handleSave: () => void;
-  runs: StrategyRun[];
-  selectedRunId: string | null;
-  selectRun: (runId: string) => void;
+  runs: BacktestResult[];
+  selectedRunId: number | null;
+  selectRun: (runId: number) => void;
   artifacts: StrategyArtifact[];
   addArtifactRecord: (artifact: Omit<StrategyArtifact, "id" | "updatedAt" | "addedBy">) => void;
   removeArtifactRecord: (artifactId: string) => void;
@@ -61,8 +61,8 @@ export default function StrategyLayout() {
   const [files, setFiles] = useState<StrategyFile[]>([]);
   const [artifacts, setArtifacts] = useState<StrategyArtifact[]>([]);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
-  const [runs, setRuns] = useState<StrategyRun[]>([]);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [runs, setRuns] = useState<BacktestResult[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
@@ -205,8 +205,8 @@ export default function StrategyLayout() {
       .then((completedRun) => {
         setRuns((prev) => prev.map((run) => (run.id === completedRun.id ? completedRun : run)));
         addToast(
-          completedRun.status === "passed" ? "Run completed" : "Run blocked by guardrail",
-          completedRun.status === "passed" ? "success" : "warning"
+          completedRun.metrics.netPnl >= 0 ? "Run completed" : "Run blocked by guardrail",
+          completedRun.metrics.netPnl >= 0 ? "success" : "warning"
         );
       })
       .catch((error) => {
@@ -223,12 +223,9 @@ export default function StrategyLayout() {
   const navSurface = "bg-slate-900/60";
   const navBorder = "border-slate-800/50";
 
-  const selectRun = useCallback(
-    (runId: string) => {
-      setSelectedRunId(runId);
-    },
-    []
-  );
+  const selectRun = useCallback((runId: number) => {
+    setSelectedRunId(runId);
+  }, []);
 
   const toastShelf = (
     <div className="pointer-events-none fixed right-6 top-6 z-50 space-y-3" aria-live="polite">

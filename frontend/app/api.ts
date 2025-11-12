@@ -35,13 +35,16 @@ export type StrategyArtifact = {
   addedBy: string;
 };
 
-export type StrategyRun = {
-  id: string;
-  label: string;
-  status: "passed" | "failed" | "running";
+export type BacktestResult = {
+  name: string;
+  id: number;
+  strategyVersion: number;
   startedAt: string;
   durationSeconds: number;
-  summary: string;
+  parameterName: string;
+  parameterStartDate: string;
+  parameterEndDate: string;
+  startingEquity: number;
   metrics: {
     netPnl: number;
     sharpe: number;
@@ -49,9 +52,6 @@ export type StrategyRun = {
     maxDrawdown: number;
     trades: number;
   };
-  logs: string[];
-  equityCurve: number[];
-  drawdown: number[];
 };
 
 export type WorkspaceStrategy = {
@@ -71,7 +71,7 @@ export type WorkspaceStrategy = {
 
 export type StrategyWorkspaceResponse = {
   strategy: WorkspaceStrategy;
-  runs: StrategyRun[];
+  runs: BacktestResult[];
 };
 
 const apiClient = axios.create({
@@ -84,13 +84,11 @@ const cloneFiles = (files: StrategyFile[]): StrategyFile[] => files.map((file) =
 
 const cloneArtifacts = (artifacts: StrategyArtifact[]): StrategyArtifact[] => artifacts.map((artifact) => ({ ...artifact }));
 
-const cloneRuns = (runs: StrategyRun[]): StrategyRun[] => runs.map((run) => ({
-  ...run,
-  metrics: { ...run.metrics },
-  logs: [...run.logs],
-  equityCurve: [...run.equityCurve],
-  drawdown: [...run.drawdown],
-}));
+const cloneRuns = (runs: BacktestResult[]): BacktestResult[] =>
+  runs.map((run) => ({
+    ...run,
+    metrics: { ...run.metrics },
+  }));
 
 const cloneWorkspace = (strategy: WorkspaceStrategy): WorkspaceStrategy => ({
   ...strategy,
@@ -98,108 +96,63 @@ const cloneWorkspace = (strategy: WorkspaceStrategy): WorkspaceStrategy => ({
   artifacts: cloneArtifacts(strategy.artifacts),
 });
 
-const createEquitySeries = (seed: number): number[] => {
-  const base = 100_000 + seed * 800;
-  const series: number[] = [];
-  let cursor = base;
-
-  for (let i = 0; i < 24; i += 1) {
-    const wave = Math.sin(seed * 0.8 + i / 2.5) * 900;
-    const drift = i * 320;
-    cursor += drift * 0.3 + wave;
-    series.push(Math.round(cursor));
-  }
-
-  return series;
-};
-
-const createDrawdownSeries = (series: number[]): number[] => {
-  if (series.length === 0) {
-    return [];
-  }
-  let peak = series[0];
-  return series.map((value) => {
-    peak = Math.max(peak, value);
-    const drawdown = ((value - peak) / peak) * 100;
-    return Number(drawdown.toFixed(2));
-  });
-};
-
-const createMockRuns = (seedKey: string | number): StrategyRun[] => {
-  const seedBase = seedKey.toString().length;
-  const eqA = createEquitySeries(seedBase + 2);
-  const eqB = createEquitySeries(seedBase + 6);
-  const eqC = createEquitySeries(seedBase + 10);
+const createMockRuns = (seedKey: string | number): BacktestResult[] => {
+  const now = Date.now();
 
   return [
     {
-      id: `${seedKey}-run-a`,
-      label: "LDN Sweep",
-      status: "passed",
-      startedAt: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
+      name: `${seedKey}-run-3`,
+      id: 3,
+      strategyVersion: 12,
+      startedAt: new Date(now - 1000 * 60 * 45).toISOString(),
       durationSeconds: 148,
-      summary: "Captured morning imbalance across majors",
+      parameterName: "Run 3",
+      parameterStartDate: "Jan 03 2024",
+      parameterEndDate: "Jan 30 2024",
+      startingEquity: 100_000,
       metrics: {
-        netPnl: 12480,
+        netPnl: 12_480,
         sharpe: 1.46,
         winRate: 0.58,
         maxDrawdown: 0.032,
         trades: 142,
       },
-      logs: [
-        "Bootstrapping workspace...",
-        "Fetched book snapshots (24 instruments)",
-        "Filled 68% of passive orders",
-        "PnL locked, exiting gracefully",
-      ],
-      equityCurve: eqA,
-      drawdown: createDrawdownSeries(eqA),
     },
     {
-      id: `${seedKey}-run-b`,
-      label: "NY Follow",
-      status: "passed",
-      startedAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
+      name: `${seedKey}-run-2`,
+      id: 2,
+      strategyVersion: 11,
+      startedAt: new Date(now - 1000 * 60 * 60 * 5).toISOString(),
       durationSeconds: 202,
-      summary: "Extended rally fade with volatility targeting",
+      parameterName: "Run 2",
+      parameterStartDate: "Feb 01 2024",
+      parameterEndDate: "Mar 12 2024",
+      startingEquity: 250_000,
       metrics: {
-        netPnl: 8450,
+        netPnl: 8_450,
         sharpe: 1.18,
         winRate: 0.53,
         maxDrawdown: 0.041,
         trades: 96,
       },
-      logs: [
-        "Using cached features",
-        "Volatility bucket raised to 2.1",
-        "Submitted 4 ladder orders",
-        "Hedged residual delta",
-      ],
-      equityCurve: eqB,
-      drawdown: createDrawdownSeries(eqB),
     },
     {
-      id: `${seedKey}-run-c`,
-      label: "Asia Prep",
-      status: "failed",
-      startedAt: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
+      name: `${seedKey}-run-1`,
+      id: 1,
+      strategyVersion: 10,
+      startedAt: new Date(now - 1000 * 60 * 60 * 26).toISOString(),
       durationSeconds: 121,
-      summary: "Stopped after liquidity guardrail tripped",
+      parameterName: "Run 1",
+      parameterStartDate: "Nov 18 2023",
+      parameterEndDate: "Dec 02 2023",
+      startingEquity: 80_000,
       metrics: {
-        netPnl: -2450,
+        netPnl: -2_450,
         sharpe: -0.38,
         winRate: 0.34,
         maxDrawdown: 0.066,
         trades: 54,
       },
-      logs: [
-        "Warm storage miss → rebuilding cache",
-        "Spread tightened by 34%",
-        "Guardrail tripped: liquidity <= 2",
-        "Run halted by supervisor",
-      ],
-      equityCurve: eqC,
-      drawdown: createDrawdownSeries(eqC),
     },
   ];
 };
@@ -333,17 +286,24 @@ export const saveStrategyWorkspaceDraft = async (
 };
 
 export const startStrategyRunExecution = (strategyId: number, existingRunCount: number) => {
-  const runId = `${strategyId}-run-${Date.now()}`;
-  const seed = strategyId + existingRunCount;
-  const equityCurve = createEquitySeries(seed + 3);
+  const runName = `${strategyId}-run-${Date.now()}`;
+  const nextRunNumber = existingRunCount + 1;
+  const parameterName = `Run ${nextRunNumber}`;
+  const formatParamDate = (date: Date) =>
+    date.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+  const parameterStartDate = formatParamDate(new Date(Date.now() - nextRunNumber * 7 * 24 * 60 * 60 * 1000));
+  const parameterEndDate = formatParamDate(new Date());
 
-  const draftRun: StrategyRun = {
-    id: runId,
-    label: "Manual run",
-    status: "running",
+  const draftRun: BacktestResult = {
+    name: runName,
+    id: nextRunNumber,
+    strategyVersion: 10 + nextRunNumber,
     startedAt: new Date().toISOString(),
     durationSeconds: 0,
-    summary: "Triggered from workspace",
+    parameterName,
+    parameterStartDate,
+    parameterEndDate,
+    startingEquity: 100_000 + nextRunNumber * 5_000,
     metrics: {
       netPnl: 0,
       sharpe: 0,
@@ -351,32 +311,23 @@ export const startStrategyRunExecution = (strategyId: number, existingRunCount: 
       maxDrawdown: 0,
       trades: 0,
     },
-    logs: ["Submitting job to runner..."],
-    equityCurve,
-    drawdown: createDrawdownSeries(equityCurve),
   };
 
-  const finalize = async (): Promise<StrategyRun> => {
+  const finalize = async (): Promise<BacktestResult> => {
     await delay(2200);
-    const outcome: "passed" | "failed" = Math.random() > 0.2 ? "passed" : "failed";
-    const pnl = outcome === "passed" ? 6800 + Math.round(Math.random() * 3200) : -3200;
-    const drawdown = outcome === "passed" ? 0.028 : 0.074;
-    const completedRun: StrategyRun = {
+    const outcomePositive = Math.random() > 0.2;
+    const pnl = outcomePositive ? 6800 + Math.round(Math.random() * 3200) : -3200;
+    const drawdown = outcomePositive ? 0.028 : 0.074;
+    const completedRun: BacktestResult = {
       ...draftRun,
-      status: outcome,
       durationSeconds: 155,
-      summary: outcome === "passed" ? "Orders filled and hedged via workspace" : "Guardrail blocked exposure",
       metrics: {
         netPnl: pnl,
-        sharpe: outcome === "passed" ? 1.04 : -0.22,
-        winRate: outcome === "passed" ? 0.61 : 0.29,
+        sharpe: outcomePositive ? 1.04 : -0.22,
+        winRate: outcomePositive ? 0.61 : 0.29,
         maxDrawdown: drawdown,
-        trades: outcome === "passed" ? 74 : 28,
+        trades: outcomePositive ? 74 : 28,
       },
-      logs:
-        outcome === "passed"
-          ? ["Job started", "Built 3 feature batches", "Filled 92% of ladder", "PnL persisted to vault"]
-          : ["Job started", "Volatility guardrail exceeded", "Run halted"],
     };
 
     mockRuns = [completedRun, ...mockRuns];
