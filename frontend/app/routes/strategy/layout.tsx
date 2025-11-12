@@ -43,6 +43,7 @@ const TABS = [
   { label: "Overview", to: ".", end: true },
   { label: "Code", to: "code" },
   { label: "Artifacts", to: "artifacts" },
+  { label: "Backtest", to: "backtest" },
   { label: "Results", to: "results" },
 ];
 

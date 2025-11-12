@@ -9,6 +9,7 @@ export default [
       index("routes/strategy/overview.tsx"),
       route("code", "routes/strategy/code.tsx"),
       route("artifacts", "routes/strategy/artifacts.tsx"),
+      route("backtest", "routes/strategy/backtest.tsx"),
       route("results", "routes/strategy/results.tsx"),
     ]),
     route("projects", "routes/projects.tsx"),
