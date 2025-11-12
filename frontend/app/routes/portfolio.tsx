@@ -1,4 +1,10 @@
+import { PortfolioSection } from "../components/PortfolioSection";
+
 export default function Portfolio() {
-  return <h1>Portfolio</h1>;
+  return (
+    <div className="min-h-screen">
+      <PortfolioSection />
+    </div>
+  );
 }
 
