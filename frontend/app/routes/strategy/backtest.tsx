@@ -7,6 +7,8 @@ import {
   type CandlestickData,
   type UTCTimestamp,
 } from "lightweight-charts";
+import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
+import "react-loading-skeleton/dist/skeleton.css";
 import { useStrategyWorkspace } from "./layout";
 
 type BacktestParameter = {
@@ -53,6 +55,8 @@ type BacktestParametersProps = {
 
 type BacktestMetricsProps = {
   metrics: BacktestMetric[];
+  showPlaceholder: boolean;
+  animatePlaceholder: boolean;
 };
 
 type StrategyEquityChartProps = {
@@ -60,10 +64,14 @@ type StrategyEquityChartProps = {
   stats: EquityStat[];
   candles: EquityCandle[];
   onSave: () => void;
+  showPlaceholder: boolean;
+  animatePlaceholder: boolean;
 };
 
 type BacktestOrdersTableProps = {
   orders: BacktestOrder[];
+  showPlaceholder: boolean;
+  animatePlaceholder: boolean;
 };
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -85,6 +93,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 export default function StrategyBacktest() {
   const { strategy, addToast } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
+  const [hasHydratedResults, setHasHydratedResults] = useState(false);
   const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -100,49 +109,60 @@ export default function StrategyBacktest() {
       return;
     }
     setIsRunningBacktest(true);
+    setHasHydratedResults(false);
     addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
     pendingTimeoutRef.current = setTimeout(() => {
       setIsRunningBacktest(false);
+      setHasHydratedResults(true);
       addToast("Mock backtest finished", "success");
-    }, 1600);
+    }, 2000);
   };
 
   const handleSaveResults = () => {
     addToast("Saved backtest snapshot to results", "success");
   };
 
+  const showPlaceholder = !hasHydratedResults || isRunningBacktest;
+  const animatePlaceholder = isRunningBacktest;
+  const skeletonBaseColor = "#111a26";
+  const skeletonHighlightColor = animatePlaceholder ? "#1d2a3f" : skeletonBaseColor;
+
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Backtest</p>
-          <h1 className="text-2xl font-semibold text-white">{strategy.name} · Hypothetical Run</h1>
-        </div>
-        <p className="text-sm text-slate-400">Configure parameters, inspect metrics, and review orders.</p>
-      </header>
+    <SkeletonTheme baseColor={skeletonBaseColor} highlightColor={skeletonHighlightColor}>
+      <div className="space-y-6">
+        <header className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Backtest</p>
+            <h1 className="text-2xl font-semibold text-white">{strategy.name} · Hypothetical Run</h1>
+          </div>
+          <p className="text-sm text-slate-400">Configure parameters, inspect metrics, and review orders.</p>
+        </header>
 
-      <div className="grid gap-6 lg:grid-cols-[360px_1fr] xl:grid-cols-[440px_1fr]">
-        <div className="space-y-6">
-          <BacktestParameters
-            strategyName={strategy.name}
-            parameters={MOCK_PARAMETERS}
-            isRunning={isRunningBacktest}
-            onRun={handleRunBacktest}
-          />
-          <BacktestMetrics metrics={MOCK_METRICS} />
-        </div>
+        <div className="grid gap-6 lg:grid-cols-[360px_1fr] xl:grid-cols-[440px_1fr]">
+          <div className="space-y-6">
+            <BacktestParameters
+              strategyName={strategy.name}
+              parameters={MOCK_PARAMETERS}
+              isRunning={isRunningBacktest}
+              onRun={handleRunBacktest}
+            />
+            <BacktestMetrics metrics={MOCK_METRICS} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
+          </div>
 
-        <div className="space-y-6">
-          <StrategyEquityChart
-            strategyName={strategy.name}
-            stats={MOCK_EQUITY_STATS}
-            candles={MOCK_CANDLES}
-            onSave={handleSaveResults}
-          />
-          <BacktestOrdersTable orders={MOCK_ORDERS} />
+          <div className="space-y-6">
+            <StrategyEquityChart
+              strategyName={strategy.name}
+              stats={MOCK_EQUITY_STATS}
+              candles={MOCK_CANDLES}
+              onSave={handleSaveResults}
+              showPlaceholder={showPlaceholder}
+              animatePlaceholder={animatePlaceholder}
+            />
+            <BacktestOrdersTable orders={MOCK_ORDERS} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
+          </div>
         </div>
       </div>
-    </div>
+    </SkeletonTheme>
   );
 }
 
@@ -212,7 +232,14 @@ function BacktestParameters({ strategyName, parameters, isRunning, onRun }: Back
             }`}
             disabled={isRunning}
           >
-            {isRunning ? "Running backtest…" : "Run Backtest"}
+            {isRunning ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="inline-flex h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                Loading…
+              </span>
+            ) : (
+              "Run Backtest"
+            )}
           </button>
         </div>
       </form>
@@ -220,14 +247,20 @@ function BacktestParameters({ strategyName, parameters, isRunning, onRun }: Back
   );
 }
 
-function BacktestMetrics({ metrics }: BacktestMetricsProps) {
+function BacktestMetrics({ metrics, showPlaceholder, animatePlaceholder }: BacktestMetricsProps) {
   const left = metrics.filter((metric) => metric.column === "left");
   const right = metrics.filter((metric) => metric.column === "right");
 
   const renderMetric = (metric: BacktestMetric) => (
     <div key={metric.id}>
       <dt className="text-xs uppercase tracking-wide text-slate-400">{metric.label}</dt>
-      <dd className="text-2xl font-semibold text-white">{metric.value}</dd>
+      <dd className="text-2xl font-semibold text-white">
+        {showPlaceholder ? (
+          <Skeleton width="70%" height={28} enableAnimation={animatePlaceholder} />
+        ) : (
+          metric.value
+        )}
+      </dd>
     </div>
   );
 
@@ -247,13 +280,13 @@ function BacktestMetrics({ metrics }: BacktestMetricsProps) {
   );
 }
 
-function StrategyEquityChart({ strategyName, stats, candles, onSave }: StrategyEquityChartProps) {
+function StrategyEquityChart({ strategyName, stats, candles, onSave, showPlaceholder, animatePlaceholder }: StrategyEquityChartProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const [benchmarkEnabled, setBenchmarkEnabled] = useState(true);
   const [selectedBenchmark, setSelectedBenchmark] = useState("sp500");
 
   useEffect(() => {
-    if (!chartContainerRef.current) {
+    if (showPlaceholder || !chartContainerRef.current) {
       return;
     }
 
@@ -301,7 +334,7 @@ function StrategyEquityChart({ strategyName, stats, candles, onSave }: StrategyE
       observer.disconnect();
       chart.remove();
     };
-  }, [candles]);
+  }, [candles, showPlaceholder]);
 
   return (
     <article className="rounded-3xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
@@ -313,7 +346,10 @@ function StrategyEquityChart({ strategyName, stats, candles, onSave }: StrategyE
         <button
           type="button"
           onClick={onSave}
-          className="rounded-full bg-fuchsia-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-fuchsia-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500"
+          disabled={showPlaceholder}
+          className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
+            showPlaceholder ? "cursor-not-allowed bg-slate-700/70 text-slate-300" : "bg-fuchsia-500 hover:bg-fuchsia-400"
+          }`}
         >
           Save to Results
         </button>
@@ -323,39 +359,50 @@ function StrategyEquityChart({ strategyName, stats, candles, onSave }: StrategyE
         {stats.map((stat) => (
           <div key={stat.id} className="rounded-2xl border border-slate-800/60 bg-slate-900/40 p-4">
             <dt className="text-xs uppercase tracking-wide text-slate-400">{stat.label}</dt>
-            <dd className={`text-2xl font-semibold ${stat.accentClass}`}>{stat.value}</dd>
+            <dd className={`text-2xl font-semibold ${stat.accentClass}`}>
+              {showPlaceholder ? <Skeleton width="80%" height={28} enableAnimation={animatePlaceholder} /> : stat.value}
+            </dd>
           </div>
         ))}
       </dl>
 
-      <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-slate-300">
-        <label className="inline-flex items-center gap-2 text-slate-200">
-          <input
-            type="checkbox"
-            checked={benchmarkEnabled}
-            onChange={(event) => setBenchmarkEnabled(event.target.checked)}
-            className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-fuchsia-500 focus:ring-fuchsia-500"
-          />
-          Benchmark
-        </label>
-        <select
-          value={selectedBenchmark}
-          disabled={!benchmarkEnabled}
-          onChange={(event) => setSelectedBenchmark(event.target.value)}
-          className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
-        >
-          <option value="sp500">S&amp;P 500</option>
-          <option value="nasdaq">NASDAQ 100</option>
-          <option value="dow">Dow Jones</option>
-        </select>
-      </div>
+      {showPlaceholder ? (
+        <div className="mt-5">
+          <Skeleton width="30%" height={20} enableAnimation={animatePlaceholder} />
+          <Skeleton height={320} className="mt-4" enableAnimation={animatePlaceholder} />
+        </div>
+      ) : (
+        <>
+          <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-slate-300">
+            <label className="inline-flex items-center gap-2 text-slate-200">
+              <input
+                type="checkbox"
+                checked={benchmarkEnabled}
+                onChange={(event) => setBenchmarkEnabled(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-fuchsia-500 focus:ring-fuchsia-500"
+              />
+              Benchmark
+            </label>
+            <select
+              value={selectedBenchmark}
+              disabled={!benchmarkEnabled}
+              onChange={(event) => setSelectedBenchmark(event.target.value)}
+              className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+            >
+              <option value="sp500">S&amp;P 500</option>
+              <option value="nasdaq">NASDAQ 100</option>
+              <option value="dow">Dow Jones</option>
+            </select>
+          </div>
 
-      <div ref={chartContainerRef} className="mt-4 h-80 w-full" />
+          <div ref={chartContainerRef} className="mt-4 h-80 w-full" />
+        </>
+      )}
     </article>
   );
 }
 
-function BacktestOrdersTable({ orders }: BacktestOrdersTableProps) {
+function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: BacktestOrdersTableProps) {
   return (
     <article className="rounded-3xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -365,32 +412,40 @@ function BacktestOrdersTable({ orders }: BacktestOrdersTableProps) {
         </div>
       </header>
       <div className="mt-4 overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-              <th className="px-3 py-2 font-medium">Date · Time</th>
-              <th className="px-3 py-2 font-medium">Ticker</th>
-              <th className="px-3 py-2 font-medium">Type</th>
-              <th className="px-3 py-2 font-medium">Price</th>
-              <th className="px-3 py-2 font-medium">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((order) => (
-              <tr key={order.id} className="border-t border-slate-800 text-slate-200">
-                <td className="px-3 py-3">{dateFormatter.format(new Date(order.timestamp))}</td>
-                <td className="px-3 py-3 font-semibold">{order.ticker}</td>
-                <td className="px-3 py-3">
-                  <span className={`font-semibold ${order.type === "Buy" ? "text-emerald-400" : "text-rose-400"}`}>
-                    {order.type}
-                  </span>
-                </td>
-                <td className="px-3 py-3 font-mono">{currencyFormatter.format(order.price)}</td>
-                <td className="px-3 py-3">{numberFormatter.format(order.amount)}</td>
-              </tr>
+        {showPlaceholder ? (
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <Skeleton key={`order-skeleton-${index}`} height={32} enableAnimation={animatePlaceholder} />
             ))}
-          </tbody>
-        </table>
+          </div>
+        ) : (
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                <th className="px-3 py-2 font-medium">Date · Time</th>
+                <th className="px-3 py-2 font-medium">Ticker</th>
+                <th className="px-3 py-2 font-medium">Type</th>
+                <th className="px-3 py-2 font-medium">Price</th>
+                <th className="px-3 py-2 font-medium">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map((order) => (
+                <tr key={order.id} className="border-t border-slate-800 text-slate-200">
+                  <td className="px-3 py-3">{dateFormatter.format(new Date(order.timestamp))}</td>
+                  <td className="px-3 py-3 font-semibold">{order.ticker}</td>
+                  <td className="px-3 py-3">
+                    <span className={`font-semibold ${order.type === "Buy" ? "text-emerald-400" : "text-rose-400"}`}>
+                      {order.type}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 font-mono">{currencyFormatter.format(order.price)}</td>
+                  <td className="px-3 py-3">{numberFormatter.format(order.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </article>
   );
