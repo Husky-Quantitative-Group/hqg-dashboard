@@ -133,7 +133,7 @@ export default function StrategyBacktest() {
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Backtest</p>
-            <h1 className="text-2xl font-semibold text-white">{strategy.name} · Hypothetical Run</h1>
+            <h1 className="text-2xl font-semibold text-white">{strategy.name}</h1>
           </div>
           <p className="text-sm text-slate-400">Configure parameters, inspect metrics, and review orders.</p>
         </header>
@@ -468,11 +468,13 @@ const MOCK_METRICS: BacktestMetric[] = [
   { id: "winRate", label: "Win Rate", value: "50%", column: "left" },
   { id: "orders", label: "Total Orders", value: "500", column: "left" },
   { id: "avgWin", label: "Avg Win %", value: "14.89%", column: "left" },
+  { id: "linearityError", label: "Linearity Error", value: "0.08", column: "left" },
   { id: "sortino", label: "Sortino", value: "1.83", column: "right" },
   { id: "beta", label: "Beta", value: "2.59", column: "right" },
   { id: "psr", label: "PSR", value: "4.42", column: "right" },
   { id: "drawdown", label: "Drawdown", value: "15.51", column: "right" },
   { id: "avgLoss", label: "Avg Loss %", value: "2.5%", column: "right" },
+  { id: "rateDrift", label: "Rate Drift", value: "+1.2", column: "right" },
 ];
 
 const MOCK_EQUITY_STATS: EquityStat[] = [

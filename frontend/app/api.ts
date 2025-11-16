@@ -161,8 +161,8 @@ let mockWorkspaceStrategy: WorkspaceStrategy = {
   id: 1,
   projectId: 1,
   projectName: "Aurora Initiative",
-  name: "Alpha Scout",
-  owner: "Morgan Ward",
+  name: "SPY Benchmark",
+  owner: "Brendan Barnett",
   tags: ["mean reversion", "intraday"],
   description:
     "Adaptive intraday scalper that fades stretched order-book skew while respecting regime-specific guardrails.",
