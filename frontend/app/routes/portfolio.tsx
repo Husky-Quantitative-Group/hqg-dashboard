@@ -110,7 +110,19 @@ export default function Portfolio() {
             type="button"
             className="rounded-xl bg-indigo-500/80 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500"
           >
-            Create Order
+            Edit Allocations
+          </button>
+          <button
+            type="button"
+            className="rounded-xl border border-rose-500/60 bg-rose-700/70 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-rose-500/40 transition hover:bg-rose-600"
+          >
+            Stop Trading
+          </button>
+          <button
+            type="button"
+            className="rounded-xl border border-red-600/70 bg-red-700 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-red-600/40 transition hover:bg-red-600"
+          >
+            Liquidate
           </button>
         </div>
       </header>
@@ -277,14 +289,43 @@ function PortfolioEventsTable({ events }: PortfolioEventsTableProps) {
 }
 
 function AllocationBreakdown({ view, slices, onChangeView }: AllocationBreakdownProps) {
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    setShowAll(false);
+  }, [view, slices]);
+
+  const displaySlices = useMemo(() => {
+    if (showAll || slices.length <= 2) {
+      return slices;
+    }
+
+    const [primary, ...rest] = slices;
+    if (!primary || rest.length === 0) {
+      return slices;
+    }
+
+    const otherValue = rest.reduce((sum, slice) => sum + slice.value, 0);
+    return [
+      primary,
+      {
+        id: `${view}-other`,
+        label: "Other",
+        value: otherValue,
+        color: "#475569",
+        detail: `${rest.length} allocations hidden`,
+      },
+    ];
+  }, [showAll, slices, view]);
+
   const pieChartData = useMemo(
     () =>
-      slices.map((slice) => ({
+      displaySlices.map((slice) => ({
         title: slice.label,
         value: slice.value,
         color: slice.color,
       })),
-    [slices]
+    [displaySlices]
   );
 
   return (
@@ -324,7 +365,7 @@ function AllocationBreakdown({ view, slices, onChangeView }: AllocationBreakdown
         </div>
 
         <ul className="w-full space-y-3">
-          {slices.map((slice) => (
+          {displaySlices.map((slice) => (
             <li
               key={slice.id}
               className="flex items-center justify-between gap-3 rounded-2xl border border-slate-900/60 bg-slate-950/40 px-4 py-3"
@@ -340,6 +381,16 @@ function AllocationBreakdown({ view, slices, onChangeView }: AllocationBreakdown
             </li>
           ))}
         </ul>
+
+        {slices.length > 2 && (
+          <button
+            type="button"
+            onClick={() => setShowAll((prev) => !prev)}
+            className="w-full rounded-xl border border-slate-800 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-slate-700 hover:text-white"
+          >
+            {showAll ? "Show Less" : "View More"}
+          </button>
+        )}
       </div>
     </article>
   );
