@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import type { Strategy } from "../api";
 
 type StrategyTableProps = {
@@ -133,14 +134,9 @@ export default function StrategyTable({
               >
                 <td className="py-4 px-4 align-middle">
                   <div className="flex h-full flex-col items-center justify-center text-center">
-                    <a
-                      href={strategy.htmlUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-white font-medium hover:underline"
-                    >
+                    <Link to={`/strategies/${strategy.strategyId}`} className="text-white font-medium hover:underline">
                       {strategy.name}
-                    </a>
+                    </Link>
                     <div className="mt-2 flex w-full justify-start">
                       <a
                         href={strategy.htmlUrl}
