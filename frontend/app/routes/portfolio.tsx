@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CandlestickSeries,
   ColorType,
   CrosshairMode,
+  LineSeries,
   createChart,
   type CandlestickData,
+  type LineData,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { PieChart } from "react-minimal-pie-chart";
@@ -98,7 +99,6 @@ export default function Portfolio() {
         <div>
           <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Portfolio</p>
           <h1 className="text-3xl font-semibold text-white">Multi-Strategy Portfolio</h1>
-          <p className="text-sm text-slate-400">Centralized analytics for the student-run quant fund.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -134,8 +134,8 @@ export default function Portfolio() {
           <PortfolioEventsTable events={PORTFOLIO_EVENTS} />
         </div>
         <div className="space-y-6">
-          <AllocationBreakdown view={allocationView} slices={ALLOCATION_DATA[allocationView]} onChangeView={handleAllocationViewChange} />
           <PortfolioMetrics metrics={PORTFOLIO_METRICS} />
+          <AllocationBreakdown view={allocationView} slices={ALLOCATION_DATA[allocationView]} onChangeView={handleAllocationViewChange} />
         </div>
       </div>
     </div>
@@ -144,6 +144,10 @@ export default function Portfolio() {
 
 function PortfolioEquityChart({ candles, highlights }: PortfolioEquityChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const lineSeriesData = useMemo<LineData[]>(
+    () => candles.map((candle) => ({ time: candle.time, value: candle.close })),
+    [candles]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined" || !containerRef.current) {
@@ -153,7 +157,7 @@ function PortfolioEquityChart({ candles, highlights }: PortfolioEquityChartProps
     const container = containerRef.current;
     const chart = createChart(container, {
       width: container.clientWidth,
-      height: 320,
+      height: 480,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#94a3b8",
@@ -172,16 +176,14 @@ function PortfolioEquityChart({ candles, highlights }: PortfolioEquityChartProps
       },
     });
 
-    const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
-      borderUpColor: "#22c55e",
-      borderDownColor: "#ef4444",
+    const series = chart.addSeries(LineSeries, {
+      color: "#34d399",
+      lineWidth: 3,
+      crosshairMarkerVisible: true,
+      priceLineVisible: false,
     });
 
-    series.setData(candles);
+    series.setData(lineSeriesData);
     chart.timeScale().fitContent();
 
     let resizeObserver: ResizeObserver | null = null;
@@ -196,7 +198,7 @@ function PortfolioEquityChart({ candles, highlights }: PortfolioEquityChartProps
       resizeObserver?.disconnect();
       chart.remove();
     };
-  }, [candles]);
+  }, [lineSeriesData]);
 
   return (
     <article className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 shadow-xl">
@@ -204,7 +206,6 @@ function PortfolioEquityChart({ candles, highlights }: PortfolioEquityChartProps
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Equity</p>
           <h2 className="text-xl font-semibold text-white">Portfolio Equity Curve</h2>
-          <p className="text-sm text-slate-400">Same feed powering the backtest workspace.</p>
         </div>
         <div className="flex items-center gap-2">
           <button className="rounded-lg border border-slate-800 px-3 py-1 text-xs font-medium text-slate-300 hover:border-slate-700 hover:text-white">3M</button>
@@ -232,7 +233,7 @@ function PortfolioEquityChart({ candles, highlights }: PortfolioEquityChartProps
         })}
       </div>
 
-      <div ref={containerRef} className="mt-6 h-[320px] w-full overflow-hidden rounded-2xl border border-slate-900/50 bg-gradient-to-b from-slate-950 via-slate-950/90 to-transparent" />
+      <div ref={containerRef} className="mt-6 h-[480px] w-full overflow-hidden rounded-2xl border border-slate-900/50 bg-gradient-to-b from-slate-950 via-slate-950/90 to-transparent" />
     </article>
   );
 }
@@ -250,7 +251,7 @@ function PortfolioEventsTable({ events }: PortfolioEventsTableProps) {
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Events</p>
-          <h2 className="text-xl font-semibold text-white">Execution & Governance Log</h2>
+          <h2 className="text-xl font-semibold text-white">Logs & Alerts</h2>
           <p className="text-sm text-slate-400">Every trade, rebalance, and alert in the last week.</p>
         </div>
         <button
@@ -399,14 +400,13 @@ function AllocationBreakdown({ view, slices, onChangeView }: AllocationBreakdown
 
 function PortfolioMetrics({ metrics }: PortfolioMetricsProps) {
   return (
-    <article className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 shadow-xl">
-      <header>
-        <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Risk</p>
-        <h2 className="text-xl font-semibold text-white">Core Metrics</h2>
-        <p className="text-sm text-slate-400">Pulled from the same analytics stack as the backtest tool.</p>
+    <article className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5 shadow-xl">
+      <header className="space-y-1">
+        <p className="text-[11px] uppercase tracking-[0.35em] text-slate-500">Risk</p>
+        <h2 className="text-lg font-semibold text-white">Metrics</h2>
       </header>
 
-      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {metrics.map((metric) => {
           const toneClass =
             metric.trend === "up"
@@ -416,10 +416,10 @@ function PortfolioMetrics({ metrics }: PortfolioMetricsProps) {
                 : "text-slate-400";
 
           return (
-            <div key={metric.id} className="rounded-2xl border border-slate-900/60 bg-slate-950/40 p-4">
-              <p className="text-xs uppercase tracking-[0.35em] text-slate-500">{metric.label}</p>
-              <p className="mt-2 text-2xl font-semibold text-white">{metric.value}</p>
-              <p className={`mt-1 text-sm ${toneClass}`}>{metric.helper}</p>
+            <div key={metric.id} className="rounded-xl border border-slate-900/60 bg-slate-950/40 px-3 py-3">
+              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{metric.label}</p>
+              <p className="mt-1 text-xl font-semibold text-white">{metric.value}</p>
+              <p className={`mt-1 text-xs ${toneClass}`}>{metric.helper}</p>
             </div>
           );
         })}
@@ -462,14 +462,14 @@ const ALLOCATION_DATA: Record<AllocationView, AllocationSlice[]> = {
 };
 
 const PORTFOLIO_METRICS: PortfolioMetric[] = [
-  { id: "sharpe", label: "Sharpe Ratio", value: "1.48", helper: "+0.05 vs target", trend: "up" },
+  { id: "sharpe", label: "Sharpe", value: "1.48", helper: "+0.05 vs target", trend: "up" },
+    { id: "sortino", label: "Sortino", value: "2.11", helper: "Downside-protected", trend: "up" },
   { id: "cagr", label: "CAGR", value: "18.2%", helper: "3Y rolling compounded", trend: "up" },
   { id: "drawdown", label: "Max Drawdown", value: "-8.6%", helper: "Last 12 months", trend: "down" },
-  { id: "alpha", label: "Alpha (excess return)", value: "+4.3%", helper: "vs. MSCI World", trend: "up" },
-  { id: "beta", label: "Beta (market exposure)", value: "0.41", helper: "vs. SPX", trend: "neutral" },
-  { id: "sortino", label: "Sortino Ratio", value: "2.11", helper: "Downside-protected", trend: "up" },
+  { id: "alpha", label: "Alpha", value: "+4.3%", helper: "vs. MSCI World", trend: "up" },
+  { id: "beta", label: "Beta", value: "0.41", helper: "vs. SPX", trend: "neutral" },
   { id: "vol", label: "Annual STD", value: "10.4%", helper: "Blend target 11%", trend: "neutral" },
-  { id: "orders", label: "Total Orders", value: "312", helper: "Trailing 30 days", trend: "up" },
+  { id: "orders", label: "Orders", value: "312", helper: "Trailing 30 days", trend: "up" },
 ];
 
 function toUnixTime(dateString: string): UTCTimestamp {
