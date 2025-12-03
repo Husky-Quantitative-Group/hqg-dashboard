@@ -292,7 +292,7 @@ resource "aws_iam_role_policy_attachment" "strategies_lambda_storage" {
 resource "aws_lambda_function" "strategies" {
   function_name = "${local.name_prefix}-strategies"
   role          = aws_iam_role.strategies_lambda.arn
-  runtime       = "python3.14"
+  runtime       = "python3.11"
   handler       = "main.handler"
 
   filename         = data.archive_file.strategies_lambda.output_path
@@ -306,4 +306,30 @@ resource "aws_lambda_function" "strategies" {
   }
 
   tags = local.tags
+}
+
+# ------------------------------
+# API Gateway integration/route for GET /strategies
+# ------------------------------
+
+resource "aws_apigatewayv2_integration" "get_strategies" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.strategies.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "get_strategies" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /strategies"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+}
+
+resource "aws_lambda_permission" "allow_apigw_invoke_strategies" {
+  statement_id  = "AllowAPIGWInvokeStrategies"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.strategies.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }
