@@ -158,3 +158,57 @@ resource "aws_dynamodb_table" "strategy_artifact_versions" {
 
   tags = local.tags
 }
+
+# ------------------------------
+# IAM policy: allow Lambdas to use storage
+# ------------------------------
+
+data "aws_iam_policy_document" "strategy_storage" {
+  statement {
+    sid    = "S3ArtifactsAccess"
+    effect = "Allow"
+
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:AbortMultipartUpload",
+      "s3:ListBucket",
+      "s3:GetObjectVersion",
+    ]
+
+    resources = [
+      aws_s3_bucket.strategy_artifacts.arn,
+      "${aws_s3_bucket.strategy_artifacts.arn}/*",
+    ]
+  }
+
+  statement {
+    sid    = "DynamoStrategiesAccess"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:BatchWriteItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "dynamodb:DescribeTable",
+    ]
+
+    resources = [
+      aws_dynamodb_table.strategies.arn,
+      aws_dynamodb_table.strategy_artifacts.arn,
+      aws_dynamodb_table.strategy_artifact_versions.arn,
+    ]
+  }
+}
+
+resource "aws_iam_policy" "strategy_storage" {
+  name   = "${local.name_prefix}-strategy-storage"
+  policy = data.aws_iam_policy_document.strategy_storage.json
+
+  tags = local.tags
+}
