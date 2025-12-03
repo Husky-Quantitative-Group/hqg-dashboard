@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
+    }
   }
 
   # TODO: switch to remote state (S3 + DynamoDB lock table) before multi-user use.
@@ -246,3 +250,60 @@ resource "aws_apigatewayv2_stage" "dev" {
 }
 
 # TODO: Add integrations and routes for strategies/artifacts lambdas here.
+
+# ------------------------------
+# Lambda packaging and deployment
+# ------------------------------
+
+data "archive_file" "strategies_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/strategies"
+  output_path = "${path.module}/dist/strategies-lambda.zip"
+}
+
+data "aws_iam_policy_document" "lambda_assume_role" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+resource "aws_iam_role" "strategies_lambda" {
+  name               = "${local.name_prefix}-strategies-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "strategies_lambda_basic_logs" {
+  role       = aws_iam_role.strategies_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "strategies_lambda_storage" {
+  role       = aws_iam_role.strategies_lambda.name
+  policy_arn = aws_iam_policy.strategy_storage.arn
+}
+
+resource "aws_lambda_function" "strategies" {
+  function_name = "${local.name_prefix}-strategies"
+  role          = aws_iam_role.strategies_lambda.arn
+  runtime       = "python3.14"
+  handler       = "main.handler"
+
+  filename         = data.archive_file.strategies_lambda.output_path
+  source_code_hash = data.archive_file.strategies_lambda.output_base64sha256
+
+  environment {
+    variables = {
+      STRATEGIES_TABLE = aws_dynamodb_table.strategies.name
+      API_TOKEN        = var.api_token
+    }
+  }
+
+  tags = local.tags
+}
