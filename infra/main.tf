@@ -212,3 +212,37 @@ resource "aws_iam_policy" "strategy_storage" {
 
   tags = local.tags
 }
+
+# ------------------------------
+# API Gateway (HTTP API) scaffold
+# ------------------------------
+
+resource "aws_apigatewayv2_api" "api" {
+  name          = "${local.name_prefix}-http-api"
+  protocol_type = "HTTP"
+
+  cors_configuration {
+    allow_headers = ["content-type", "x-api-token", "authorization"]
+    allow_methods = ["OPTIONS", "GET", "POST", "PATCH"]
+    allow_origins = ["*"]
+    max_age       = 300
+  }
+
+  tags = local.tags
+}
+
+resource "aws_apigatewayv2_stage" "dev" {
+  api_id      = aws_apigatewayv2_api.api.id
+  name        = "dev"
+  auto_deploy = true
+
+  # Add throttling/logging/etc. route settings here if needed.
+  # default_route_settings {
+  #   throttling_burst_limit = 10
+  #   throttling_rate_limit  = 20
+  # }
+
+  tags = local.tags
+}
+
+# TODO: Add integrations and routes for strategies/artifacts lambdas here.

@@ -37,3 +37,13 @@ output "strategy_artifact_versions_table_arn" {
   value       = aws_dynamodb_table.strategy_artifact_versions.arn
   description = "ARN of the StrategyArtifactVersions table."
 }
+
+output "http_api_id" {
+  value       = aws_apigatewayv2_api.api.id
+  description = "ID of the HTTP API Gateway."
+}
+
+output "http_api_endpoint" {
+  value       = aws_apigatewayv2_stage.dev.invoke_url
+  description = "Invoke URL for the HTTP API stage."
+}
