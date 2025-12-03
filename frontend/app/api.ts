@@ -7,13 +7,15 @@ export interface Strategy {
   description?: string;
   owner?: string;
   project: string;
-  repository: string;
-  branch: string;
-  githubPath: string;
-  htmlUrl: string;
   tags: string[];
   createdAt: string;
   updatedAt: string;
+  metrics?: {
+    sharpe?: number;
+    sortino?: number;
+    maxDrawdown?: number;
+    winRate?: number;
+  };
 }
 
 export type StrategyFile = {
@@ -275,6 +277,13 @@ type CoreStrategy = {
   created_at?: string;
   updated_at?: string;
   owner?: string;
+  project?: string;
+  metrics?: {
+    sharpe?: number;
+    sortino?: number;
+    max_drawdown?: number;
+    win_rate?: number;
+  };
 };
 
 const mapCoreStrategyToUi = (item: CoreStrategy): Strategy => ({
@@ -283,14 +292,16 @@ const mapCoreStrategyToUi = (item: CoreStrategy): Strategy => ({
   name: item.name,
   description: "",
   owner: item.owner ?? "",
-  project: "—",
-  repository: "—",
-  branch: "—",
-  githubPath: "",
-  htmlUrl: "#",
-  tags: [],
+  project: item.project ?? "—",
+  tags: item.tags ?? [],
   createdAt: item.created_at ?? new Date().toISOString(),
   updatedAt: item.updated_at ?? new Date().toISOString(),
+  metrics: {
+    sharpe: item.metrics?.sharpe,
+    sortino: item.metrics?.sortino,
+    maxDrawdown: item.metrics?.max_drawdown,
+    winRate: item.metrics?.win_rate,
+  },
 });
 
 export const fetchStrategies = async (): Promise<Strategy[]> => {
