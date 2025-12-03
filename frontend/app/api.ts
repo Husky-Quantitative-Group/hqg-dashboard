@@ -284,6 +284,8 @@ type CoreStrategy = {
     max_drawdown?: number;
     win_rate?: number;
   };
+  description?: string;
+  tags?: string[];
 };
 
 const mapCoreStrategyToUi = (item: CoreStrategy): Strategy => ({
@@ -302,11 +304,33 @@ const mapCoreStrategyToUi = (item: CoreStrategy): Strategy => ({
     maxDrawdown: item.metrics?.max_drawdown,
     winRate: item.metrics?.win_rate,
   },
+  description: item.description ?? "",
+  tags: item.tags ?? [],
 });
 
 export const fetchStrategies = async (): Promise<Strategy[]> => {
   const response = await coreApi.get<CoreStrategy[]>("/strategies");
   return response.data.map(mapCoreStrategyToUi);
+};
+
+// ----- Real API: Create Strategy -----
+export type CreateStrategyRequest = {
+  sourceStrategyId: string;
+  name: string;
+  description?: string;
+  tags?: string[];
+  owner?: string;
+};
+
+export const createStrategy = async (payload: CreateStrategyRequest): Promise<Strategy> => {
+  const response = await coreApi.post<CoreStrategy>("/strategies", {
+    source_strategy_id: payload.sourceStrategyId,
+    name: payload.name,
+    description: payload.description ?? "",
+    tags: payload.tags ?? [],
+    owner: payload.owner ?? "",
+  });
+  return mapCoreStrategyToUi(response.data);
 };
 
 export const fetchStrategyWorkspace = async (strategyId: string | number): Promise<StrategyWorkspaceResponse> => {
