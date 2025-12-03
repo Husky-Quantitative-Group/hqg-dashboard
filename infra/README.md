@@ -30,6 +30,22 @@ terraform apply -var-file="example.tfvars"
 - DynamoDB `StrategyArtifacts` table: PK `strategy_id`, SK `artifact_id`.
 - DynamoDB `StrategyArtifactVersions` table: PK `strategy_artifact_id`, SK `strategy_version` (Number).
 
+### Seeding a root strategy
+`infra/seed/main.py` can preload a root strategy (id `1`, entrypoint `main.py`, version `1`) into the bucket and tables. Seeded file contents live in `infra/seed/files/`.
+
+Example:
+```bash
+python infra/seed/main.py \
+  --bucket hqg-dev-strategy-artifacts \
+  --strategies-table hqg-dev-strategies \
+  --artifacts-table hqg-dev-strategy-artifacts \
+  --artifact-versions-table hqg-dev-strategy-artifact-versions \
+  --region us-east-1
+```
+
+Files uploaded (under `strategies/1/v1/`): `main.py`, `README.md`, `requirements.txt`.
+Corresponding items are written to all three DynamoDB tables.
+
 ### Notes
 - State is local; switch to an S3 backend before multi-user usage.
 - All resources have PITR + SSE enabled on DynamoDB; tags merge `Project`, `Env`, and any provided `tags`.
