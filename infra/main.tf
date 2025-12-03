@@ -300,8 +300,11 @@ resource "aws_lambda_function" "strategies" {
 
   environment {
     variables = {
-      STRATEGIES_TABLE = aws_dynamodb_table.strategies.name
-      API_TOKEN        = var.api_token
+      STRATEGIES_TABLE                 = aws_dynamodb_table.strategies.name
+      STRATEGY_ARTIFACTS_TABLE         = aws_dynamodb_table.strategy_artifacts.name
+      STRATEGY_ARTIFACT_VERSIONS_TABLE = aws_dynamodb_table.strategy_artifact_versions.name
+      ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket
+      API_TOKEN                        = var.api_token
     }
   }
 
@@ -323,6 +326,12 @@ resource "aws_apigatewayv2_integration" "get_strategies" {
 resource "aws_apigatewayv2_route" "get_strategies" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /strategies"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+}
+
+resource "aws_apigatewayv2_route" "post_strategies" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "POST /strategies"
   target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
 }
 

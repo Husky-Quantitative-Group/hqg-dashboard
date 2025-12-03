@@ -2,23 +2,28 @@ import json
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import boto3
+from boto3.dynamodb.conditions import Key
 
 dynamo = boto3.resource("dynamodb")
-TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
+s3 = boto3.client("s3")
+
+STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
+ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
+VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
+ARTIFACT_BUCKET = os.environ["ARTIFACT_BUCKET"]
 API_TOKEN = os.environ["API_TOKEN"]
 
 
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     """
-    Entry point for the Strategies service Lambda.
-    Currently supports:
-      - GET /strategies : list all strategies
-      - POST /strategies : create a strategy
-      - GET /strategies/{id} : fetch one strategy
-      - PATCH /strategies/{id} : update strategy
+    Strategies service Lambda.
+    - GET /strategies
+    - POST /strategies
+    - GET /strategies/{id}
+    - PATCH /strategies/{id}
     """
     if not _authorized(event):
         return {"statusCode": 401, "body": "Unauthorized"}
@@ -45,48 +50,198 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
 
 
 def get_strategies() -> Dict[str, Any]:
-    resp = TABLE.scan()
+    resp = STRATEGIES_TABLE.scan()
     items: List[Dict[str, Any]] = resp.get("Items", [])
     return _json(200, _clean_decimals(items))
 
 
 def create_strategy(body: Dict[str, Any]) -> Dict[str, Any]:
-    import uuid
+    """
+    Branch from an existing strategy and create a new one.
+    Body expects:
+      - source_strategy_id (str)
+      - name (str)
+      - description (str, optional) -> becomes README.md content
+      - tags (list[str], optional)
+      - owner (str, optional)
+    """
+    source_id = body.get("source_strategy_id") or body.get("sourceStrategyId")
+    if not source_id:
+        return _json(400, {"message": "source_strategy_id is required"})
 
-    strategy_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    name = (body.get("name") or "").strip()
+    if not name:
+        return _json(400, {"message": "name is required"})
+
+    description = body.get("description") or ""
+    tags = body.get("tags") or []
+    owner = body.get("owner") or ""
+
+    source = _get_strategy_by_id(source_id)
+    if not source:
+        return _json(404, {"message": f"Source strategy {source_id} not found"})
+
+    new_strategy_id = str(_count_strategies() + 1)
+    new_version = 1
+    now = _now()
+    entrypoint = source.get("entrypoint", "main.py")
+
+    try:
+        _copy_artifacts_from_source(
+            source_strategy_id=source_id,
+            target_strategy_id=new_strategy_id,
+            target_version=new_version,
+            description=description,
+            strategy_name=name,
+        )
+    except Exception as exc:  # pragma: no cover
+        return _json(500, {"message": f"Failed to copy artifacts: {exc}"})
+
     item = {
-        "id": strategy_id,
-        "name": body.get("name", "Untitled Strategy"),
-        "entrypoint": body.get("entrypoint", "main.py"),
-        "current_version": 1,
+        "id": new_strategy_id,
+        "name": name,
+        "entrypoint": entrypoint,
+        "current_version": new_version,
         "created_at": now,
         "updated_at": now,
+        "description": description,
+        "owner": owner,
+        "tags": tags,
     }
 
-    TABLE.put_item(Item=item)
+    STRATEGIES_TABLE.put_item(Item=item)
     return _json(201, item)
 
 
-def get_strategy(strategy_id: str | None) -> Dict[str, Any]:
+def get_strategy(strategy_id: Optional[str]) -> Dict[str, Any]:
     if not strategy_id:
         return _json(400, {"message": "strategy id is required"})
 
-    resp = TABLE.get_item(Key={"id": strategy_id})
-    item = resp.get("Item")
+    item = _get_strategy_by_id(strategy_id)
     if not item:
         return _json(404, {"message": "Not found"})
     return _json(200, _clean_decimals(item))
 
 
-def update_strategy(strategy_id: str | None, body: Dict[str, Any]) -> Dict[str, Any]:
+def update_strategy(strategy_id: Optional[str], body: Dict[str, Any]) -> Dict[str, Any]:
     if not strategy_id:
         return _json(400, {"message": "strategy id is required"})
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = _now()
     item = {"id": strategy_id, **body, "updated_at": now}
-    TABLE.put_item(Item=item)
+    STRATEGIES_TABLE.put_item(Item=item)
     return _json(200, item)
+
+
+# ----------------------------
+# Helpers
+# ----------------------------
+
+def _copy_artifacts_from_source(
+    source_strategy_id: str,
+    target_strategy_id: str,
+    target_version: int,
+    description: str,
+    strategy_name: str,
+) -> None:
+    # Get all artifacts for the source strategy.
+    resp = ARTIFACTS_TABLE.query(
+        KeyConditionExpression=Key("strategy_id").eq(source_strategy_id)
+    )
+    artifacts = resp.get("Items", [])
+
+    readme_uploaded = False
+
+    for artifact in artifacts:
+        artifact_id = artifact["artifact_id"]
+        latest_version = artifact.get("latest_version")
+        if latest_version is None:
+            continue
+
+        pk = f"{source_strategy_id}#{artifact_id}"
+        version_resp = VERSIONS_TABLE.query(
+            KeyConditionExpression=Key("strategy_artifact_id").eq(pk)
+            & Key("strategy_version").eq(latest_version)
+        )
+        version_item = version_resp.get("Items", [])
+        if not version_item:
+            raise RuntimeError(f"Missing version record for {artifact_id} v{latest_version}")
+
+        source_s3_key = version_item[0]["s3_key"]
+        target_key = f"{target_strategy_id}/v{target_version}/{artifact_id}"
+
+        if artifact_id.lower() == "readme.md":
+            readme_uploaded = True
+            _put_readme(target_key, description, strategy_name)
+        else:
+            s3.copy_object(
+                Bucket=ARTIFACT_BUCKET,
+                CopySource={"Bucket": ARTIFACT_BUCKET, "Key": source_s3_key},
+                Key=target_key,
+            )
+
+        _write_artifact_metadata(
+            strategy_id=target_strategy_id,
+            artifact_id=artifact_id,
+            version=target_version,
+            s3_key=target_key,
+        )
+
+    # If no README existed in source, create one.
+    if not readme_uploaded:
+        target_key = f"{target_strategy_id}/v{target_version}/README.md"
+        _put_readme(target_key, description, strategy_name)
+        _write_artifact_metadata(
+            strategy_id=target_strategy_id,
+            artifact_id="README.md",
+            version=target_version,
+            s3_key=target_key,
+        )
+
+
+def _put_readme(key: str, description: str, name: str) -> None:
+    content = f"# {name}\n\n{description}".strip() or f"# {name}\n\nTBD"
+    s3.put_object(
+        Bucket=ARTIFACT_BUCKET,
+        Key=key,
+        Body=content.encode("utf-8"),
+    )
+
+
+def _write_artifact_metadata(strategy_id: str, artifact_id: str, version: int, s3_key: str) -> None:
+    ARTIFACTS_TABLE.put_item(
+        Item={
+            "strategy_id": strategy_id,
+            "artifact_id": artifact_id,
+            "latest_version": version,
+        }
+    )
+    VERSIONS_TABLE.put_item(
+        Item={
+            "strategy_artifact_id": f"{strategy_id}#{artifact_id}",
+            "strategy_version": version,
+            "s3_key": s3_key,
+            "created_at": _now(),
+        }
+    )
+
+
+def _count_strategies() -> int:
+    count = 0
+    scan_kwargs: Dict[str, Any] = {"ProjectionExpression": "id"}
+    while True:
+        resp = STRATEGIES_TABLE.scan(**scan_kwargs)
+        count += resp.get("Count", 0)
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        scan_kwargs["ExclusiveStartKey"] = last_key
+    return count
+
+
+def _get_strategy_by_id(strategy_id: str) -> Optional[Dict[str, Any]]:
+    resp = STRATEGIES_TABLE.get_item(Key={"id": strategy_id})
+    return resp.get("Item")
 
 
 def _authorized(event: Dict[str, Any]) -> bool:
@@ -103,6 +258,10 @@ def _clean_decimals(data: Any) -> Any:
     if isinstance(data, Decimal):
         return int(data) if data % 1 == 0 else float(data)
     return data
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _json(code: int, body: Any) -> Dict[str, Any]:
