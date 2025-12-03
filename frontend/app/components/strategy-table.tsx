@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Link } from "react-router-dom";
 import type { Strategy } from "../api";
 
@@ -11,6 +11,19 @@ export default function StrategyTable({
   strategies,
   isLoading = false,
 }: StrategyTableProps) {
+  const sortedStrategies = useMemo(
+    () =>
+      [...strategies].sort((a, b) => {
+        const aId = Number(a.strategyId);
+        const bId = Number(b.strategyId);
+        if (Number.isNaN(aId) || Number.isNaN(bId)) {
+          return String(a.strategyId).localeCompare(String(b.strategyId));
+        }
+        return aId - bId;
+      }),
+    [strategies]
+  );
+
   const formatDate = (value: string) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "—";
@@ -44,6 +57,7 @@ export default function StrategyTable({
       <table className="w-full rounded-xl overflow-hidden bg-slate-900">
         <thead className="sticky top-0 bg-slate-900 z-10">
           <tr className="border-b border-slate-600">
+            <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">ID</th>
             <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">
               Name
             </th>
@@ -88,13 +102,16 @@ export default function StrategyTable({
               </td>
             </tr>
           ) : (
-            strategies.map((strategy, index) => (
+            sortedStrategies.map((strategy, index) => (
               <tr
                 key={strategy.strategyId}
                 className={`border-b border-slate-800 hover:bg-slate-600/50 transition-colors ${
                   index % 2 === 0 ? "bg-slate-950/80" : "bg-slate-900/80"
                 }`}
               >
+                <td className="py-4 px-4 text-gray-300 font-mono text-xs">
+                  STR-{strategy.strategyId}
+                </td>
                 <td className="py-4 px-4 align-middle">
                   <div className="flex h-full flex-col items-center justify-center text-center">
                     <Link to={`/strategies/${strategy.strategyId}`} className="text-white font-medium hover:underline">
