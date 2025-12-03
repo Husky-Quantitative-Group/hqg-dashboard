@@ -74,6 +74,16 @@ export type StrategyWorkspaceResponse = {
   runs: BacktestResult[];
 };
 
+// Real API base configuration
+const CORE_API_BASE_URL = import.meta.env.VITE_CORE_API ?? "http://localhost:5000";
+const CORE_API_TOKEN = import.meta.env.VITE_API_TOKEN ?? "";
+
+const coreApi = axios.create({
+  baseURL: CORE_API_BASE_URL,
+  headers: CORE_API_TOKEN ? { "x-api-token": CORE_API_TOKEN } : undefined,
+});
+
+// Legacy/mock client (used only by local helpers below)
 const apiClient = axios.create({
   baseURL: "http://localhost:5000",
 });
@@ -256,9 +266,36 @@ the clip-size and cooldown are tuned to the venue micro-structure.`,
 
 let mockRuns = createMockRuns(mockWorkspaceStrategy.id);
 
+// ----- Real API: Strategies -----
+type CoreStrategy = {
+  id: string;
+  name: string;
+  entrypoint?: string;
+  current_version?: number;
+  created_at?: string;
+  updated_at?: string;
+  owner?: string;
+};
+
+const mapCoreStrategyToUi = (item: CoreStrategy): Strategy => ({
+  _id: item.id,
+  strategyId: item.id,
+  name: item.name,
+  description: "",
+  owner: item.owner ?? "",
+  project: "—",
+  repository: "—",
+  branch: "—",
+  githubPath: "",
+  htmlUrl: "#",
+  tags: [],
+  createdAt: item.created_at ?? new Date().toISOString(),
+  updatedAt: item.updated_at ?? new Date().toISOString(),
+});
+
 export const fetchStrategies = async (): Promise<Strategy[]> => {
-  const response = await apiClient.get<Strategy[]>("/api/strategies");
-  return response.data;
+  const response = await coreApi.get<CoreStrategy[]>("/strategies");
+  return response.data.map(mapCoreStrategyToUi);
 };
 
 export const fetchStrategyWorkspace = async (strategyId: string | number): Promise<StrategyWorkspaceResponse> => {
