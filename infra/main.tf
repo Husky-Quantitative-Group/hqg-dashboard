@@ -335,6 +335,12 @@ resource "aws_apigatewayv2_route" "post_strategies" {
   target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
 }
 
+resource "aws_apigatewayv2_route" "get_strategy_by_id" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /strategies/{id}"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+}
+
 resource "aws_lambda_permission" "allow_apigw_invoke_strategies" {
   statement_id  = "AllowAPIGWInvokeStrategies"
   action        = "lambda:InvokeFunction"
