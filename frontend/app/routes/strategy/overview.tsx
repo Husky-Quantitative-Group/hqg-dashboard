@@ -76,7 +76,13 @@ export default function StrategyOverview() {
               <div>
                 <dt className={labelColor}>Project</dt>
                 <dd className="text-base font-medium">
-                  PRJ {strategy.projectId} · {strategy.projectName}
+                  {strategy.projectId ? (
+                    <>
+                      PRJ {strategy.projectId} · {strategy.projectName}
+                    </>
+                  ) : (
+                    <span className="text-slate-500">Not assigned</span>
+                  )}
                 </dd>
               </div>
               <div>
@@ -90,16 +96,22 @@ export default function StrategyOverview() {
             </dl>
 
             <div>
-              <div className={`${labelColor} text-sm`}>Tags</div>
+              <div>
+                <dt className={labelColor}>Tags</dt>
+              </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {strategy.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}
-                  >
-                    {tag}
-                  </span>
-                ))}
+                {strategy.tags.length > 0 ? (
+                  strategy.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}
+                    >
+                      {tag}
+                    </span>
+                  ))
+                ) : (
+                  <dd className="text-base font-medium text-slate-500">No tags</dd>
+                )}
               </div>
             </div>
           </div>

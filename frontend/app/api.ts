@@ -313,6 +313,11 @@ export const fetchStrategies = async (): Promise<Strategy[]> => {
   return response.data.map(mapCoreStrategyToUi);
 };
 
+export const fetchStrategyById = async (strategyId: string | number): Promise<Strategy> => {
+  const response = await coreApi.get<CoreStrategy>(`/strategies/${strategyId}`);
+  return mapCoreStrategyToUi(response.data);
+};
+
 // ----- Real API: Create Strategy -----
 export type CreateStrategyRequest = {
   sourceStrategyId: string;
@@ -334,10 +339,24 @@ export const createStrategy = async (payload: CreateStrategyRequest): Promise<St
 };
 
 export const fetchStrategyWorkspace = async (strategyId: string | number): Promise<StrategyWorkspaceResponse> => {
-  await delay(300);
-  // For now we only have one mock strategy, so the id is ignored.
+  // Pull metadata from the real API, but keep the mock files/runs until backend supports them.
+  const strategy = await fetchStrategyById(strategyId);
+  const workspace = {
+    ...mockWorkspaceStrategy,
+    id: Number(strategy.strategyId) || mockWorkspaceStrategy.id,
+    name: strategy.name,
+    owner: strategy.owner || "—",
+    tags: strategy.tags,
+    description: strategy.description || "",
+    projectId: 0,
+    projectName: "—",
+    createdAt: strategy.createdAt,
+    updatedAt: strategy.updatedAt,
+    readme: strategy.description ? `# ${strategy.name}\n\n${strategy.description}` : mockWorkspaceStrategy.readme,
+  };
+
   return {
-    strategy: cloneWorkspace(mockWorkspaceStrategy),
+    strategy: cloneWorkspace(workspace),
     runs: cloneRuns(mockRuns),
   };
 };
