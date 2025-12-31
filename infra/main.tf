@@ -261,6 +261,12 @@ data "archive_file" "strategies_lambda" {
   output_path = "${path.module}/dist/strategies-lambda.zip"
 }
 
+data "archive_file" "strategy_artifacts_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/strategy_artifacts"
+  output_path = "${path.module}/dist/strategy-artifacts-lambda.zip"
+}
+
 data "aws_iam_policy_document" "lambda_assume_role" {
   statement {
     effect = "Allow"
@@ -279,6 +285,13 @@ resource "aws_iam_role" "strategies_lambda" {
   tags = local.tags
 }
 
+resource "aws_iam_role" "strategy_artifacts_lambda" {
+  name               = "${local.name_prefix}-strategy-artifacts-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = local.tags
+}
+
 resource "aws_iam_role_policy_attachment" "strategies_lambda_basic_logs" {
   role       = aws_iam_role.strategies_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -286,6 +299,16 @@ resource "aws_iam_role_policy_attachment" "strategies_lambda_basic_logs" {
 
 resource "aws_iam_role_policy_attachment" "strategies_lambda_storage" {
   role       = aws_iam_role.strategies_lambda.name
+  policy_arn = aws_iam_policy.strategy_storage.arn
+}
+
+resource "aws_iam_role_policy_attachment" "strategy_artifacts_lambda_basic_logs" {
+  role       = aws_iam_role.strategy_artifacts_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "strategy_artifacts_lambda_storage" {
+  role       = aws_iam_role.strategy_artifacts_lambda.name
   policy_arn = aws_iam_policy.strategy_storage.arn
 }
 
@@ -305,6 +328,28 @@ resource "aws_lambda_function" "strategies" {
       STRATEGY_ARTIFACT_VERSIONS_TABLE = aws_dynamodb_table.strategy_artifact_versions.name
       ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket
       API_TOKEN                        = var.api_token
+    }
+  }
+
+  tags = local.tags
+}
+
+resource "aws_lambda_function" "strategy_artifacts" {
+  function_name = "${local.name_prefix}-strategy-artifacts"
+  role          = aws_iam_role.strategy_artifacts_lambda.arn
+  runtime       = "python3.11"
+  handler       = "main.handler"
+
+  filename         = data.archive_file.strategy_artifacts_lambda.output_path
+  source_code_hash = data.archive_file.strategy_artifacts_lambda.output_base64sha256
+
+  environment {
+    variables = {
+      STRATEGIES_TABLE                  = aws_dynamodb_table.strategies.name
+      STRATEGY_ARTIFACTS_TABLE          = aws_dynamodb_table.strategy_artifacts.name
+      STRATEGY_ARTIFACT_VERSIONS_TABLE  = aws_dynamodb_table.strategy_artifact_versions.name
+      ARTIFACT_BUCKET                   = aws_s3_bucket.strategy_artifacts.bucket
+      API_TOKEN                         = var.api_token
     }
   }
 
