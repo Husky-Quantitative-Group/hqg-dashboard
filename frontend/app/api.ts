@@ -318,6 +318,11 @@ export const fetchStrategyById = async (strategyId: string | number): Promise<St
   return mapCoreStrategyToUi(response.data);
 };
 
+export const fetchStrategyArtifacts = async (strategyId: string | number): Promise<string[]> => {
+  const response = await coreApi.get<{ artifacts: string[] }>(`/strategies/${strategyId}/artifacts`);
+  return response.data.artifacts ?? [];
+};
+
 // ----- Real API: Create Strategy -----
 export type CreateStrategyRequest = {
   sourceStrategyId: string;
@@ -339,8 +344,23 @@ export const createStrategy = async (payload: CreateStrategyRequest): Promise<St
 };
 
 export const fetchStrategyWorkspace = async (strategyId: string | number): Promise<StrategyWorkspaceResponse> => {
-  // Pull metadata from the real API, but keep the mock files/runs until backend supports them.
-  const strategy = await fetchStrategyById(strategyId);
+  // Pull metadata from the real API, derive files from the artifacts list, keep mock runs for now.
+  const [strategy, artifactIds] = await Promise.all([
+    fetchStrategyById(strategyId),
+    fetchStrategyArtifacts(strategyId),
+  ]);
+
+  const files: StrategyFile[] = artifactIds.map((path) => {
+    const isReadme = path.toLowerCase().includes("readme");
+    const isEntrypoint = !!strategy.entrypoint && path === strategy.entrypoint;
+    return {
+      path,
+      language: guessLanguage(path),
+      content: isReadme && strategy.description ? `# ${strategy.name}\n\n${strategy.description}` : "",
+      isEntrypoint,
+    };
+  });
+
   const workspace = {
     ...mockWorkspaceStrategy,
     id: Number(strategy.strategyId) || mockWorkspaceStrategy.id,
@@ -352,6 +372,7 @@ export const fetchStrategyWorkspace = async (strategyId: string | number): Promi
     projectName: "—",
     createdAt: strategy.createdAt,
     updatedAt: strategy.updatedAt,
+    files,
     readme: strategy.description ? `# ${strategy.name}\n\n${strategy.description}` : mockWorkspaceStrategy.readme,
   };
 
@@ -360,6 +381,16 @@ export const fetchStrategyWorkspace = async (strategyId: string | number): Promi
     runs: cloneRuns(mockRuns),
   };
 };
+
+function guessLanguage(path: string): string {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".py")) return "python";
+  if (lower.endsWith(".md")) return "markdown";
+  if (lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "yaml";
+  if (lower.endsWith(".txt")) return "plaintext";
+  return "plaintext";
+}
 
 export const saveStrategyWorkspaceDraft = async (
   strategyId: number,
