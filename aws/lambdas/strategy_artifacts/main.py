@@ -37,7 +37,7 @@ def handler(event, context):
     if route == "GET /strategies/{id}/artifacts/{artifactId}":
         strategy_id = event["pathParameters"]["id"]
         artifact_id = event["pathParameters"]["artifactId"]
-        return get_download_url(strategy_id, artifact_id)
+        return download_artifact(strategy_id, artifact_id)
 
     if route == "PUT /strategies/{id}/artifacts/{artifactId}":
         strategy_id = event["pathParameters"]["id"]
@@ -95,17 +95,45 @@ def complete_upload(strategy_id, artifact_ids):
     return _json(200, {"ok": True})
 
 
-def get_download_url(strategy_id, artifact_id):
-    # In the "non-versioned" stage, always serve latest
-    key = f"{strategy_id}/latest/{artifact_id}"
+def download_artifact(strategy_id, artifact_id, max_bytes=1_000_000):
+    artifact = ARTIFACTS_TABLE.get_item(Key={"strategy_id": strategy_id, "artifact_id": artifact_id}).get("Item")
+    if not artifact:
+        return _json(404, {"message": "Artifact not found"})
 
-    url = s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": BUCKET, "Key": key},
-        ExpiresIn=300,
-    )
+    latest_version = artifact.get("latest_version")
+    if latest_version is None:
+        return _json(404, {"message": "No versions available for artifact"})
 
-    return _json(200, {"downloadUrl": url})
+    pk = f"{strategy_id}#{artifact_id}"
+    version_resp = VERSIONS_TABLE.get_item(Key={"strategy_artifact_id": pk, "strategy_version": latest_version})
+    version_item = version_resp.get("Item")
+    if not version_item:
+        return _json(404, {"message": "Artifact version not found"})
+
+    key = version_item["s3_key"]
+    try:
+        obj = s3.get_object(Bucket=BUCKET, Key=key)
+    except Exception:
+        return _json(404, {"message": "Object not found"})
+
+    size = obj.get("ContentLength", 0)
+    if size and size > max_bytes:
+        return _json(413, {"message": "Artifact too large"})
+
+    body = obj["Body"].read()
+    import base64
+
+    content_type = obj.get("ContentType") or "application/octet-stream"
+
+    return {
+        "statusCode": 200,
+        "isBase64Encoded": True,
+        "headers": {
+            "Content-Type": content_type,
+            "Content-Disposition": f'attachment; filename="{artifact_id}"',
+        },
+        "body": base64.b64encode(body).decode("utf-8"),
+    }
 
 
 def update_single_artifact(strategy_id, artifact_id):

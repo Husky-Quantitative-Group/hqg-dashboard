@@ -417,3 +417,10 @@ resource "aws_lambda_permission" "allow_apigw_invoke_strategy_artifacts" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }
+
+# GET /strategies/{id}/artifacts/{artifactId}
+resource "aws_apigatewayv2_route" "get_strategy_artifact_by_id" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /strategies/{id}/artifacts/{artifactId}"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+}
