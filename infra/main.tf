@@ -249,8 +249,6 @@ resource "aws_apigatewayv2_stage" "dev" {
   tags = local.tags
 }
 
-# TODO: Add integrations and routes for strategies/artifacts lambdas here.
-
 # ------------------------------
 # Lambda packaging and deployment
 # ------------------------------
@@ -357,7 +355,7 @@ resource "aws_lambda_function" "strategy_artifacts" {
 }
 
 # ------------------------------
-# API Gateway integration/route for GET /strategies
+# API Gateway integration/routes for strategies lambda
 # ------------------------------
 
 resource "aws_apigatewayv2_integration" "get_strategies" {
@@ -390,6 +388,32 @@ resource "aws_lambda_permission" "allow_apigw_invoke_strategies" {
   statement_id  = "AllowAPIGWInvokeStrategies"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.strategies.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+# ------------------------------
+# API Gateway integration/routes for strategy_artifacts lambda
+# ------------------------------
+
+resource "aws_apigatewayv2_integration" "get_strategy_artifacts" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.strategy_artifacts.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "get_strategy_artifacts" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /strategies/{id}/artifacts"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+}
+
+resource "aws_lambda_permission" "allow_apigw_invoke_strategy_artifacts" {
+  statement_id  = "AllowAPIGWInvokeStrategyArtifacts"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.strategy_artifacts.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }

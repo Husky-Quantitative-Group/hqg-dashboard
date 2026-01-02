@@ -1,6 +1,7 @@
 import json
 import boto3
 import os
+from decimal import Decimal
 
 s3 = boto3.client("s3")
 dynamo = boto3.resource("dynamodb")
@@ -8,14 +9,13 @@ dynamo = boto3.resource("dynamodb")
 BUCKET = os.environ["ARTIFACT_BUCKET"]
 ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
 STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
-VERSIONS_TABLE = dynamo.Table(os.environ.get("STRATEGY_ARTIFACT_VERSIONS_TABLE"))
+VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
 API_TOKEN = os.environ["API_TOKEN"]
 
 
 def handler(event, context):
     # Simple shared-secret auth
-    headers = event.get("headers") or {}
-    if headers.get("x-api-token") != API_TOKEN:
+    if not _authorized(event):
         return {"statusCode": 401, "body": "Unauthorized"}
 
     route = event["requestContext"]["routeKey"]
@@ -56,7 +56,9 @@ def list_artifacts(strategy_id):
         KeyConditionExpression="strategy_id = :s",
         ExpressionAttributeValues={":s": strategy_id}
     )
-    return _json(200, {"artifacts": resp.get("Items", [])})
+    items = resp.get("Items", [])
+    artifact_ids = [item.get("artifact_id") for item in items if "artifact_id" in item]
+    return _json(200, {"artifacts": artifact_ids})
 
 
 def create_upload_urls(strategy_id, files):
@@ -119,6 +121,22 @@ def update_single_artifact(strategy_id, artifact_id):
     )
 
     return _json(200, {"artifactId": artifact_id, "uploadUrl": url})
+
+
+def _authorized(event):
+    headers = event.get("headers") or {}
+    token = headers.get("x-api-token") or headers.get("x-api-key")
+    return token == API_TOKEN
+
+
+def _clean_decimals(data):
+    if isinstance(data, list):
+        return [_clean_decimals(item) for item in data]
+    if isinstance(data, dict):
+        return {k: _clean_decimals(v) for k, v in data.items()}
+    if isinstance(data, Decimal):
+        return int(data) if data % 1 == 0 else float(data)
+    return data
 
 
 def _json(code, body):
