@@ -1,10 +1,10 @@
 import { NavLink, Outlet, useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchStrategyWorkspace,
-  saveStrategyWorkspaceDraft,
   startStrategyRunExecution,
   fetchStrategyArtifactContent,
+  uploadStrategyArtifacts,
   type StrategyArtifact,
   type StrategyFile,
   type BacktestResult,
@@ -62,6 +62,7 @@ export default function StrategyLayout() {
   const navigate = useNavigate();
   const [strategy, setStrategy] = useState<WorkspaceStrategy | null>(null);
   const [files, setFiles] = useState<StrategyFile[]>([]);
+  const initialFilesRef = useRef<StrategyFile[]>([]);
   const [artifacts, setArtifacts] = useState<StrategyArtifact[]>([]);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [runs, setRuns] = useState<BacktestResult[]>([]);
@@ -101,6 +102,7 @@ export default function StrategyLayout() {
         const artifactSnapshot = cloneArtifacts(payload.strategy.artifacts);
         setStrategy(payload.strategy);
         setFiles(fileSnapshot);
+        initialFilesRef.current = cloneFiles(payload.strategy.files);
         setArtifacts(artifactSnapshot);
         setSelectedFilePath(
           payload.strategy.files.find((file) => file.isEntrypoint)?.path ?? payload.strategy.files[0]?.path ?? null
@@ -188,6 +190,9 @@ export default function StrategyLayout() {
       .then((content) => {
         if (cancelled) return;
         setFiles((prev) => prev.map((f) => (f.path === selectedFilePath ? { ...f, content: content ?? "" } : f)));
+        initialFilesRef.current = initialFilesRef.current.some((f) => f.path === selectedFilePath)
+          ? initialFilesRef.current.map((f) => (f.path === selectedFilePath ? { ...f, content: content ?? "" } : f))
+          : [...initialFilesRef.current, { path: selectedFilePath, content: content ?? "", language: file?.language ?? "plaintext" }];
         setLoadedFilePaths((prev) => (prev.includes(selectedFilePath) ? prev : [...prev, selectedFilePath]));
       })
       .catch((error) => {
@@ -207,22 +212,32 @@ export default function StrategyLayout() {
   }, [addToast, files, selectedFilePath, strategy]);
 
   const handleSave = useCallback(async () => {
-    if (isSaving || !isDirty || !strategy) {
+    if (isSaving || !strategy) {
       return;
     }
+
+    const changedFiles = files.filter((file) => {
+      if (typeof file.content !== "string") return false;
+      const baseline = initialFilesRef.current.find((f) => f.path === file.path);
+      return !baseline || baseline.content !== file.content;
+    });
+
+    if (changedFiles.length === 0) {
+      setIsDirty(false);
+      setAutosaveMessage("No changes to save");
+      addToast("No changes to save", "info");
+      return;
+    }
+
     setIsSaving(true);
     setAutosaveMessage("Saving...");
     addToast("Saving workspace", "info");
-    const snapshot = cloneFiles(files);
-    const artifactSnapshot = cloneArtifacts(artifacts);
     try {
-      const updatedStrategy = await saveStrategyWorkspaceDraft(strategy.id, {
-        files: snapshot,
-        artifacts: artifactSnapshot,
-      });
-      setStrategy(updatedStrategy);
+      await uploadStrategyArtifacts(strategy.id, changedFiles);
+      initialFilesRef.current = cloneFiles(files);
       setIsDirty(false);
       setAutosaveMessage("All changes saved");
+      setStrategy((prev) => (prev ? { ...prev, updatedAt: new Date().toISOString() } : prev));
       addToast("Workspace saved", "success");
     } catch (error) {
       console.error("Failed to save workspace", error);
@@ -231,7 +246,7 @@ export default function StrategyLayout() {
     } finally {
       setIsSaving(false);
     }
-  }, [addToast, artifacts, files, isDirty, isSaving, strategy]);
+  }, [addToast, files, isSaving, strategy]);
 
   const handleRun = useCallback(() => {
     if (isRunning || !strategy) {
@@ -353,6 +368,7 @@ export default function StrategyLayout() {
               className={`rounded-xl px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
                 isSaving || !isDirty ? "cursor-not-allowed bg-slate-700/60 text-slate-300" : "bg-gradient-to-r from-fuchsia-600 to-indigo-500"
               }`}
+              onClick={handleSave}
             >
               Save New Version
             </button>

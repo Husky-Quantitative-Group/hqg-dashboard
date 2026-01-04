@@ -333,6 +333,20 @@ export const fetchStrategyArtifactContent = async (
   return response.data;
 };
 
+export const uploadStrategyArtifacts = async (
+  strategyId: string | number,
+  files: StrategyFile[]
+): Promise<{ ok?: boolean; version?: number; artifacts?: string[] }> => {
+  const payload = {
+    files: files.map((file) => ({
+      artifactId: file.path,
+      content: file.content ?? "",
+    })),
+  };
+  const response = await coreApi.post(`/strategies/${strategyId}/artifacts`, payload);
+  return response.data;
+};
+
 // ----- Real API: Create Strategy -----
 export type CreateStrategyRequest = {
   sourceStrategyId: string;
