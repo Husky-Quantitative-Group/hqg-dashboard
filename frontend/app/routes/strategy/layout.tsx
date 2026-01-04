@@ -4,6 +4,7 @@ import {
   fetchStrategyWorkspace,
   saveStrategyWorkspaceDraft,
   startStrategyRunExecution,
+  fetchStrategyArtifactContent,
   type StrategyArtifact,
   type StrategyFile,
   type BacktestResult,
@@ -37,6 +38,8 @@ export type StrategyWorkspaceContext = {
   addArtifactRecord: (artifact: Omit<StrategyArtifact, "id" | "updatedAt" | "addedBy">) => void;
   removeArtifactRecord: (artifactId: string) => void;
   addToast: (message: string, variant?: ToastVariant) => void;
+  loadingFilePath: string | null;
+  fileLoadError: string | null;
 };
 
 const TABS = [
@@ -70,6 +73,9 @@ export default function StrategyLayout() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadingFilePath, setLoadingFilePath] = useState<string | null>(null);
+  const [fileLoadError, setFileLoadError] = useState<string | null>(null);
+  const [loadedFilePaths, setLoadedFilePaths] = useState<string[]>([]);
 
   const entrypoint = useMemo(() => files.find((file) => file.isEntrypoint), [files]);
 
@@ -163,6 +169,42 @@ export default function StrategyLayout() {
     },
     [addToast, markDirty]
   );
+
+  // Lazy-load file content when a file is selected and not yet loaded.
+  useEffect(() => {
+    if (!strategy || !selectedFilePath) {
+      return;
+    }
+    const file = files.find((f) => f.path === selectedFilePath);
+    if (!file || file.content || loadedFilePaths.includes(selectedFilePath)) {
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingFilePath(selectedFilePath);
+    setFileLoadError(null);
+
+    fetchStrategyArtifactContent(strategy.id, selectedFilePath)
+      .then((content) => {
+        if (cancelled) return;
+        setFiles((prev) => prev.map((f) => (f.path === selectedFilePath ? { ...f, content: content ?? "" } : f)));
+        setLoadedFilePaths((prev) => (prev.includes(selectedFilePath) ? prev : [...prev, selectedFilePath]));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("Failed to load file content", error);
+        setFileLoadError("Failed to load file content");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingFilePath(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [addToast, files, selectedFilePath, strategy]);
 
   const handleSave = useCallback(async () => {
     if (isSaving || !isDirty || !strategy) {
@@ -278,6 +320,8 @@ export default function StrategyLayout() {
     addArtifactRecord,
     removeArtifactRecord,
     addToast,
+    loadingFilePath,
+    fileLoadError,
   };
 
   return (

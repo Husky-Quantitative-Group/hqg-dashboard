@@ -303,9 +303,7 @@ const mapCoreStrategyToUi = (item: CoreStrategy): Strategy => ({
     sortino: item.metrics?.sortino,
     maxDrawdown: item.metrics?.max_drawdown,
     winRate: item.metrics?.win_rate,
-  },
-  description: item.description ?? "",
-  tags: item.tags ?? [],
+  }
 });
 
 export const fetchStrategies = async (): Promise<Strategy[]> => {
@@ -321,6 +319,18 @@ export const fetchStrategyById = async (strategyId: string | number): Promise<St
 export const fetchStrategyArtifacts = async (strategyId: string | number): Promise<string[]> => {
   const response = await coreApi.get<{ artifacts: string[] }>(`/strategies/${strategyId}/artifacts`);
   return response.data.artifacts ?? [];
+};
+
+export const fetchStrategyArtifactContent = async (
+  strategyId: string | number,
+  artifactId: string
+): Promise<string> => {
+  const response = await coreApi.get<string>(`/strategies/${strategyId}/artifacts/${artifactId}`, {
+    responseType: "text",
+    transformResponse: [(data) => data], // return raw text
+  });
+
+  return response.data;
 };
 
 // ----- Real API: Create Strategy -----
@@ -350,13 +360,29 @@ export const fetchStrategyWorkspace = async (strategyId: string | number): Promi
     fetchStrategyArtifacts(strategyId),
   ]);
 
+  const readmePath = artifactIds.find((p) => p.toLowerCase().includes("readme"));
+  let readmeContent =
+    strategy.description && strategy.description.trim()
+      ? `# ${strategy.name}\n\n${strategy.description}`
+      : "# README\n\nNo description provided.";
+  if (readmePath) {
+    try {
+      const content = await fetchStrategyArtifactContent(strategyId, readmePath);
+      if (content) {
+        readmeContent = content;
+      }
+    } catch (error) {
+      console.error("Failed to load README content", error);
+    }
+  }
+
   const files: StrategyFile[] = artifactIds.map((path) => {
     const isReadme = path.toLowerCase().includes("readme");
     const isEntrypoint = !!strategy.entrypoint && path === strategy.entrypoint;
     return {
       path,
       language: guessLanguage(path),
-      content: isReadme && strategy.description ? `# ${strategy.name}\n\n${strategy.description}` : "",
+      content: isReadme ? readmeContent : "",
       isEntrypoint,
     };
   });
@@ -373,7 +399,7 @@ export const fetchStrategyWorkspace = async (strategyId: string | number): Promi
     createdAt: strategy.createdAt,
     updatedAt: strategy.updatedAt,
     files,
-    readme: strategy.description ? `# ${strategy.name}\n\n${strategy.description}` : mockWorkspaceStrategy.readme,
+    readme: readmeContent || mockWorkspaceStrategy.readme,
   };
 
   return {

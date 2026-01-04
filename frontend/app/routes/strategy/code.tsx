@@ -13,6 +13,8 @@ export default function StrategyCodeWorkspace() {
     isDirty,
     isRunning,
     isSaving,
+    loadingFilePath,
+    fileLoadError,
   } = useStrategyWorkspace();
 
   const [editorReady, setEditorReady] = useState(false);
@@ -30,6 +32,7 @@ export default function StrategyCodeWorkspace() {
     () => codeFiles.find((file) => file.path === selectedFilePath),
     [codeFiles, selectedFilePath]
   );
+  const isLoadingFile = loadingFilePath !== null && loadingFilePath === selectedFilePath;
 
   useEffect(() => {
     setEditorReady(true);
@@ -111,7 +114,9 @@ export default function StrategyCodeWorkspace() {
         </div>
 
         <div className="flex-1">
-          {selectedFile && editorReady ? (
+          {isLoadingFile ? (
+            <div className={`flex h-full items-center justify-center text-sm ${placeholderClass}`}>Loading file...</div>
+          ) : selectedFile && editorReady ? (
             <Editor
               key={selectedFile.path}
               height="100%"
@@ -130,7 +135,7 @@ export default function StrategyCodeWorkspace() {
             />
           ) : (
             <div className={`flex h-full items-center justify-center text-sm ${placeholderClass}`}>
-              Select a file to start editing
+              {fileLoadError ? fileLoadError : "Select a file to start editing"}
             </div>
           )}
         </div>
