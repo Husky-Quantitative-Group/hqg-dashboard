@@ -276,6 +276,14 @@ export default function StrategyLayout() {
       });
   }, [addToast, isRunning, runs.length, strategy]);
 
+  const handleClose = useCallback(() => {
+    if (isDirty) {
+      const confirmLeave = window.confirm("You have unsaved changes. Leave without saving?");
+      if (!confirmLeave) return;
+    }
+    navigate("/strategies");
+  }, [isDirty, navigate]);
+
   const surface = "border border-slate-800/70 bg-slate-950/60";
   const navSurface = "bg-slate-900/60";
   const navBorder = "border-slate-800/50";
@@ -374,7 +382,7 @@ export default function StrategyLayout() {
             </button>
             <button
               type="button"
-              onClick={() => navigate("/strategies")}
+              onClick={handleClose}
               className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
             >
               Close
