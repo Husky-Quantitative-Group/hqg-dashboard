@@ -410,6 +410,12 @@ resource "aws_apigatewayv2_route" "get_strategy_artifacts" {
   target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
 }
 
+resource "aws_apigatewayv2_route" "post_strategy_artifacts" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "POST /strategies/{id}/artifacts"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+}
+
 resource "aws_lambda_permission" "allow_apigw_invoke_strategy_artifacts" {
   statement_id  = "AllowAPIGWInvokeStrategyArtifacts"
   action        = "lambda:InvokeFunction"
@@ -418,7 +424,6 @@ resource "aws_lambda_permission" "allow_apigw_invoke_strategy_artifacts" {
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }
 
-# GET /strategies/{id}/artifacts/{artifactId}
 resource "aws_apigatewayv2_route" "get_strategy_artifact_by_id" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /strategies/{id}/artifacts/{artifactId}"
