@@ -18,16 +18,7 @@ export default function StrategyCodeWorkspace() {
   } = useStrategyWorkspace();
 
   const [editorReady, setEditorReady] = useState(false);
-  const codeFiles = useMemo(
-    () =>
-      files.filter(
-        (file) =>
-          file.language === "python" ||
-          file.path.toLowerCase().endsWith(".txt") ||
-          file.path.toLowerCase() === "readme.md"
-      ),
-    [files]
-  );
+  const codeFiles = useMemo(() => files, [files]);
   const selectedFile = useMemo(
     () => codeFiles.find((file) => file.path === selectedFilePath),
     [codeFiles, selectedFilePath]
