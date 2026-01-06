@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createStrategy, fetchStrategies, type Strategy } from "../api";
+import { createStrategy, fetchStrategies, type Strategy } from "../api/strategies";
 
 type TemplateOption = {
   id: string;
@@ -30,7 +30,7 @@ export default function CreateStrategy() {
         if (!cancelled) {
           setStrategies(data);
           if (data.length) {
-            setSelectedTemplateId(data[0].strategyId);
+            setSelectedTemplateId(data[0].id);
           }
         }
       } catch (error) {
@@ -51,12 +51,12 @@ export default function CreateStrategy() {
   }, []);
 
   const templateOptions: TemplateOption[] = useMemo(
-    () => strategies.map((s) => ({ id: s.strategyId, name: s.name })),
+    () => strategies.map((s) => ({ id: s.id, name: s.name })),
     [strategies]
   );
 
   const selectedTemplate = useMemo(
-    () => strategies.find((s) => s.strategyId === selectedTemplateId) ?? null,
+    () => strategies.find((s) => s.id === selectedTemplateId) ?? null,
     [selectedTemplateId, strategies]
   );
 
@@ -92,8 +92,8 @@ export default function CreateStrategy() {
         tags,
         owner: owner.trim(),
       });
-      setSuccessMessage(`Created strategy ${newStrategy.name} (ID ${newStrategy.strategyId})`);
-      navigate(`/strategies/${newStrategy.strategyId}`);
+      setSuccessMessage(`Created strategy ${newStrategy.name} (ID ${newStrategy.id})`);
+      navigate(`/strategies/${newStrategy.id}`);
     } catch (error) {
       console.error("Failed to create strategy", error);
       setErrorMessage("Failed to create strategy");
@@ -145,7 +145,7 @@ export default function CreateStrategy() {
               <div className="mt-2 space-y-2 text-sm text-slate-200">
                 <div className="font-semibold text-white">{selectedTemplate.name}</div>
                 <div className="text-slate-400 text-xs">
-                  Owner: {selectedTemplate.owner || "—"} · Updated: {new Date(selectedTemplate.updatedAt).toLocaleString()}
+                  Owner: {selectedTemplate.owner || "—"} · Updated: {selectedTemplate.updated_at ? new Date(selectedTemplate.updated_at).toLocaleString() : "-"}
                 </div>
                 <div className="text-slate-300 text-xs line-clamp-3">
                   {selectedTemplate.description || "No description provided."}
@@ -184,7 +184,7 @@ export default function CreateStrategy() {
           </label>
 
           <label className="flex flex-col gap-2">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Description (markdown)</span>
+            <span className="text-xs uppercase tracking-wide text-slate-500">README (markdown)</span>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}

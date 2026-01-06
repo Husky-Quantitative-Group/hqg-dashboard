@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { Link } from "react-router-dom";
-import type { Strategy } from "../api";
+import type { Strategy } from "../api/strategies";
 
 type StrategyTableProps = {
   strategies: Strategy[];
@@ -14,23 +14,25 @@ export default function StrategyTable({
   const sortedStrategies = useMemo(
     () =>
       [...strategies].sort((a, b) => {
-        const aId = Number(a.strategyId);
-        const bId = Number(b.strategyId);
+        const aId = Number(a.id);
+        const bId = Number(b.id);
         if (Number.isNaN(aId) || Number.isNaN(bId)) {
-          return String(a.strategyId).localeCompare(String(b.strategyId));
+          return String(a.id).localeCompare(String(b.id));
         }
         return aId - bId;
       }),
     [strategies]
   );
 
-  const formatDate = (value: string) => {
+  const formatDate = (value?: string) => {
+    if (!value) return "—";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "—";
     return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
   };
 
-  const formatDateTime = (value: string) => {
+  const formatDateTime = (value?: string) => {
+    if (!value) return "—";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "—";
     return date.toLocaleString(undefined, {
@@ -85,42 +87,36 @@ export default function StrategyTable({
         <tbody>
           {isLoading ? (
             <tr>
-              <td
-                colSpan={7}
-                className="py-6 px-4 text-center text-gray-400 text-sm"
-              >
+              <td colSpan={11} className="py-6 px-4 text-center text-gray-400 text-sm">
                 Loading strategies...
               </td>
             </tr>
           ) : strategies.length === 0 ? (
             <tr>
-              <td
-                colSpan={7}
-                className="py-6 px-4 text-center text-gray-400 text-sm"
-              >
+              <td colSpan={11} className="py-6 px-4 text-center text-gray-400 text-sm">
                 No strategies found.
               </td>
             </tr>
           ) : (
             sortedStrategies.map((strategy, index) => (
               <tr
-                key={strategy.strategyId}
+                key={strategy.id}
                 className={`border-b border-slate-800 hover:bg-slate-600/50 transition-colors ${
                   index % 2 === 0 ? "bg-slate-950/80" : "bg-slate-900/80"
                 }`}
               >
                 <td className="py-4 px-4 text-gray-300 font-mono text-xs">
-                  STR-{strategy.strategyId}
+                  STR-{strategy.id}
                 </td>
                 <td className="py-4 px-4 align-middle">
                   <div className="flex h-full flex-col items-center justify-center text-center">
-                    <Link to={`/strategies/${strategy.strategyId}`} className="text-white font-medium hover:underline">
+                    <Link to={`/strategies/${strategy.id}`} className="text-white font-medium hover:underline">
                       {strategy.name}
                     </Link>
                   </div>
                 </td>
                 <td className="py-4 px-4">
-                  <div className="text-gray-300">{strategy.project}</div>
+                  <div className="text-gray-300">{strategy.project_id}</div>
                 </td>
                 <td className="py-4 px-4">
                   <div className="text-white font-medium">
@@ -128,14 +124,14 @@ export default function StrategyTable({
                   </div>
                 </td>
                 <td className="py-4 px-4">
-                  <div className="text-gray-300">{formatDate(strategy.createdAt)}</div>
+                  <div className="text-gray-300">{formatDate(strategy.created_at)}</div>
                 </td>
                 <td className="py-4 px-4">
-                  <div className="text-gray-300">{formatDateTime(strategy.updatedAt)}</div>
+                  <div className="text-gray-300">{formatDateTime(strategy.updated_at)}</div>
                 </td>
                 <td className="py-4 px-4">
                   <div className="flex flex-wrap gap-1">
-                    {strategy.tags.map((tag, tagIndex) => (
+                    {(strategy.tags ?? []).map((tag, tagIndex) => (
                       <span
                         key={tagIndex}
                         className="inline-flex items-center px-2 py-1 text-xs font-medium bg-blue-900/50 text-blue-300 rounded border border-blue-700"
@@ -152,10 +148,10 @@ export default function StrategyTable({
                   {formatNumber(strategy.metrics?.sortino)}
                 </td>
                 <td className="py-4 px-4 text-gray-200 font-mono text-sm">
-                  {formatPercent(strategy.metrics?.maxDrawdown)}
+                  {formatPercent(strategy.metrics?.max_drawdown)}
                 </td>
                 <td className="py-4 px-4 text-gray-200 font-mono text-sm">
-                  {formatPercent(strategy.metrics?.winRate)}
+                  {formatPercent(strategy.metrics?.win_rate)}
                 </td>
               </tr>
             ))

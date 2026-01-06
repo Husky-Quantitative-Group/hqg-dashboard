@@ -1,15 +1,9 @@
 import { NavLink, Outlet, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  fetchStrategyWorkspace,
-  startStrategyRunExecution,
-  fetchStrategyArtifactContent,
-  uploadStrategyArtifacts,
-  type StrategyArtifact,
-  type StrategyFile,
-  type BacktestResult,
-  type WorkspaceStrategy,
-} from "../../api";
+import { fetchStrategyWorkspace, startStrategyRunExecution } from "./workspace";
+import type { BacktestResult } from "./workspace";
+import { fetchStrategyArtifactContent, uploadStrategyArtifacts, type StrategyFile } from "~/api/strategyArtifacts";
+import { type Strategy } from "~/api/strategies";
 
 type ToastVariant = "info" | "success" | "warning";
 
@@ -20,7 +14,7 @@ type Toast = {
 };
 
 export type StrategyWorkspaceContext = {
-  strategy: WorkspaceStrategy;
+  strategy: Strategy;
   files: StrategyFile[];
   entrypoint?: StrategyFile;
   selectedFilePath: string | null;
@@ -34,9 +28,6 @@ export type StrategyWorkspaceContext = {
   runs: BacktestResult[];
   selectedRunId: number | null;
   selectRun: (runId: number) => void;
-  artifacts: StrategyArtifact[];
-  addArtifactRecord: (artifact: Omit<StrategyArtifact, "id" | "updatedAt" | "addedBy">) => void;
-  removeArtifactRecord: (artifactId: string) => void;
   addToast: (message: string, variant?: ToastVariant) => void;
   loadingFilePath: string | null;
   fileLoadError: string | null;
@@ -53,17 +44,12 @@ function cloneFiles(items: StrategyFile[]): StrategyFile[] {
   return items.map((file) => ({ ...file }));
 }
 
-function cloneArtifacts(items: StrategyArtifact[]): StrategyArtifact[] {
-  return items.map((artifact) => ({ ...artifact }));
-}
-
 export default function StrategyLayout() {
   const { strategyId = "1" } = useParams<{ strategyId?: string }>();
   const navigate = useNavigate();
-  const [strategy, setStrategy] = useState<WorkspaceStrategy | null>(null);
+  const [strategy, setStrategy] = useState<Strategy | null>(null);
   const [files, setFiles] = useState<StrategyFile[]>([]);
   const initialFilesRef = useRef<StrategyFile[]>([]);
-  const [artifacts, setArtifacts] = useState<StrategyArtifact[]>([]);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [runs, setRuns] = useState<BacktestResult[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
@@ -98,17 +84,15 @@ export default function StrategyLayout() {
         if (cancelled) {
           return;
         }
-        const fileSnapshot = cloneFiles(payload.strategy.files);
-        const artifactSnapshot = cloneArtifacts(payload.strategy.artifacts);
+        const fileSnapshot = cloneFiles(payload.files);
         setStrategy(payload.strategy);
         setFiles(fileSnapshot);
-        initialFilesRef.current = cloneFiles(payload.strategy.files);
-        setArtifacts(artifactSnapshot);
+        initialFilesRef.current = cloneFiles(payload.files);
         setSelectedFilePath(
-          payload.strategy.files.find((file) => file.isEntrypoint)?.path ?? payload.strategy.files[0]?.path ?? null
+          payload.files.find((file) => file.isEntrypoint)?.path ?? payload.files[0]?.path ?? null
         );
-        setRuns(payload.runs);
-        setSelectedRunId(payload.runs[0]?.id ?? null);
+        setRuns(payload.backtestResults);
+        setSelectedRunId(payload.backtestResults[0]?.id ?? null);
         setIsDirty(false);
         setAutosaveMessage("All changes saved");
       } catch (error) {
@@ -146,30 +130,6 @@ export default function StrategyLayout() {
       markDirty();
     },
     [markDirty]
-  );
-
-  const addArtifactRecord = useCallback(
-    (artifact: Omit<StrategyArtifact, "id" | "updatedAt" | "addedBy">) => {
-      const record: StrategyArtifact = {
-        ...artifact,
-        id: `artifact-${Date.now()}`,
-        updatedAt: new Date().toISOString(),
-        addedBy: "You",
-      };
-      setArtifacts((prev) => [record, ...prev]);
-      markDirty();
-      addToast(`Attached ${artifact.name}`, "success");
-    },
-    [addToast, markDirty]
-  );
-
-  const removeArtifactRecord = useCallback(
-    (artifactId: string) => {
-      setArtifacts((prev) => prev.filter((artifact) => artifact.id !== artifactId));
-      markDirty();
-      addToast("Artifact removed", "warning");
-    },
-    [addToast, markDirty]
   );
 
   // Lazy-load file content when a file is selected and not yet loaded.
@@ -339,9 +299,6 @@ export default function StrategyLayout() {
     runs,
     selectedRunId,
     selectRun,
-    artifacts,
-    addArtifactRecord,
-    removeArtifactRecord,
     addToast,
     loadingFilePath,
     fileLoadError,
@@ -359,10 +316,10 @@ export default function StrategyLayout() {
 
           <div className="text-right">
             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Project</p>
-            {strategy.projectId ? (
+            {strategy.project_id ? (
               <>
-                <p className="text-base font-semibold text-white">{strategy.projectName}</p>
-                <p className="text-xs text-slate-500">PRJ {strategy.projectId}</p>
+                <p className="text-base font-semibold text-white">{strategy.project_name}</p>
+                <p className="text-xs text-slate-500">PRJ {strategy.project_id}</p>
               </>
             ) : (
               <p className="text-sm text-slate-500">Not assigned</p>

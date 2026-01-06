@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import StrategyTable from "../components/strategy-table";
-import { fetchStrategies, type Strategy } from "../api";
+import { fetchStrategies, type Strategy } from "../api/strategies";
 import { useNavigate } from "react-router-dom";
 
 export default function Strategies() {
@@ -41,13 +41,13 @@ export default function Strategies() {
 
     return strategies.filter((strategy) => {
       const owner = strategy.owner?.toLowerCase() ?? "";
+      const project = strategy.project_id?.toLowerCase() ?? "";
+      const tags = strategy.tags ?? [];
       return (
         strategy.name.toLowerCase().includes(normalizedSearch) ||
-        strategy.project.toLowerCase().includes(normalizedSearch) ||
-        strategy.repository.toLowerCase().includes(normalizedSearch) ||
-        strategy.branch.toLowerCase().includes(normalizedSearch) ||
+        project.includes(normalizedSearch) ||
         owner.includes(normalizedSearch) ||
-        strategy.tags.some((tag) => tag.toLowerCase().includes(normalizedSearch))
+        tags.some((tag) => tag.toLowerCase().includes(normalizedSearch))
       );
     });
   }, [normalizedSearch, strategies]);
