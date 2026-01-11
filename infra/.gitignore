@@ -1,0 +1,16 @@
+.terraform/
+terraform.tfstate
+terraform.tfstate.*
+*.tfstate.backup
+
+# Local override files
+*.tfvars
+!example.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Build artifacts
+dist/
