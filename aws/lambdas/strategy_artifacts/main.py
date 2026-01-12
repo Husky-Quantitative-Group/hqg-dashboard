@@ -174,22 +174,6 @@ def upload_artifacts(strategy_id, body):
 
     return _json(200, {"ok": True, "version": new_version, "artifacts": [f.get("artifactId") for f in files]})
 
-
-def update_single_artifact(strategy_id, artifact_id):
-    # Same logic as upload URLs but only one file
-    strategy = STRATEGIES_TABLE.get_item(Key={"id": strategy_id}).get("Item", {})
-    version = strategy.get("current_version", 1)
-
-    key = f"{strategy_id}/v{version}/{artifact_id}"
-    url = s3.generate_presigned_url(
-        "put_object",
-        Params={"Bucket": BUCKET, "Key": key},
-        ExpiresIn=300
-    )
-
-    return _json(200, {"artifactId": artifact_id, "uploadUrl": url})
-
-
 def _authorized(event):
     headers = event.get("headers") or {}
     token = headers.get("x-api-token") or headers.get("x-api-key")
