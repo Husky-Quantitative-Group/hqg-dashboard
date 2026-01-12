@@ -1,6 +1,7 @@
 project   = "hqg"
 env       = "dev"
 aws_region = "us-east-1"
+api_token = "changeme"
 
 # Optional overrides (uncomment to set explicit names)
 # artifacts_bucket_name                 = "strategy-artifacts"

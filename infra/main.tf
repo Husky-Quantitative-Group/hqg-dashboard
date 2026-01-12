@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
+    }
   }
 
   # TODO: switch to remote state (S3 + DynamoDB lock table) before multi-user use.
@@ -246,3 +250,101 @@ resource "aws_apigatewayv2_stage" "dev" {
 }
 
 # TODO: Add integrations and routes for strategies/artifacts lambdas here.
+
+# ------------------------------
+# Lambda packaging and deployment
+# ------------------------------
+
+data "archive_file" "strategies_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/strategies"
+  output_path = "${path.module}/dist/strategies-lambda.zip"
+}
+
+data "aws_iam_policy_document" "lambda_assume_role" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+resource "aws_iam_role" "strategies_lambda" {
+  name               = "${local.name_prefix}-strategies-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "strategies_lambda_basic_logs" {
+  role       = aws_iam_role.strategies_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "strategies_lambda_storage" {
+  role       = aws_iam_role.strategies_lambda.name
+  policy_arn = aws_iam_policy.strategy_storage.arn
+}
+
+resource "aws_lambda_function" "strategies" {
+  function_name = "${local.name_prefix}-strategies"
+  role          = aws_iam_role.strategies_lambda.arn
+  runtime       = "python3.11"
+  handler       = "main.handler"
+
+  filename         = data.archive_file.strategies_lambda.output_path
+  source_code_hash = data.archive_file.strategies_lambda.output_base64sha256
+
+  environment {
+    variables = {
+      STRATEGIES_TABLE                 = aws_dynamodb_table.strategies.name
+      STRATEGY_ARTIFACTS_TABLE         = aws_dynamodb_table.strategy_artifacts.name
+      STRATEGY_ARTIFACT_VERSIONS_TABLE = aws_dynamodb_table.strategy_artifact_versions.name
+      ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket
+      API_TOKEN                        = var.api_token
+    }
+  }
+
+  tags = local.tags
+}
+
+# ------------------------------
+# API Gateway integration/route for GET /strategies
+# ------------------------------
+
+resource "aws_apigatewayv2_integration" "get_strategies" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.strategies.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "get_strategies" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /strategies"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+}
+
+resource "aws_apigatewayv2_route" "post_strategies" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "POST /strategies"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+}
+
+resource "aws_apigatewayv2_route" "get_strategy_by_id" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /strategies/{id}"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+}
+
+resource "aws_lambda_permission" "allow_apigw_invoke_strategies" {
+  statement_id  = "AllowAPIGWInvokeStrategies"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.strategies.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}

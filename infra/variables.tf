@@ -42,3 +42,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "api_token" {
+  description = "Shared secret for Lambda auth (x-api-token)."
+  type        = string
+  sensitive   = true
+}

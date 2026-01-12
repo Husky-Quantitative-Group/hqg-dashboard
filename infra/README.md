@@ -22,6 +22,7 @@ terraform apply -var-file="example.tfvars"
 ### Inputs (key ones)
 - `project` / `env` – used for naming and tagging (`<project>-<env>-...`).
 - `aws_region` – region to deploy into.
+- `api_token` – shared secret passed to lambdas for `x-api-token` checks.
 - Optional `*_name` vars let you override resource names if needed.
 
 ### Resources (names default to `<project>-<env>-...`)

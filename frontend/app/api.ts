@@ -7,13 +7,15 @@ export interface Strategy {
   description?: string;
   owner?: string;
   project: string;
-  repository: string;
-  branch: string;
-  githubPath: string;
-  htmlUrl: string;
   tags: string[];
   createdAt: string;
   updatedAt: string;
+  metrics?: {
+    sharpe?: number;
+    sortino?: number;
+    maxDrawdown?: number;
+    winRate?: number;
+  };
 }
 
 export type StrategyFile = {
@@ -74,6 +76,16 @@ export type StrategyWorkspaceResponse = {
   runs: BacktestResult[];
 };
 
+// Real API base configuration
+const CORE_API_BASE_URL = import.meta.env.VITE_CORE_API ?? "http://localhost:5000";
+const CORE_API_TOKEN = import.meta.env.VITE_API_TOKEN ?? "";
+
+const coreApi = axios.create({
+  baseURL: CORE_API_BASE_URL,
+  headers: CORE_API_TOKEN ? { "x-api-token": CORE_API_TOKEN } : undefined,
+});
+
+// Legacy/mock client (used only by local helpers below)
 const apiClient = axios.create({
   baseURL: "http://localhost:5000",
 });
@@ -256,16 +268,95 @@ the clip-size and cooldown are tuned to the venue micro-structure.`,
 
 let mockRuns = createMockRuns(mockWorkspaceStrategy.id);
 
+// ----- Real API: Strategies -----
+type CoreStrategy = {
+  id: string;
+  name: string;
+  entrypoint?: string;
+  current_version?: number;
+  created_at?: string;
+  updated_at?: string;
+  owner?: string;
+  project?: string;
+  metrics?: {
+    sharpe?: number;
+    sortino?: number;
+    max_drawdown?: number;
+    win_rate?: number;
+  };
+  description?: string;
+  tags?: string[];
+};
+
+const mapCoreStrategyToUi = (item: CoreStrategy): Strategy => ({
+  _id: item.id,
+  strategyId: item.id,
+  name: item.name,
+  description: "",
+  owner: item.owner ?? "",
+  project: item.project ?? "—",
+  tags: item.tags ?? [],
+  createdAt: item.created_at ?? new Date().toISOString(),
+  updatedAt: item.updated_at ?? new Date().toISOString(),
+  metrics: {
+    sharpe: item.metrics?.sharpe,
+    sortino: item.metrics?.sortino,
+    maxDrawdown: item.metrics?.max_drawdown,
+    winRate: item.metrics?.win_rate,
+  },
+  description: item.description ?? "",
+  tags: item.tags ?? [],
+});
+
 export const fetchStrategies = async (): Promise<Strategy[]> => {
-  const response = await apiClient.get<Strategy[]>("/api/strategies");
-  return response.data;
+  const response = await coreApi.get<CoreStrategy[]>("/strategies");
+  return response.data.map(mapCoreStrategyToUi);
+};
+
+export const fetchStrategyById = async (strategyId: string | number): Promise<Strategy> => {
+  const response = await coreApi.get<CoreStrategy>(`/strategies/${strategyId}`);
+  return mapCoreStrategyToUi(response.data);
+};
+
+// ----- Real API: Create Strategy -----
+export type CreateStrategyRequest = {
+  sourceStrategyId: string;
+  name: string;
+  description?: string;
+  tags?: string[];
+  owner?: string;
+};
+
+export const createStrategy = async (payload: CreateStrategyRequest): Promise<Strategy> => {
+  const response = await coreApi.post<CoreStrategy>("/strategies", {
+    source_strategy_id: payload.sourceStrategyId,
+    name: payload.name,
+    description: payload.description ?? "",
+    tags: payload.tags ?? [],
+    owner: payload.owner ?? "",
+  });
+  return mapCoreStrategyToUi(response.data);
 };
 
 export const fetchStrategyWorkspace = async (strategyId: string | number): Promise<StrategyWorkspaceResponse> => {
-  await delay(300);
-  // For now we only have one mock strategy, so the id is ignored.
+  // Pull metadata from the real API, but keep the mock files/runs until backend supports them.
+  const strategy = await fetchStrategyById(strategyId);
+  const workspace = {
+    ...mockWorkspaceStrategy,
+    id: Number(strategy.strategyId) || mockWorkspaceStrategy.id,
+    name: strategy.name,
+    owner: strategy.owner || "—",
+    tags: strategy.tags,
+    description: strategy.description || "",
+    projectId: 0,
+    projectName: "—",
+    createdAt: strategy.createdAt,
+    updatedAt: strategy.updatedAt,
+    readme: strategy.description ? `# ${strategy.name}\n\n${strategy.description}` : mockWorkspaceStrategy.readme,
+  };
+
   return {
-    strategy: cloneWorkspace(mockWorkspaceStrategy),
+    strategy: cloneWorkspace(workspace),
     runs: cloneRuns(mockRuns),
   };
 };

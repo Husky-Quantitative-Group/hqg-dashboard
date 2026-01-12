@@ -293,8 +293,14 @@ export default function StrategyLayout() {
 
           <div className="text-right">
             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Project</p>
-            <p className="text-base font-semibold text-white">{strategy.projectName}</p>
-            <p className="text-xs text-slate-500">PRJ {strategy.projectId}</p>
+            {strategy.projectId ? (
+              <>
+                <p className="text-base font-semibold text-white">{strategy.projectName}</p>
+                <p className="text-xs text-slate-500">PRJ {strategy.projectId}</p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">Not assigned</p>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
