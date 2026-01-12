@@ -44,6 +44,6 @@ output "http_api_id" {
 }
 
 output "http_api_endpoint" {
-  value       = aws_apigatewayv2_stage.dev.invoke_url
+  value       = aws_apigatewayv2_stage.stage.invoke_url
   description = "Invoke URL for the HTTP API stage."
 }
