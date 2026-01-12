@@ -13,23 +13,17 @@ export default function StrategyCodeWorkspace() {
     isDirty,
     isRunning,
     isSaving,
+    loadingFilePath,
+    fileLoadError,
   } = useStrategyWorkspace();
 
   const [editorReady, setEditorReady] = useState(false);
-  const codeFiles = useMemo(
-    () =>
-      files.filter(
-        (file) =>
-          file.language === "python" ||
-          file.path.toLowerCase().endsWith(".txt") ||
-          file.path.toLowerCase() === "readme.md"
-      ),
-    [files]
-  );
+  const codeFiles = useMemo(() => files, [files]);
   const selectedFile = useMemo(
     () => codeFiles.find((file) => file.path === selectedFilePath),
     [codeFiles, selectedFilePath]
   );
+  const isLoadingFile = loadingFilePath !== null && loadingFilePath === selectedFilePath;
 
   useEffect(() => {
     setEditorReady(true);
@@ -111,7 +105,9 @@ export default function StrategyCodeWorkspace() {
         </div>
 
         <div className="flex-1">
-          {selectedFile && editorReady ? (
+          {isLoadingFile ? (
+            <div className={`flex h-full items-center justify-center text-sm ${placeholderClass}`}>Loading file...</div>
+          ) : selectedFile && editorReady ? (
             <Editor
               key={selectedFile.path}
               height="100%"
@@ -130,7 +126,7 @@ export default function StrategyCodeWorkspace() {
             />
           ) : (
             <div className={`flex h-full items-center justify-center text-sm ${placeholderClass}`}>
-              Select a file to start editing
+              {fileLoadError ? fileLoadError : "Select a file to start editing"}
             </div>
           )}
         </div>

@@ -1,0 +1,213 @@
+import json
+import boto3
+import os
+from decimal import Decimal
+import base64
+from datetime import datetime, timezone
+
+s3 = boto3.client("s3")
+dynamo = boto3.resource("dynamodb")
+
+BUCKET = os.environ["ARTIFACT_BUCKET"]
+ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
+STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
+VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
+API_TOKEN = os.environ["API_TOKEN"]
+
+
+def handler(event, context):
+    # Simple shared-secret auth
+    if not _authorized(event):
+        return {"statusCode": 401, "body": "Unauthorized"}
+
+    route = event["requestContext"]["routeKey"]
+
+    if route == "GET /strategies/{id}/artifacts":
+        strategy_id = event["pathParameters"]["id"]
+        return list_artifacts(strategy_id)
+
+    if route == "POST /strategies/{id}/artifacts":
+        strategy_id = event["pathParameters"]["id"]
+        body = json.loads(event.get("body") or "{}")
+        return upload_artifacts(strategy_id, body)
+
+    if route == "GET /strategies/{id}/artifacts/{artifactId}":
+        strategy_id = event["pathParameters"]["id"]
+        artifact_id = event["pathParameters"]["artifactId"]
+        return download_artifact(strategy_id, artifact_id)
+
+    return {"statusCode": 404, "body": "Not found"}
+
+
+# ----------------------------
+# Artifact operations
+# ----------------------------
+
+def list_artifacts(strategy_id):
+    resp = ARTIFACTS_TABLE.query(
+        KeyConditionExpression="strategy_id = :s",
+        ExpressionAttributeValues={":s": strategy_id}
+    )
+    items = resp.get("Items", [])
+    artifact_ids = [item.get("artifact_id") for item in items if "artifact_id" in item]
+    return _json(200, {"artifacts": artifact_ids})
+
+def download_artifact(strategy_id, artifact_id, max_bytes=1_000_000):
+    artifact = ARTIFACTS_TABLE.get_item(Key={"strategy_id": strategy_id, "artifact_id": artifact_id}).get("Item")
+    if not artifact:
+        return _json(404, {"message": "Artifact not found"})
+
+    latest_version = artifact.get("latest_version")
+    if latest_version is None:
+        return _json(404, {"message": "No versions available for artifact"})
+
+    pk = f"{strategy_id}#{artifact_id}"
+    version_resp = VERSIONS_TABLE.get_item(Key={"strategy_artifact_id": pk, "strategy_version": latest_version})
+    version_item = version_resp.get("Item")
+    if not version_item:
+        return _json(404, {"message": "Artifact version not found"})
+
+    key = version_item["s3_key"]
+    try:
+        obj = s3.get_object(Bucket=BUCKET, Key=key)
+    except Exception:
+        return _json(404, {"message": "Object not found"})
+
+    size = obj.get("ContentLength", 0)
+    if size and size > max_bytes:
+        return _json(413, {"message": "Artifact too large"})
+
+    body = obj["Body"].read()
+
+    content_type = obj.get("ContentType") or "application/octet-stream"
+
+    return {
+        "statusCode": 200,
+        "isBase64Encoded": True,
+        "headers": {
+            "Content-Type": content_type,
+            "Content-Disposition": f'attachment; filename="{artifact_id}"',
+        },
+        "body": base64.b64encode(body).decode("utf-8"),
+    }
+
+def upload_artifacts(strategy_id, body):
+    """
+    New upload flow: accept all files + contents in a single request.
+    Expected body:
+    {
+      "files": [
+        { "artifactId": "main.py", "content": "<raw text or base64>" },
+        ...
+      ]
+    }
+    """
+    files = body.get("files") or []
+
+    if not isinstance(files, list) or not files:
+        return _json(400, {"message": "files must be a non-empty list"})
+
+    strategy = STRATEGIES_TABLE.get_item(Key={"id": strategy_id}).get("Item")
+    if not strategy:
+        return _json(404, {"message": "Strategy not found"})
+    
+    current_version = int(strategy.get("current_version") or 0)
+    new_version = current_version + 1
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Input validation
+    max_file_bytes = 1_000_000  # 1 MB per file
+    prepared_files = []
+    for f in files:
+        artifact_id = f.get("artifactId")
+        content = f.get("content")
+        # Input validation
+        if not artifact_id or content is None:
+            return _json(400, {"message": "Each file must include artifactId and content"})
+        if not isinstance(content, str):
+            return _json(400, {"message": f"Invalid content for {artifact_id}"})
+
+        content_bytes = content.encode("utf-8")
+        size_bytes = len(content_bytes)
+        if size_bytes > max_file_bytes:
+            return _json(413, {"message": f"{artifact_id} exceeds max size of 1MB"})
+
+        prepared_files.append({"artifact_id": artifact_id, "content_bytes": content_bytes})
+    
+    uploaded = []
+    try:
+        for item in prepared_files:
+            artifact_id = item["artifact_id"]
+            content_bytes = item["content_bytes"]
+
+            key = f"{strategy_id}/v{new_version}/{artifact_id}"
+            s3.put_object(Bucket=BUCKET, Key=key, Body=content_bytes)
+            uploaded.append(key)
+
+            VERSIONS_TABLE.put_item(
+                Item={
+                    "strategy_artifact_id": f"{strategy_id}#{artifact_id}",
+                    "strategy_version": new_version,
+                    "s3_key": key,
+                    "created_at": now,
+                }
+            )
+
+            ARTIFACTS_TABLE.put_item(
+                Item={
+                    "strategy_id": strategy_id,
+                    "artifact_id": artifact_id,
+                    "latest_version": new_version,
+                }
+            )
+
+        STRATEGIES_TABLE.update_item(
+            Key={"id": strategy_id},
+            UpdateExpression="SET current_version = :v, updated_at = :u",
+            ExpressionAttributeValues={
+                ":v": new_version,
+                ":u": now,
+            },
+        )
+    except Exception as exc:
+        return _json(500, {"message": f"Failed to upload artifacts: {exc}"})
+
+    return _json(200, {"ok": True, "version": new_version, "artifacts": [f.get("artifactId") for f in files]})
+
+
+def update_single_artifact(strategy_id, artifact_id):
+    # Same logic as upload URLs but only one file
+    strategy = STRATEGIES_TABLE.get_item(Key={"id": strategy_id}).get("Item", {})
+    version = strategy.get("current_version", 1)
+
+    key = f"{strategy_id}/v{version}/{artifact_id}"
+    url = s3.generate_presigned_url(
+        "put_object",
+        Params={"Bucket": BUCKET, "Key": key},
+        ExpiresIn=300
+    )
+
+    return _json(200, {"artifactId": artifact_id, "uploadUrl": url})
+
+
+def _authorized(event):
+    headers = event.get("headers") or {}
+    token = headers.get("x-api-token") or headers.get("x-api-key")
+    return token == API_TOKEN
+
+def _clean_decimals(data):
+    if isinstance(data, list):
+        return [_clean_decimals(item) for item in data]
+    if isinstance(data, dict):
+        return {k: _clean_decimals(v) for k, v in data.items()}
+    if isinstance(data, Decimal):
+        return int(data) if data % 1 == 0 else float(data)
+    return data
+
+
+def _json(code, body):
+    return {
+        "statusCode": code,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps(body),
+    }

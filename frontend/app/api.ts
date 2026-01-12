@@ -303,9 +303,7 @@ const mapCoreStrategyToUi = (item: CoreStrategy): Strategy => ({
     sortino: item.metrics?.sortino,
     maxDrawdown: item.metrics?.max_drawdown,
     winRate: item.metrics?.win_rate,
-  },
-  description: item.description ?? "",
-  tags: item.tags ?? [],
+  }
 });
 
 export const fetchStrategies = async (): Promise<Strategy[]> => {
@@ -316,6 +314,37 @@ export const fetchStrategies = async (): Promise<Strategy[]> => {
 export const fetchStrategyById = async (strategyId: string | number): Promise<Strategy> => {
   const response = await coreApi.get<CoreStrategy>(`/strategies/${strategyId}`);
   return mapCoreStrategyToUi(response.data);
+};
+
+export const fetchStrategyArtifacts = async (strategyId: string | number): Promise<string[]> => {
+  const response = await coreApi.get<{ artifacts: string[] }>(`/strategies/${strategyId}/artifacts`);
+  return response.data.artifacts ?? [];
+};
+
+export const fetchStrategyArtifactContent = async (
+  strategyId: string | number,
+  artifactId: string
+): Promise<string> => {
+  const response = await coreApi.get<string>(`/strategies/${strategyId}/artifacts/${artifactId}`, {
+    responseType: "text",
+    transformResponse: [(data) => data], // return raw text
+  });
+
+  return response.data;
+};
+
+export const uploadStrategyArtifacts = async (
+  strategyId: string | number,
+  files: StrategyFile[]
+): Promise<{ ok?: boolean; version?: number; artifacts?: string[] }> => {
+  const payload = {
+    files: files.map((file) => ({
+      artifactId: file.path,
+      content: file.content ?? "",
+    })),
+  };
+  const response = await coreApi.post(`/strategies/${strategyId}/artifacts`, payload);
+  return response.data;
 };
 
 // ----- Real API: Create Strategy -----
@@ -339,8 +368,39 @@ export const createStrategy = async (payload: CreateStrategyRequest): Promise<St
 };
 
 export const fetchStrategyWorkspace = async (strategyId: string | number): Promise<StrategyWorkspaceResponse> => {
-  // Pull metadata from the real API, but keep the mock files/runs until backend supports them.
-  const strategy = await fetchStrategyById(strategyId);
+  // Pull metadata from the real API, derive files from the artifacts list, keep mock runs for now.
+  const [strategy, artifactIds] = await Promise.all([
+    fetchStrategyById(strategyId),
+    fetchStrategyArtifacts(strategyId),
+  ]);
+
+  const readmePath = artifactIds.find((p) => p.toLowerCase().includes("readme"));
+  let readmeContent =
+    strategy.description && strategy.description.trim()
+      ? `# ${strategy.name}\n\n${strategy.description}`
+      : "# README\n\nNo description provided.";
+  if (readmePath) {
+    try {
+      const content = await fetchStrategyArtifactContent(strategyId, readmePath);
+      if (content) {
+        readmeContent = content;
+      }
+    } catch (error) {
+      console.error("Failed to load README content", error);
+    }
+  }
+
+  const files: StrategyFile[] = artifactIds.map((path) => {
+    const isReadme = path.toLowerCase().includes("readme");
+    const isEntrypoint = !!strategy.entrypoint && path === strategy.entrypoint;
+    return {
+      path,
+      language: guessLanguage(path),
+      content: isReadme ? readmeContent : "",
+      isEntrypoint,
+    };
+  });
+
   const workspace = {
     ...mockWorkspaceStrategy,
     id: Number(strategy.strategyId) || mockWorkspaceStrategy.id,
@@ -352,7 +412,8 @@ export const fetchStrategyWorkspace = async (strategyId: string | number): Promi
     projectName: "—",
     createdAt: strategy.createdAt,
     updatedAt: strategy.updatedAt,
-    readme: strategy.description ? `# ${strategy.name}\n\n${strategy.description}` : mockWorkspaceStrategy.readme,
+    files,
+    readme: readmeContent || mockWorkspaceStrategy.readme,
   };
 
   return {
@@ -360,6 +421,16 @@ export const fetchStrategyWorkspace = async (strategyId: string | number): Promi
     runs: cloneRuns(mockRuns),
   };
 };
+
+function guessLanguage(path: string): string {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".py")) return "python";
+  if (lower.endsWith(".md")) return "markdown";
+  if (lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "yaml";
+  if (lower.endsWith(".txt")) return "plaintext";
+  return "plaintext";
+}
 
 export const saveStrategyWorkspaceDraft = async (
   strategyId: number,
