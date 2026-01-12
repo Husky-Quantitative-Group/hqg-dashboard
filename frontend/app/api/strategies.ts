@@ -14,7 +14,7 @@ export type Strategy = {
     sharpe?: number;
     sortino?: number;
     max_drawdown?: number;
-    win_rate?: number;
+    cagr?: number;
   };
   description?: string;
   tags: string[] | [];

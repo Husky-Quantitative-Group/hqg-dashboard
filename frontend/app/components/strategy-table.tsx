@@ -81,7 +81,7 @@ export default function StrategyTable({
             <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">Sharpe</th>
             <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">Sortino</th>
             <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">Max DD</th>
-            <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">Win %</th>
+            <th className="text-left py-4 px-4 text-gray-400 font-medium text-sm">CAGR</th>
           </tr>
         </thead>
         <tbody>
@@ -151,7 +151,7 @@ export default function StrategyTable({
                   {formatPercent(strategy.metrics?.max_drawdown)}
                 </td>
                 <td className="py-4 px-4 text-gray-200 font-mono text-sm">
-                  {formatPercent(strategy.metrics?.win_rate)}
+                  {formatPercent(strategy.metrics?.cagr)}
                 </td>
               </tr>
             ))
