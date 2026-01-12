@@ -30,7 +30,7 @@ export default function CreateStrategy() {
         if (!cancelled) {
           setStrategies(data);
           if (data.length) {
-            setSelectedTemplateId(data[0].id);
+            setSelectedTemplateId("1");
           }
         }
       } catch (error) {
@@ -60,7 +60,8 @@ export default function CreateStrategy() {
     [selectedTemplateId, strategies]
   );
 
-  const isFormValid = selectedTemplateId && strategyName.trim();
+  const selectedTemplateTags = selectedTemplate?.tags ?? [];
+  const isFormValid = selectedTemplate && strategyName.trim();
 
   const handleAddTag = () => {
     const value = tagInput.trim();
@@ -151,12 +152,12 @@ export default function CreateStrategy() {
                   {selectedTemplate.description || "No description provided."}
                 </div>
                 <div className="flex flex-wrap gap-1 pt-1">
-                  {selectedTemplate.tags.map((tag) => (
+                  {selectedTemplateTags.map((tag) => (
                     <span key={tag} className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-200">
                       {tag}
                     </span>
                   ))}
-                  {selectedTemplate.tags.length === 0 && <span className="text-slate-500 text-xs">No tags</span>}
+                  {selectedTemplateTags.length === 0 && <span className="text-slate-500 text-xs">No tags</span>}
                 </div>
               </div>
             ) : (
