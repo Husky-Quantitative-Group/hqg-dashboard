@@ -100,7 +100,7 @@ export default function StrategyOverview() {
                 <dt className={labelColor}>Tags</dt>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {strategy.tags.length > 0 ? (
+                {strategy.tags?.length ? (
                   strategy.tags.map((tag) => (
                     <span
                       key={tag}

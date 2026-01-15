@@ -17,7 +17,7 @@ export type Strategy = {
     cagr?: number;
   };
   description?: string;
-  tags: string[] | [];
+  tags?: string[];
 };
 
 export const fetchStrategies = async (): Promise<Strategy[]> => {
