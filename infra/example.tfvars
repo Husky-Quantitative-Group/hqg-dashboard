@@ -2,6 +2,7 @@ project   = "hqg"
 env       = "dev"
 aws_region = "us-east-1"
 api_token = "changeme"
+frontend_base_url = "http://localhost:5173"
 
 # Optional overrides (uncomment to set explicit names)
 # artifacts_bucket_name                 = "strategy-artifacts"

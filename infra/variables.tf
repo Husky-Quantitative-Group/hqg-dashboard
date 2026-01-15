@@ -48,3 +48,8 @@ variable "api_token" {
   type        = string
   sensitive   = true
 }
+
+variable "frontend_base_url" {
+  description = "Base URL for the frontend app (used for auth redirects)."
+  type        = string
+}
