@@ -249,9 +249,9 @@ resource "aws_apigatewayv2_stage" "stage" {
   tags = local.tags
 }
 
-# ------------------------------
-# Lambda packaging and deployment
-# ------------------------------
+# ---------------
+# Lambda packaging
+# ---------------
 
 data "archive_file" "strategies_lambda" {
   type        = "zip"
@@ -270,6 +270,10 @@ data "archive_file" "auth_granter_lambda" {
   source_dir  = "${path.module}/../aws/lambdas/auth-granter"
   output_path = "${path.module}/dist/auth-granter-lambda.zip"
 }
+
+# ------------------------------
+# Lambda IAM roles and policies
+# ------------------------------
 
 data "aws_iam_policy_document" "lambda_assume_role" {
   statement {
@@ -328,6 +332,21 @@ resource "aws_iam_role_policy_attachment" "auth_granter_lambda_basic_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+# ------------------------------
+# Lambda layers packaging
+# ------------------------------
+
+resource "aws_lambda_layer_version" "pyjwt" {
+  layer_name          = "${local.name_prefix}-pyjwt"
+  filename            = "${path.module}/../aws/lambda_layers/pyjwt/build/pyjwt-layer.zip"
+  source_code_hash    = filebase64sha256("${path.module}/../aws/lambda_layers/pyjwt/build/pyjwt-layer.zip")
+  compatible_runtimes = ["python3.11"]
+}
+
+# ------------------------------
+# Lambda deployment definitions
+# ------------------------------
+
 resource "aws_lambda_function" "strategies" {
   function_name = "${local.name_prefix}-strategies"
   role          = aws_iam_role.strategies_lambda.arn
@@ -381,10 +400,14 @@ resource "aws_lambda_function" "auth_granter" {
   filename         = data.archive_file.auth_granter_lambda.output_path
   source_code_hash = data.archive_file.auth_granter_lambda.output_base64sha256
 
+  layers = [aws_lambda_layer_version.pyjwt.arn]
+
   environment {
     variables = {
       CAS_CALLBACK_URL  = "${trimsuffix(aws_apigatewayv2_stage.stage.invoke_url, "/")}/auth/callback"
       FRONTEND_BASE_URL = var.frontend_base_url
+      JWT_SECRET = var.jwt_secret
+      APP_ENV = var.env
     }
   }
 

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   isRouteErrorResponse,
   Links,
@@ -9,6 +10,32 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
+
+const authCookieName = "hqg_auth_token";
+
+function useAuthTokenFromHash() {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const hash = window.location.hash;
+    if (!hash) return;
+
+    const params = new URLSearchParams(hash.replace(/^#/, ""));
+    const token = params.get("token");
+    if (!token) return;
+
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${authCookieName}=${encodeURIComponent(
+      token
+    )}; Path=/; SameSite=Lax${secure}`;
+
+    window.history.replaceState(
+      {},
+      document.title,
+      window.location.pathname + window.location.search
+    );
+  }, []);
+}
 
 export const links: Route.LinksFunction = () => [
   { rel: "icon", href: "/hqg-logo.png", type: "image/png" },
@@ -43,6 +70,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useAuthTokenFromHash();
   return <Outlet />;
 }
 

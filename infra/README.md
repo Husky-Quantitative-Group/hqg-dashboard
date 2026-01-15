@@ -1,10 +1,5 @@
 ## HQG Infrastructure (Terraform)
 
-This module currently provisions only the storage layer for strategies:
-
-- S3 bucket for versioned artifacts.
-- DynamoDB tables for strategies, artifacts, and per-file artifact versions.
-
 ### Files
 - `main.tf` – providers, locals, and storage resources.
 - `variables.tf` – inputs (project/env/region and optional name overrides).
@@ -15,6 +10,7 @@ This module currently provisions only the storage layer for strategies:
 ```bash
 cd infra
 terraform init
+bash scripts/build_layers.sh # builds AWS Lambda Python dependencies"
 terraform plan -var-file="example.tfvars"
 terraform apply -var-file="example.tfvars"
 ```

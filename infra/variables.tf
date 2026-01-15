@@ -53,3 +53,8 @@ variable "frontend_base_url" {
   description = "Base URL for the frontend app (used for auth redirects)."
   type        = string
 }
+
+variable "jwt_secret" {
+  description = "Secret for JWT encoding and decoding"
+  type        = string
+}
