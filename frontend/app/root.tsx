@@ -11,7 +11,7 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 
-const authCookieName = "hqg_auth_token";
+const authTokenKey = "hqg_auth_token";
 
 function useAuthTokenFromHash() {
   useEffect(() => {
@@ -25,7 +25,7 @@ function useAuthTokenFromHash() {
     if (!token) return;
 
     const secure = window.location.protocol === "https:" ? "; Secure" : "";
-    document.cookie = `${authCookieName}=${encodeURIComponent(
+    document.cookie = `${authTokenKey}=${encodeURIComponent(
       token
     )}; Path=/; SameSite=Lax${secure}`;
 

@@ -239,6 +239,28 @@ resource "aws_iam_policy" "strategy_storage" {
   tags = local.tags
 }
 
+data "aws_iam_policy_document" "users_read" {
+  statement {
+    sid    = "DynamoUsersRead"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:GetItem",
+    ]
+
+    resources = [
+      aws_dynamodb_table.users.arn,
+    ]
+  }
+}
+
+resource "aws_iam_policy" "users_read" {
+  name   = "${local.name_prefix}-users-read"
+  policy = data.aws_iam_policy_document.users_read.json
+
+  tags = local.tags
+}
+
 # ------------------------------
 # API Gateway (HTTP API) scaffold
 # ------------------------------
@@ -250,7 +272,8 @@ resource "aws_apigatewayv2_api" "api" {
   cors_configuration {
     allow_headers = ["content-type", "x-api-token", "authorization"]
     allow_methods = ["OPTIONS", "GET", "POST", "PATCH"]
-    allow_origins = ["*"]
+    allow_origins = [var.frontend_base_url]
+    allow_credentials = true
     max_age       = 300
   }
 
@@ -293,6 +316,12 @@ data "archive_file" "auth_granter_lambda" {
   output_path = "${path.module}/dist/auth-granter-lambda.zip"
 }
 
+data "archive_file" "auth_checker_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/auth-checker"
+  output_path = "${path.module}/dist/auth-checker-lambda.zip"
+}
+
 # ------------------------------
 # Lambda IAM roles and policies
 # ------------------------------
@@ -329,6 +358,13 @@ resource "aws_iam_role" "auth_granter_lambda" {
   tags = local.tags
 }
 
+resource "aws_iam_role" "auth_checker_lambda" {
+  name               = "${local.name_prefix}-auth-checker-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = local.tags
+}
+
 resource "aws_iam_role_policy_attachment" "strategies_lambda_basic_logs" {
   role       = aws_iam_role.strategies_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -352,6 +388,16 @@ resource "aws_iam_role_policy_attachment" "strategy_artifacts_lambda_storage" {
 resource "aws_iam_role_policy_attachment" "auth_granter_lambda_basic_logs" {
   role       = aws_iam_role.auth_granter_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "auth_checker_lambda_basic_logs" {
+  role       = aws_iam_role.auth_checker_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "auth_checker_lambda_users_read" {
+  role       = aws_iam_role.auth_checker_lambda.name
+  policy_arn = aws_iam_policy.users_read.arn
 }
 
 # ------------------------------
@@ -436,6 +482,43 @@ resource "aws_lambda_function" "auth_granter" {
   tags = local.tags
 }
 
+resource "aws_lambda_function" "auth_checker" {
+  function_name = "${local.name_prefix}-auth-checker"
+  role          = aws_iam_role.auth_checker_lambda.arn
+  runtime       = "python3.11"
+  handler       = "main.handler"
+
+  filename         = data.archive_file.auth_checker_lambda.output_path
+  source_code_hash = data.archive_file.auth_checker_lambda.output_base64sha256
+
+  layers = [aws_lambda_layer_version.pyjwt.arn]
+
+  environment {
+    variables = {
+      USERS_TABLE = aws_dynamodb_table.users.name
+      JWT_SECRET  = var.jwt_secret
+    }
+  }
+
+  tags = local.tags
+}
+
+# ------------------------------
+# API Gateway authorizer
+# ------------------------------
+
+resource "aws_apigatewayv2_authorizer" "auth_checker" {
+  api_id                            = aws_apigatewayv2_api.api.id
+  authorizer_type                   = "REQUEST"
+  authorizer_uri                    = aws_lambda_function.auth_checker.invoke_arn
+  authorizer_payload_format_version = "2.0"
+  enable_simple_responses           = true
+  identity_sources = [
+    "$request.header.Authorization",
+  ]
+  name = "${local.name_prefix}-auth-checker"
+}
+
 # ------------------------------
 # API Gateway integration/routes for strategies lambda
 # ------------------------------
@@ -452,18 +535,24 @@ resource "aws_apigatewayv2_route" "get_strategies" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /strategies"
   target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_apigatewayv2_route" "post_strategies" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "POST /strategies"
   target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_apigatewayv2_route" "get_strategy_by_id" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /strategies/{id}"
   target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_lambda_permission" "allow_apigw_invoke_strategies" {
@@ -490,12 +579,24 @@ resource "aws_apigatewayv2_route" "get_strategy_artifacts" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /strategies/{id}/artifacts"
   target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_apigatewayv2_route" "post_strategy_artifacts" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "POST /strategies/{id}/artifacts"
   target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "get_strategy_artifact_by_id" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /strategies/{id}/artifacts/{artifactId}"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_lambda_permission" "allow_apigw_invoke_strategy_artifacts" {
@@ -504,12 +605,6 @@ resource "aws_lambda_permission" "allow_apigw_invoke_strategy_artifacts" {
   function_name = aws_lambda_function.strategy_artifacts.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
-}
-
-resource "aws_apigatewayv2_route" "get_strategy_artifact_by_id" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "GET /strategies/{id}/artifacts/{artifactId}"
-  target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
 }
 
 # ------------------------------
@@ -542,4 +637,12 @@ resource "aws_lambda_permission" "allow_apigw_invoke_auth_granter" {
   function_name = aws_lambda_function.auth_granter.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "allow_apigw_invoke_auth_checker" {
+  statement_id  = "AllowAPIGWInvokeAuthChecker"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.auth_checker.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/authorizers/*"
 }
