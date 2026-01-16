@@ -12,14 +12,7 @@ BUCKET = os.environ["ARTIFACT_BUCKET"]
 ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
 STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
-API_TOKEN = os.environ["API_TOKEN"]
-
-
 def handler(event, context):
-    # Simple shared-secret auth
-    if not _authorized(event):
-        return {"statusCode": 401, "body": "Unauthorized"}
-
     route = event["requestContext"]["routeKey"]
 
     if route == "GET /strategies/{id}/artifacts":
@@ -173,11 +166,6 @@ def upload_artifacts(strategy_id, body):
         return _json(500, {"message": f"Failed to upload artifacts: {exc}"})
 
     return _json(200, {"ok": True, "version": new_version, "artifacts": [f.get("artifactId") for f in files]})
-
-def _authorized(event):
-    headers = event.get("headers") or {}
-    token = headers.get("x-api-token") or headers.get("x-api-key")
-    return token == API_TOKEN
 
 def _clean_decimals(data):
     if isinstance(data, list):
