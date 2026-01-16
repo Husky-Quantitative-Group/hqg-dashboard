@@ -76,9 +76,9 @@ export default function StrategyOverview() {
               <div>
                 <dt className={labelColor}>Project</dt>
                 <dd className="text-base font-medium">
-                  {strategy.projectId ? (
+                  {strategy.project_id ? (
                     <>
-                      PRJ {strategy.projectId} · {strategy.projectName}
+                      PRJ {strategy.project_id} · {strategy.project_name}
                     </>
                   ) : (
                     <span className="text-slate-500">Not assigned</span>
@@ -87,11 +87,11 @@ export default function StrategyOverview() {
               </div>
               <div>
                 <dt className={labelColor}>Created</dt>
-                <dd>{formatter.format(new Date(strategy.createdAt))}</dd>
+                <dd>{strategy.created_at ? formatter.format(new Date(strategy.created_at)) : "-"}</dd>
               </div>
               <div>
                 <dt className={labelColor}>Updated</dt>
-                <dd>{formatter.format(new Date(strategy.updatedAt))}</dd>
+                <dd>{strategy.updated_at ? formatter.format(new Date(strategy.updated_at)) : "-"}</dd>
               </div>
             </dl>
 
@@ -100,7 +100,7 @@ export default function StrategyOverview() {
                 <dt className={labelColor}>Tags</dt>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {strategy.tags.length > 0 ? (
+                {strategy.tags?.length ? (
                   strategy.tags.map((tag) => (
                     <span
                       key={tag}
@@ -127,7 +127,7 @@ export default function StrategyOverview() {
           <div className={`mt-4 max-h-96 overflow-y-auto rounded-xl ${previewSurface} p-4`}>
             <div className="space-y-4 text-sm leading-relaxed text-slate-300">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                {files.find((file) => file.path.toLowerCase() === "readme.md")?.content ?? strategy.readme}
+                {files.find((file) => file.path.toLowerCase() === "readme.md")?.content}
               </ReactMarkdown>
             </div>
           </div>
