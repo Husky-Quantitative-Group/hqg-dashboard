@@ -10,6 +10,7 @@ jwt_secret = "changeme"
 # strategies_table_name                 = "hqg-dev-strategies"
 # strategy_artifacts_table_name         = "hqg-dev-strategy-artifacts"
 # strategy_artifact_versions_table_name = "hqg-dev-strategy-artifact-versions"
+# users_table_name                      = "hqg-dev-users"
 
 tags = {
   Owner = "hqg-team"

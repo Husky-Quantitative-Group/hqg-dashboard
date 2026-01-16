@@ -37,6 +37,12 @@ variable "strategy_artifact_versions_table_name" {
   default     = null
 }
 
+variable "users_table_name" {
+  description = "Optional explicit name for the Users table. Defaults to \"<project>-<env>-users\"."
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "Additional tags to apply to resources."
   type        = map(string)

@@ -38,6 +38,16 @@ output "strategy_artifact_versions_table_arn" {
   description = "ARN of the StrategyArtifactVersions table."
 }
 
+output "users_table_name" {
+  value       = aws_dynamodb_table.users.name
+  description = "Name of the Users table."
+}
+
+output "users_table_arn" {
+  value       = aws_dynamodb_table.users.arn
+  description = "ARN of the Users table."
+}
+
 output "http_api_id" {
   value       = aws_apigatewayv2_api.api.id
   description = "ID of the HTTP API Gateway."
