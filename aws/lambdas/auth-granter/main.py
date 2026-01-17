@@ -13,8 +13,8 @@ APP_ENV = os.environ.get("APP_ENV", "prod").lower()
 CAS_BASE = "https://login.uconn.edu/cas"
 CAS_NS = {"cas": "http://www.yale.edu/tp/cas"}
 
-CAS_CALLBACK_URL = os.environ["CAS_CALLBACK_URL"] # eg. abcdef.amazon-aws.com/dev/auth/callback
 FRONTEND_BASE_URL = os.environ["FRONTEND_BASE_URL"] # eg. http://localhost:3000 OR https://hqg-dash.com
+CAS_CALLBACK_URL = FRONTEND_BASE_URL + "/api/auth/callback"
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 
