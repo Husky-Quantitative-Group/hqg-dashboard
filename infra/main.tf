@@ -390,6 +390,11 @@ resource "aws_iam_role_policy_attachment" "auth_granter_lambda_basic_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+resource "aws_iam_role_policy_attachment" "auth_granter_lambda_users_read" {
+  role       = aws_iam_role.auth_granter_lambda.name
+  policy_arn = aws_iam_policy.users_read.arn
+}
+
 resource "aws_iam_role_policy_attachment" "auth_checker_lambda_basic_logs" {
   role       = aws_iam_role.auth_checker_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -476,6 +481,7 @@ resource "aws_lambda_function" "auth_granter" {
       FRONTEND_BASE_URL = var.frontend_base_url
       JWT_SECRET = var.jwt_secret
       APP_ENV = var.env
+      USERS_TABLE = aws_dynamodb_table.users.name
     }
   }
 
@@ -628,6 +634,12 @@ resource "aws_apigatewayv2_route" "auth_login" {
 resource "aws_apigatewayv2_route" "auth_callback" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /auth/callback"
+  target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
+}
+
+resource "aws_apigatewayv2_route" "auth_me" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /auth/me"
   target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
 }
 
