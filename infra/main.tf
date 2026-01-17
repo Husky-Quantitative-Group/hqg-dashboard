@@ -514,7 +514,7 @@ resource "aws_apigatewayv2_authorizer" "auth_checker" {
   authorizer_payload_format_version = "2.0"
   enable_simple_responses           = true
   identity_sources = [
-    "$request.header.Authorization",
+    "$request.header.Cookie",
   ]
   name = "${local.name_prefix}-auth-checker"
 }

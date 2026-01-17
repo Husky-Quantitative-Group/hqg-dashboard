@@ -27,16 +27,8 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
 
 
 def extract_token(event: Dict[str, Any]) -> Optional[str]:
-    """Return the JWT from Authorization header or hqg_auth_token cookie."""
-    auth_token = event.get("authorizationToken")
-    if auth_token:
-        return _strip_bearer(auth_token)
-
+    """Return the JWT from the hqg_auth_token cookie."""
     headers = _normalize_headers(event.get("headers") or {})
-    auth_header = headers.get("authorization")
-    if auth_header:
-        return _strip_bearer(auth_header)
-
     cookie_token = _token_from_cookies(event, headers)
     if cookie_token:
         return cookie_token
@@ -109,10 +101,3 @@ def _cookie_value(cookie_header: str, name: str) -> Optional[str]:
         return None
     return cookie[name].value or None
 
-
-def _strip_bearer(value: str) -> str:
-    value = value.strip()
-    parts = value.split()
-    if len(parts) == 2 and parts[0].lower() == "bearer":
-        return parts[1]
-    return value

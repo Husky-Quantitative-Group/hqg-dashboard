@@ -18,6 +18,12 @@ FRONTEND_BASE_URL = os.environ["FRONTEND_BASE_URL"] # eg. http://localhost:3000 
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 
+def _build_auth_cookie(token: str) -> str:
+    is_dev = APP_ENV == "dev"
+    same_site = "Lax" if is_dev else "None"
+    secure = "" if is_dev else "; Secure"
+    return f"hqg_auth_token={token}; Path=/; HttpOnly; SameSite={same_site}{secure}"
+
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     """
     Authentication granter service Lambda.
@@ -49,16 +55,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
             return {"statusCode": 401, "body": "CAS validation failed"}
 
         token = mint_jwt(netid)
-
-        if APP_ENV == "dev":
-            # send token to localhost via URL fragment
-            url = f"{FRONTEND_BASE_URL}/#token={urllib.parse.quote(token, safe='')}"
-            return {"statusCode": 302, "headers": {"Location": url}}
-        
-        # otherwise, use cookies
-        cookie = (
-            f"hqg_auth_token={token}; Path=/; HttpOnly; Secure; SameSite=Lax"
-        )
+        cookie = _build_auth_cookie(token)
         return {
             "statusCode": 302,
             "headers": {
