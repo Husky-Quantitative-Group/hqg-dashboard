@@ -1,6 +1,5 @@
 import axios from "axios";
 
-const CORE_API_BASE_URL = import.meta.env.VITE_CORE_API ?? "http://localhost:5000";
 const AUTH_TOKEN_KEY = "hqg_auth_token";
 
 const getAuthToken = (): string => {
@@ -15,7 +14,7 @@ const getAuthToken = (): string => {
 };
 
 export const coreApi = axios.create({
-  baseURL: CORE_API_BASE_URL,
+  baseURL: "/api",
   withCredentials: true,
 });
 
