@@ -1,141 +1,137 @@
 # Local Setup — HQG Dashboard
 
-## Quick start (TL;DR)
+This repo has two main parts:
+- `frontend/` for the React Router UI
+- `infra/` + `aws/` for the AWS infrastructure and Lambda APIs
 
+Most people will only need the frontend, but the UI needs an API endpoint to talk to.
+
+## Prerequisites
+- Node.js + npm (LTS) for the frontend: https://nodejs.org/en/download
+- Terraform (>= 1.5) for infra work: https://developer.hashicorp.com/terraform/downloads
+- AWS credentials for Terraform: https://developer.hashicorp.com/terraform/language/providers/aws#authentication
+
+## 1) Frontend (local dev)
+
+### Install dependencies
 ```bash
-npm run install:all
-npm run start:db
-npm run dev
+cd frontend
+npm install
 ```
 
----
-
-## 1) Prerequisites
-
-* **Docker Desktop** (WSL2 integration on Windows)
-* **Node.js + npm**
-
-> Verify: `docker --version` and `node -v`
-
----
-
-## 2) Clone the repo
-
+### Configure environment
 ```bash
-git clone <YOUR_REPO_URL>/hqg-dashboard.git
-cd hqg-dashboard
+cp .env.example .env
 ```
 
----
-
-## 3) Install dependencies
-
-```bash
-npm run install:all
-```
-
-Installs packages in root, `backend/`, and `frontend/`.
-
----
-
-## 4) Configure environment
-
-Copy the backend env template and edit values:
-
-```bash
-cp backend/example.env backend/.env
-```
-
-Fill in missing values
-
+Edit `frontend/.env`:
 ```ini
-DATABASE_URL=mongodb://localhost:27017/hqg_dashboard
-HQG_STRATEGIES_GITHUB_TOKEN=...
+VITE_CORE_API=https://your-api.execute-api.us-east-1.amazonaws.com/dev
 ```
 
-HQG_STRATEGIES_GITHUB_TOKEN guide can be found [here](guides/github_tokens.md).
+- `VITE_CORE_API` should point at the deployed API Gateway URL.
 
----
-
-## 5) Start MongoDB (Docker)
-
-```bash
-npm run start:db
-```
-
-* Creates/starts container **`dev-mongo-hqg`** on port **27017**
-* Persists data in volume **`hqg-dashboard-mongo-data`**
-
-Verify it’s up:
-
-```bash
-docker ps
-```
-
-### (Optional) Start Mongo Express UI
-
-```bash
-npm run start:db:ui
-```
-
-* Creates/starts **`dev-mongo-express-hqg`** on **[http://localhost:8081](http://localhost:8081)**
-* Auth: **admin / admin**
-* Connects to the `dev-mongo-hqg` container (DB: `hqg_dashboard`)
-
----
-
-## 6) Run the app in development
-
+### Run the dev server
 ```bash
 npm run dev
 ```
 
-Runs **frontend** and **backend** concurrently.
+Open `http://localhost:5173`.
 
-* **Backend**: `http://localhost:5000`
-* **Frontend**: `http://localhost:5173`
+## 2) Infra (AWS / Terraform)
 
-Open the frontend URL in your browser.
+If you already have a deployed API, you can skip this section and just set `VITE_CORE_API` in `frontend/.env`.
 
-This dev environment will allow you to live test code changes without having to rerun the dev script.
-
----
-
-## 7) Seed/populate data
-
+### Create your tfvars file
 ```bash
-npm run populate:strategies
+cp infra/example.tfvars infra/dev.tfvars
 ```
 
-Populate the database with the strategies from [hqg-strategies](https://github.com/Husky-Quantitative-Group/hqg-strategies)
+Edit `infra/dev.tfvars` with your values:
+- `project`, `env`, `aws_region`
+- `api_token` (shared secret required by the API)
+- `frontend_base_url` (CORS / allowed origin)
+- `jwt_secret` (used for JWT signing)
 
-**REQUIRED:** `HQG_STRATEGIES_GITHUB_TOKEN` in `.env`
-See [docs/guides/github_tokens.md](guides/github_tokens.md)
+You can use https://jwtsecretkeygenerator.com/ to generate a JWT secret.
 
----
-
-## 8) Production-ish run (local)
-
-Build the frontend and start the backend:
-
+### Init / plan / apply
 ```bash
-npm run prod
+cd infra
+terraform init
+terraform plan -var-file=dev.tfvars
+terraform apply -var-file=dev.tfvars
 ```
 
-(Equivalently: `npm run build:frontend` then `npm run start:backend`)
-
-Frontend will be served from the backend. Can be containerized in the future.
-
----
-
-## 9) Reset the database (destructive)
-
+### Get the API base URL
 ```bash
-npm run reset:db
+terraform output -raw http_api_endpoint
 ```
 
-Stops/removes **`dev-mongo-hqg`** and deletes the **`hqg-dashboard-mongo-data`** volume.
+Set that value as `VITE_CORE_API` in `frontend/.env`.
 
----
+### Seed data (required on first deploy)
+Seeding is required the first time you create a new stack.
 
-Happy dashing!
+```bash
+python3 -m pip install --user boto3
+python3 seed/main.py \
+  --bucket "$(terraform output -raw artifacts_bucket_name)" \
+  --strategies-table "$(terraform output -raw strategies_table_name)" \
+  --artifacts-table "$(terraform output -raw strategy_artifacts_table_name)" \
+  --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
+  --region us-east-1
+```
+
+Run this from the `infra/` directory and use the same region as `aws_region` in `dev.tfvars`.
+
+### Tear down
+```bash
+terraform destroy -var-file=dev.tfvars
+```
+
+## 3) Lambda Layers
+
+This repository uses AWS Lambda Layers to manage Python dependencies that are shared across Lambdas (for example, JWT libraries).
+
+### Why Lambda Layers
+- Keeps Lambda source code clean (no vendored `site-packages`).
+- Avoids committing large dependency trees to git.
+- Allows reuse of the same dependency set across multiple Lambdas.
+- Makes upgrades explicit and centralized.
+
+### How layers are used here
+- Each folder under `aws/lambda_layers/` represents one Lambda Layer.
+- Each layer contains:
+  - `requirements.txt` - source of truth for dependencies.
+  - `build/` - generated artifacts (should not be committed).
+
+Example:
+```
+aws/lambda_layers/
+  pyjwt/
+    requirements.txt
+    build/
+      python/
+      pyjwt-layer.zip
+```
+
+### Build flow
+1. Install dependencies listed in `requirements.txt` into a `python/` directory.
+2. Zip the directory into a layer artifact.
+3. Terraform uploads the zip and attaches the layer to Lambdas.
+
+All build output lives in `build/`.
+
+### When to add a new layer
+Create a new folder under `aws/lambda_layers/` if:
+- A dependency is used by more than one Lambda, or
+- The dependency is non-trivial (auth, crypto, SDKs, etc.).
+
+Otherwise, keep Lambdas dependency-free where possible.
+
+### Build layers
+If your branch includes the layer build tooling, run:
+```bash
+bash scripts/build_layers.sh
+```
