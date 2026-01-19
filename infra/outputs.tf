@@ -48,6 +48,16 @@ output "users_table_arn" {
   description = "ARN of the Users table."
 }
 
+output "user_access_applications_table_name" {
+  value       = aws_dynamodb_table.user_access_applications.name
+  description = "Name of the UserAccessApplications table."
+}
+
+output "user_access_applications_table_arn" {
+  value       = aws_dynamodb_table.user_access_applications.arn
+  description = "ARN of the UserAccessApplications table."
+}
+
 output "http_api_id" {
   value       = aws_apigatewayv2_api.api.id
   description = "ID of the HTTP API Gateway."
