@@ -18,4 +18,5 @@ export default [
 
   // Pages that SHOULD NOT use the dashboard chrome go here:
   route("login", "routes/login.tsx"),
+  route("apply", "routes/apply.tsx"),
 ] satisfies RouteConfig;

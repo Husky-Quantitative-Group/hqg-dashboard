@@ -37,6 +37,12 @@ variable "strategy_artifact_versions_table_name" {
   default     = null
 }
 
+variable "users_table_name" {
+  description = "Optional explicit name for the Users table. Defaults to \"<project>-<env>-users\"."
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "Additional tags to apply to resources."
   type        = map(string)
@@ -47,4 +53,14 @@ variable "api_token" {
   description = "Shared secret for Lambda auth (x-api-token)."
   type        = string
   sensitive   = true
+}
+
+variable "frontend_base_url" {
+  description = "Base URL for the frontend app (used for auth redirects)."
+  type        = string
+}
+
+variable "jwt_secret" {
+  description = "Secret for JWT encoding and decoding"
+  type        = string
 }

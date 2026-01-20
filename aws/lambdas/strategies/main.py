@@ -14,9 +14,6 @@ STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
 VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
 ARTIFACT_BUCKET = os.environ["ARTIFACT_BUCKET"]
-API_TOKEN = os.environ["API_TOKEN"]
-
-
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     """
     Strategies service Lambda.
@@ -25,9 +22,6 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     - GET /strategies/{id}
     - PATCH /strategies/{id}
     """
-    if not _authorized(event):
-        return {"statusCode": 401, "body": "Unauthorized"}
-
     route_key = (event.get("requestContext") or {}).get("routeKey")
 
     if route_key == "GET /strategies":
@@ -242,12 +236,6 @@ def _count_strategies() -> int:
 def _get_strategy_by_id(strategy_id: str) -> Optional[Dict[str, Any]]:
     resp = STRATEGIES_TABLE.get_item(Key={"id": strategy_id})
     return resp.get("Item")
-
-
-def _authorized(event: Dict[str, Any]) -> bool:
-    headers = event.get("headers") or {}
-    token = headers.get("x-api-token") or headers.get("x-api-key")
-    return token == API_TOKEN
 
 
 def _clean_decimals(data: Any) -> Any:

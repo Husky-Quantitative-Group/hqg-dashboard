@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   isRouteErrorResponse,
   Links,
@@ -5,10 +6,13 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useNavigate,
 } from "react-router";
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import { coreApi } from "./api/core";
+import axios from "axios";
 
 export const links: Route.LinksFunction = () => [
   { rel: "icon", href: "/hqg-logo.png", type: "image/png" },
@@ -43,6 +47,42 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let isCancelled = false;
+    const run = async () => {
+      try {
+        await coreApi.get("/auth/me");
+        if (!isCancelled) setLoading(false);
+      } catch (error) {
+        if (isCancelled) return;
+        const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+        if (status === 403) {
+          navigate("/apply", { replace: true });
+        } else {
+          navigate("/login", { replace: true });
+        }
+        setLoading(false);
+      }
+    };
+
+    run();
+    return () => {
+      isCancelled = true;
+    };
+  }, [navigate]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white text-slate-700">
+        Checking session...
+      </div>
+    );
+  }
   return <Outlet />;
 }
 
