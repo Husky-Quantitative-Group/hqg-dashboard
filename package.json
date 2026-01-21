@@ -4,21 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "install:all": "npm install && npm install --prefix backend && npm install --prefix frontend",
-    "build:frontend": "npm run build --prefix frontend",
-    "start:backend": "node backend/src/index.ts",
-    "dev:frontend": "npm run dev --prefix frontend",
-    "dev:backend": "npm run dev --prefix backend",
-    "start:db": "(docker start dev-mongo-hqg 2>/dev/null || docker run --name dev-mongo-hqg -e MONGO_INITDB_DATABASE=hqg_dashboard -p 27017:27017 -v hqg-dashboard-mongo-data:/data/db -d mongo:7)",
-    "reset:db": "docker rm -f dev-mongo-hqg && docker volume rm hqg-dashboard-mongo-data",
-    "populate:strategies": "npm run populate:strategies --prefix backend",
-    "start:db:ui": "(docker start dev-mongo-express-hqg 2>/dev/null || docker run --name dev-mongo-express-hqg --link dev-mongo-hqg:mongo -e ME_CONFIG_MONGODB_URL=mongodb://mongo:27017/hqg_dashboard -e ME_CONFIG_BASICAUTH_USERNAME=admin -e ME_CONFIG_BASICAUTH_PASSWORD=admin -p 8081:8081 -d mongo-express:1.0.2)",
-    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
-    "prod": "npm run build:frontend && npm run start:backend"
+    "install": "npm install --prefix frontend",
+    "dev": "npm run dev --prefix frontend"
   },
   "author": "",
-  "license": "ISC",
-  "devDependencies": {
-    "concurrently": "^9.2.1"
-  }
+  "license": "ISC"
 }
