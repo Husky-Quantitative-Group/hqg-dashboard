@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -20,9 +21,11 @@ CAS_CALLBACK_URL = FRONTEND_BASE_URL + "/api/auth/callback"
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 USERS_TABLE = os.environ["USERS_TABLE"]
+USER_ACCESS_APPLICATIONS_TABLE = os.environ["USER_ACCESS_APPLICATIONS_TABLE"]
 
 dynamo = boto3.resource("dynamodb")
 users_table = dynamo.Table(USERS_TABLE)
+user_access_applications_table = dynamo.Table(USER_ACCESS_APPLICATIONS_TABLE)
 
 def _build_auth_cookie(token: str) -> str:
     is_dev = APP_ENV == "dev"
@@ -36,6 +39,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     - GET /auth/login
     - GET /auth/callback
     - GET /auth/me
+    - POST /auth/apply
     """
 
     route_key = (event.get("requestContext") or {}).get("routeKey")
@@ -84,6 +88,32 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
             return _json_response(403, {"message": "Forbidden"})
 
         return _json_response(200, {"netid": netid})
+
+    if route_key == "POST /auth/apply":
+        token = _extract_token(event)
+        if not token:
+            return _json_response(401, {"message": "Unauthorized"})
+
+        netid = _decode_netid(token)
+        if not netid:
+            return _json_response(401, {"message": "Unauthorized"})
+
+        body = _parse_body(event)
+        errors = _validate_application_inputs(body)
+        if errors:
+            return _json_response(400, {"message": "Invalid input", "errors": errors})
+
+        item = {
+            "netid": netid,
+            "created_at": _now_iso(),
+            "full_name": body.get("full_name", "").strip(),
+            "discord": _null_if_empty(body.get("discord")),
+            "linkedin": _null_if_empty(body.get("linkedin")),
+            "github": _null_if_empty(body.get("github")),
+            "uconn_email": body.get("uconn_email", "").strip(),
+        }
+        user_access_applications_table.put_item(Item=item)
+        return _json_response(201, item)
 
     return {"statusCode": 404, "body": "Not found"}
 
@@ -195,3 +225,54 @@ def _json_response(status_code: int, payload: Dict[str, Any]) -> Dict[str, Any]:
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps(payload),
     }
+
+
+def _now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
+    raw_body = event.get("body")
+    if not raw_body:
+        return {}
+    try:
+        return json.loads(raw_body)
+    except json.JSONDecodeError:
+        return {}
+
+
+def _null_if_empty(value: Optional[str]) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _validate_application_inputs(body: Dict[str, Any]) -> Dict[str, str]:
+    errors: Dict[str, str] = {}
+
+    full_name = (body.get("full_name") or "").strip()
+    if not full_name:
+        errors["full_name"] = "full_name is required"
+    elif not re.match(r"^[A-Za-z][A-Za-z .'-]{1,99}$", full_name):
+        errors["full_name"] = "full_name is invalid"
+
+    uconn_email = (body.get("uconn_email") or "").strip()
+    if not uconn_email:
+        errors["uconn_email"] = "uconn_email is required"
+    elif not re.match(r"^[A-Za-z0-9._%+-]+@uconn\.edu$", uconn_email, re.IGNORECASE):
+        errors["uconn_email"] = "uconn_email must be a @uconn.edu address"
+
+    discord = _null_if_empty(body.get("discord"))
+    if discord and not re.match(r"^[A-Za-z0-9_.-]{2,32}$", discord):
+        errors["discord"] = "discord is invalid"
+
+    linkedin = _null_if_empty(body.get("linkedin"))
+    if linkedin and not re.match(r"^https?://(www\.)?linkedin\.com/.*$", linkedin):
+        errors["linkedin"] = "linkedin must be a linkedin.com URL"
+
+    github = _null_if_empty(body.get("github"))
+    if github and not re.match(r"^https?://(www\.)?github\.com/.*$", github):
+        errors["github"] = "github must be a github.com URL"
+
+    return errors
