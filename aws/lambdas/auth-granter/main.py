@@ -107,9 +107,9 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
             "netid": netid,
             "created_at": _now_iso(),
             "full_name": body.get("full_name", "").strip(),
-            "discord": _null_if_empty(body.get("discord")),
-            "linkedin": _null_if_empty(body.get("linkedin")),
-            "github": _null_if_empty(body.get("github")),
+            "discord_username": _null_if_empty(body.get("discord_username")),
+            "linkedin_url": _null_if_empty(body.get("linkedin_url")),
+            "github_url": _null_if_empty(body.get("github_url")),
             "uconn_email": body.get("uconn_email", "").strip(),
         }
         user_access_applications_table.put_item(Item=item)
@@ -263,16 +263,16 @@ def _validate_application_inputs(body: Dict[str, Any]) -> Dict[str, str]:
     elif not re.match(r"^[A-Za-z0-9._%+-]+@uconn\.edu$", uconn_email, re.IGNORECASE):
         errors["uconn_email"] = "uconn_email must be a @uconn.edu address"
 
-    discord = _null_if_empty(body.get("discord"))
+    discord = _null_if_empty(body.get("discord_username"))
     if discord and not re.match(r"^[A-Za-z0-9_.-]{2,32}$", discord):
-        errors["discord"] = "discord is invalid"
+        errors["discord_username"] = "discord_username is invalid"
 
-    linkedin = _null_if_empty(body.get("linkedin"))
+    linkedin = _null_if_empty(body.get("linkedin_url"))
     if linkedin and not re.match(r"^https?://(www\.)?linkedin\.com/.*$", linkedin):
-        errors["linkedin"] = "linkedin must be a linkedin.com URL"
+        errors["linkedin_url"] = "linkedin_url must be a linkedin.com URL"
 
-    github = _null_if_empty(body.get("github"))
+    github = _null_if_empty(body.get("github_url"))
     if github and not re.match(r"^https?://(www\.)?github\.com/.*$", github):
-        errors["github"] = "github must be a github.com URL"
+        errors["github_url"] = "github_url must be a github.com URL"
 
     return errors
