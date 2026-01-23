@@ -49,7 +49,6 @@ def load_seed_files() -> dict[str, str]:
 def put_objects(
     s3_client,
     bucket: str,
-    prefix: str,
     strategy_id: str,
     version: int,
     files: dict[str, str],
@@ -57,7 +56,7 @@ def put_objects(
     """Upload versioned files; return map of filename -> s3 key."""
     keys: dict[str, str] = {}
     for filename, content in files.items():
-        key = f"{prefix}/{strategy_id}/v{version}/{filename}"
+        key = f"{strategy_id}/v{version}/{filename}"
         s3_client.put_object(
             Bucket=bucket,
             Key=key,
@@ -113,7 +112,6 @@ def seed_tables(
 def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed initial strategy data.")
     parser.add_argument("--bucket", required=True, help="Artifacts S3 bucket name.")
-    parser.add_argument("--prefix", default="strategies", help="S3 key prefix (default: strategies).")
     parser.add_argument("--strategies-table", required=True, help="DynamoDB Strategies table name.")
     parser.add_argument("--artifacts-table", required=True, help="DynamoDB StrategyArtifacts table name.")
     parser.add_argument(
@@ -140,7 +138,6 @@ def main(argv: Iterable[str]) -> int:
         keys = put_objects(
             s3_client=s3,
             bucket=args.bucket,
-            prefix=args.prefix.rstrip("/"),
             strategy_id=STRATEGY_ID,
             version=VERSION,
             files=files,

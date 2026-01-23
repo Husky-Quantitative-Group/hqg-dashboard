@@ -4,7 +4,6 @@ const coreBaseUrl = coreApi.defaults.baseURL ?? "";
 const loginUrl = `${coreBaseUrl}/auth/login`;
 
 export default function Login() {
-  console.log(loginUrl);
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#060c1d]">
       <div className="pointer-events-none absolute -top-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-fuchsia-500/20 blur-3xl" />

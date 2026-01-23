@@ -320,7 +320,7 @@ resource "aws_apigatewayv2_api" "api" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_headers = ["content-type", "x-api-token", "authorization"]
+    allow_headers = ["content-type"]
     allow_methods = ["OPTIONS", "GET", "POST", "PATCH"]
     allow_origins = [var.frontend_base_url]
     allow_credentials = true
@@ -330,16 +330,33 @@ resource "aws_apigatewayv2_api" "api" {
   tags = local.tags
 }
 
+resource "aws_cloudwatch_log_group" "api_access" {
+  name              = "/aws/apigateway/${local.name_prefix}-http-api-access"
+  retention_in_days = 7
+  tags              = local.tags
+}
+
 resource "aws_apigatewayv2_stage" "stage" {
   api_id      = aws_apigatewayv2_api.api.id
   name        = var.env
   auto_deploy = true
 
-  # Add throttling/logging/etc. route settings here if needed.
-  # default_route_settings {
-  #   throttling_burst_limit = 10
-  #   throttling_rate_limit  = 20
-  # }
+  default_route_settings {
+    throttling_burst_limit = 25
+    throttling_rate_limit  = 50
+  }
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_access.arn
+    format = jsonencode({
+      requestId           = "$context.requestId"
+      routeKey            = "$context.routeKey"
+      status              = "$context.status"
+      responseLatency     = "$context.responseLatency"
+      integrationLatency  = "$context.integrationLatency"
+      authorizerLatency   = "$context.authorizer.latency"
+    })
+  }
 
   tags = local.tags
 }
@@ -575,6 +592,9 @@ resource "aws_apigatewayv2_authorizer" "auth_checker" {
   authorizer_uri                    = aws_lambda_function.auth_checker.invoke_arn
   authorizer_payload_format_version = "2.0"
   enable_simple_responses           = true
+
+  authorizer_result_ttl_in_seconds = 300 
+
   identity_sources = [
     "$request.header.Cookie",
   ]
