@@ -833,6 +833,14 @@ resource "aws_apigatewayv2_route" "get_admin_users" {
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
+resource "aws_apigatewayv2_route" "get_admin_access_requests" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /admin/access-requests"
+  target    = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
 resource "aws_lambda_permission" "allow_apigw_invoke_admin" {
   statement_id  = "AllowAPIGWInvokeAdmin"
   action        = "lambda:InvokeFunction"

@@ -40,7 +40,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         return _not_implemented()
 
     if route_key == "GET /admin/access-requests":
-        return _not_implemented()
+        return _list_access_requests()
 
     if route_key == "POST /admin/access-requests/{netid}/approve":
         return _not_implemented()
@@ -61,6 +61,12 @@ def _get_auth_context(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def _list_users() -> Dict[str, Any]:
     resp = USERS_TABLE.scan()
+    items: List[Dict[str, Any]] = resp.get("Items", [])
+    return _json(200, _clean_decimals(items))
+
+
+def _list_access_requests() -> Dict[str, Any]:
+    resp = USER_ACCESS_APPLICATIONS_TABLE.scan()
     items: List[Dict[str, Any]] = resp.get("Items", [])
     return _json(200, _clean_decimals(items))
 
