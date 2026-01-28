@@ -1,6 +1,7 @@
 import json
 import os
-from typing import Any, Dict
+from decimal import Decimal
+from typing import Any, Dict, List
 import boto3
 
 dynamo = boto3.resource("dynamodb")
@@ -30,7 +31,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         return _json(403, {"message": "Forbidden"})
 
     if route_key == "GET /admin/users":
-        return _not_implemented()
+        return _list_users()
 
     if route_key == "GET /admin/users/{netid}":
         return _not_implemented()
@@ -56,6 +57,22 @@ def _not_implemented() -> Dict[str, Any]:
 
 def _get_auth_context(event: Dict[str, Any]) -> Dict[str, Any]:
     return (event.get("requestContext") or {}).get("authorizer", {}).get("lambda") or {}
+
+
+def _list_users() -> Dict[str, Any]:
+    resp = USERS_TABLE.scan()
+    items: List[Dict[str, Any]] = resp.get("Items", [])
+    return _json(200, _clean_decimals(items))
+
+
+def _clean_decimals(data: Any) -> Any:
+    if isinstance(data, list):
+        return [_clean_decimals(item) for item in data]
+    if isinstance(data, dict):
+        return {k: _clean_decimals(v) for k, v in data.items()}
+    if isinstance(data, Decimal):
+        return int(data) if data % 1 == 0 else float(data)
+    return data
 
 def _json(code: int, body: Any) -> Dict[str, Any]:
     return {

@@ -811,3 +811,32 @@ resource "aws_lambda_permission" "allow_apigw_invoke_auth_checker" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/authorizers/*"
 }
+
+
+# ------------------------------
+# API Gateway integration/routes for admin lambda
+# ------------------------------
+
+resource "aws_apigatewayv2_integration" "admin" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.admin.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "get_admin_users" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /admin/users"
+  target    = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_lambda_permission" "allow_apigw_invoke_admin" {
+  statement_id  = "AllowAPIGWInvokeAdmin"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.admin.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
