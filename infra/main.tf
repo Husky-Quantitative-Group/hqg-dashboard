@@ -311,6 +311,35 @@ resource "aws_iam_policy" "user_access_applications_write" {
   tags = local.tags
 }
 
+data "aws_iam_policy_document" "admin_dynamodb" {
+  statement {
+    sid    = "DynamoAdminAccess"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "dynamodb:DescribeTable",
+    ]
+
+    resources = [
+      aws_dynamodb_table.users.arn,
+      aws_dynamodb_table.user_access_applications.arn,
+    ]
+  }
+}
+
+resource "aws_iam_policy" "admin_dynamodb" {
+  name   = "${local.name_prefix}-admin-dynamodb"
+  policy = data.aws_iam_policy_document.admin_dynamodb.json
+
+  tags = local.tags
+}
+
 # ------------------------------
 # API Gateway (HTTP API) scaffold
 # ------------------------------
@@ -389,6 +418,12 @@ data "archive_file" "auth_checker_lambda" {
   output_path = "${path.module}/dist/auth-checker-lambda.zip"
 }
 
+data "archive_file" "admin_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/admin"
+  output_path = "${path.module}/dist/admin-lambda.zip"
+}
+
 # ------------------------------
 # Lambda IAM roles and policies
 # ------------------------------
@@ -427,6 +462,13 @@ resource "aws_iam_role" "auth_granter_lambda" {
 
 resource "aws_iam_role" "auth_checker_lambda" {
   name               = "${local.name_prefix}-auth-checker-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = local.tags
+}
+
+resource "aws_iam_role" "admin_lambda" {
+  name               = "${local.name_prefix}-admin-lambda"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 
   tags = local.tags
@@ -475,6 +517,16 @@ resource "aws_iam_role_policy_attachment" "auth_checker_lambda_basic_logs" {
 resource "aws_iam_role_policy_attachment" "auth_checker_lambda_users_read" {
   role       = aws_iam_role.auth_checker_lambda.name
   policy_arn = aws_iam_policy.users_read.arn
+}
+
+resource "aws_iam_role_policy_attachment" "admin_lambda_basic_logs" {
+  role       = aws_iam_role.admin_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "admin_lambda_dynamodb" {
+  role       = aws_iam_role.admin_lambda.name
+  policy_arn = aws_iam_policy.admin_dynamodb.arn
 }
 
 # ------------------------------
@@ -576,6 +628,25 @@ resource "aws_lambda_function" "auth_checker" {
     variables = {
       USERS_TABLE = aws_dynamodb_table.users.name
       JWT_SECRET  = var.jwt_secret
+    }
+  }
+
+  tags = local.tags
+}
+
+resource "aws_lambda_function" "admin" {
+  function_name = "${local.name_prefix}-admin"
+  role          = aws_iam_role.admin_lambda.arn
+  runtime       = "python3.11"
+  handler       = "main.handler"
+
+  filename         = data.archive_file.admin_lambda.output_path
+  source_code_hash = data.archive_file.admin_lambda.output_base64sha256
+
+  environment {
+    variables = {
+      USERS_TABLE                   = aws_dynamodb_table.users.name
+      USER_ACCESS_APPLICATIONS_TABLE = aws_dynamodb_table.user_access_applications.name
     }
   }
 
