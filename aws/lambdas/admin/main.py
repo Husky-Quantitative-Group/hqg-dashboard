@@ -19,7 +19,15 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     - POST /admin/access-requests/{netid}/approve
     - POST /admin/access-requests/{netid}/deny
     """
+
     route_key = (event.get("requestContext") or {}).get("routeKey")
+
+    auth_context = _get_auth_context(event)
+
+    roles = json.loads(auth_context.get("roles", "[]"))
+
+    if "ADMIN" not in roles:
+        return _json(403, {"message": "Forbidden"})
 
     if route_key == "GET /admin/users":
         return _not_implemented()
@@ -45,6 +53,9 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
 def _not_implemented() -> Dict[str, Any]:
     return _json(501, {"message": "Not implemented"})
 
+
+def _get_auth_context(event: Dict[str, Any]) -> Dict[str, Any]:
+    return (event.get("requestContext") or {}).get("authorizer", {}).get("lambda") or {}
 
 def _json(code: int, body: Any) -> Dict[str, Any]:
     return {
