@@ -119,6 +119,7 @@ export default function Sidebar() {
             { label: "Strategies", to: "/strategies" }, // only real page for now
             { label: "Projects", to: "/projects" },
             { label: "Portfolio", to: "/portfolio" },
+            { label: "Admin", to: "/admin" },
           ]}
         />
       </nav>
