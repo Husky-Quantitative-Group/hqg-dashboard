@@ -9,6 +9,7 @@ from http.cookies import SimpleCookie
 from typing import Any, Dict, Optional
 
 import boto3
+from boto3.dynamodb.conditions import Key
 import jwt
 
 APP_ENV = os.environ.get("APP_ENV", "prod").lower()
@@ -98,6 +99,10 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         if not netid:
             return _json_response(401, {"message": "Unauthorized"})
 
+        latest = _get_latest_application(netid)
+        if latest and (latest.get("status") == "PENDING"):
+            return _json_response(409, {"message": "Application already pending"})
+
         body = _parse_body(event)
         errors = _validate_application_inputs(body)
         if errors:
@@ -111,6 +116,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
             "linkedin_url": _null_if_empty(body.get("linkedin_url")),
             "github_url": _null_if_empty(body.get("github_url")),
             "uconn_email": body.get("uconn_email", "").strip(),
+            "status": "PENDING",
         }
         user_access_applications_table.put_item(Item=item)
         return _json_response(201, item)
@@ -276,3 +282,13 @@ def _validate_application_inputs(body: Dict[str, Any]) -> Dict[str, str]:
         errors["github_url"] = "github_url must be a github.com URL"
 
     return errors
+
+
+def _get_latest_application(netid: str) -> Optional[Dict[str, Any]]:
+    resp = user_access_applications_table.query(
+        KeyConditionExpression=Key("netid").eq(netid),
+        ScanIndexForward=False,
+        Limit=1,
+    )
+    items = resp.get("Items", [])
+    return items[0] if items else None

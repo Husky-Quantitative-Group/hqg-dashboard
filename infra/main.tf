@@ -296,6 +296,7 @@ data "aws_iam_policy_document" "user_access_applications_write" {
 
     actions = [
       "dynamodb:PutItem",
+      "dynamodb:Query",
     ]
 
     resources = [
