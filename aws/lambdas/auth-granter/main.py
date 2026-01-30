@@ -41,6 +41,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     - GET /auth/callback
     - GET /auth/me
     - POST /auth/apply
+    - GET /auth/apply/check
     """
 
     route_key = (event.get("requestContext") or {}).get("routeKey")
@@ -120,6 +121,28 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         }
         user_access_applications_table.put_item(Item=item)
         return _json_response(201, item)
+
+    if route_key == "GET /auth/apply/check":
+        token = _extract_token(event)
+        if not token:
+            return _json_response(401, {"message": "Unauthorized"})
+
+        netid = _decode_netid(token)
+        if not netid:
+            return _json_response(401, {"message": "Unauthorized"})
+
+        latest = _get_latest_application(netid)
+        if not latest:
+            return _json_response(200, {"has_application": False})
+
+        return _json_response(
+            200,
+            {
+                "has_application": True,
+                "status": latest.get("status"),
+                "created_at": latest.get("created_at"),
+            },
+        )
 
     return {"statusCode": 404, "body": "Not found"}
 

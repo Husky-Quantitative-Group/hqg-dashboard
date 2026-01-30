@@ -726,6 +726,12 @@ resource "aws_apigatewayv2_route" "auth_apply" {
   target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
 }
 
+resource "aws_apigatewayv2_route" "auth_apply_check" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /auth/apply/check"
+  target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
+}
+
 resource "aws_lambda_permission" "allow_apigw_invoke_auth_granter" {
   statement_id  = "AllowAPIGWInvokeAuthGranter"
   action        = "lambda:InvokeFunction"
