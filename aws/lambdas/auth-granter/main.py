@@ -100,6 +100,9 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         if not netid:
             return _json_response(401, {"message": "Unauthorized"})
 
+        if _user_allowed(netid):
+            return _json_response(409, {"message": "User already has access"})
+
         latest = _get_latest_application(netid)
         if latest and (latest.get("status") == "PENDING"):
             return _json_response(409, {"message": "Application already pending"})
@@ -130,6 +133,9 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         netid = _decode_netid(token)
         if not netid:
             return _json_response(401, {"message": "Unauthorized"})
+
+        if _user_allowed(netid):
+            return _json_response(200, {"has_application": True, "status": "APPROVED"})
 
         latest = _get_latest_application(netid)
         if not latest:

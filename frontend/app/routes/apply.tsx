@@ -23,14 +23,21 @@ export default function Apply() {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [checkingStatus, setCheckingStatus] = useState(true);
+  const [applicationStatus, setApplicationStatus] = useState<string | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
     const checkStatus = async () => {
       try {
         const response = await coreApi.get("/auth/apply/check");
+        const status = response.data?.status as string | undefined;
         if (!isCancelled && response.data?.has_application) {
-          setSuccess(true);
+          setApplicationStatus(status ?? "PENDING");
+          if (status && status.toUpperCase() === "DENIED") {
+            setSuccess(false);
+          } else {
+            setSuccess(true);
+          }
         }
       } catch (err) {
         if (!isCancelled) {
@@ -119,6 +126,11 @@ export default function Apply() {
             </div>
           ) : (
             <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+              {applicationStatus === "DENIED" && (
+                <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
+                  Your last application was denied. You can submit a new request below.
+                </div>
+              )}
               <div className="grid gap-5 md:grid-cols-2">
                 <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
                   Display Name *
