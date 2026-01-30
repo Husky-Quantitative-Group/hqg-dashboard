@@ -11,6 +11,14 @@ export default defineConfig(({ mode }) => {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
     server: {
       proxy: {
+        // Backtester rerouting (docker local host)
+        "/api/backtest": {
+          target: "http://localhost:8005",
+          changeOrigin: true,
+          secure: false,
+          rewrite: (path) => path.replace(/^\/api\/backtest$/, "/api/v1/backtest"),
+        },
+
         "/api": {
           target: coreApiBaseUrl,
           changeOrigin: true,
