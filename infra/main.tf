@@ -841,6 +841,22 @@ resource "aws_apigatewayv2_route" "get_admin_access_requests" {
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
+resource "aws_apigatewayv2_route" "post_admin_access_requests_approve" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "POST /admin/access-requests/{netid}/approve"
+  target    = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "post_admin_access_requests_deny" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "POST /admin/access-requests/{netid}/deny"
+  target    = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
 resource "aws_lambda_permission" "allow_apigw_invoke_admin" {
   statement_id  = "AllowAPIGWInvokeAdmin"
   action        = "lambda:InvokeFunction"

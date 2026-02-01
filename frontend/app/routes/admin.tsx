@@ -53,6 +53,23 @@ export default function AdminPage() {
     };
   }, []);
 
+  const refreshRequests = async () => {
+    try {
+      const data = await fetchAdminAccessRequests();
+      setRequests(data);
+      if (selectedRequest) {
+        const match = data.find(
+          (item) =>
+            item.netid === selectedRequest.netid &&
+            item.created_at === selectedRequest.created_at
+        );
+        setSelectedRequest(match ?? null);
+      }
+    } catch (err) {
+      setError("Failed to refresh access requests.");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -109,7 +126,10 @@ export default function AdminPage() {
             {tab === "users" ? (
               <AdminUsersDetail user={selectedUser} />
             ) : (
-              <AdminAccessRequestDetail request={selectedRequest} />
+              <AdminAccessRequestDetail
+                request={selectedRequest}
+                onActionComplete={refreshRequests}
+              />
             )}
           </div>
         </div>

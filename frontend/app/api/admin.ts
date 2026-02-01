@@ -39,3 +39,15 @@ export async function fetchAdminAccessRequests(): Promise<AccessRequest[]> {
   if (Array.isArray(data)) return data;
   return data.items ?? [];
 }
+
+export async function approveAccessRequest(netid: string, decisionNotes: string) {
+  await coreApi.post(`/admin/access-requests/${netid}/approve`, {
+    decision_notes: decisionNotes,
+  });
+}
+
+export async function denyAccessRequest(netid: string, decisionNotes: string) {
+  await coreApi.post(`/admin/access-requests/${netid}/deny`, {
+    decision_notes: decisionNotes,
+  });
+}
