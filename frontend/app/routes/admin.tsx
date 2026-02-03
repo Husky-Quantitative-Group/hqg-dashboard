@@ -25,6 +25,8 @@ export default function AdminPage() {
   const [selectedRequest, setSelectedRequest] = useState<AccessRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshingUsers, setRefreshingUsers] = useState(false);
+  const [refreshingRequests, setRefreshingRequests] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,7 +55,26 @@ export default function AdminPage() {
     };
   }, []);
 
+  const refreshUsers = async () => {
+    if (refreshingUsers) return;
+    setRefreshingUsers(true);
+    try {
+      const data = await fetchAdminUsers();
+      setUsers(data);
+      if (selectedUser) {
+        const match = data.find((item) => item.netid === selectedUser.netid);
+        setSelectedUser(match ?? null);
+      }
+    } catch (err) {
+      setError("Failed to refresh users.");
+    } finally {
+      setRefreshingUsers(false);
+    }
+  };
+
   const refreshRequests = async () => {
+    if (refreshingRequests) return;
+    setRefreshingRequests(true);
     try {
       const data = await fetchAdminAccessRequests();
       setRequests(data);
@@ -67,6 +88,8 @@ export default function AdminPage() {
       }
     } catch (err) {
       setError("Failed to refresh access requests.");
+    } finally {
+      setRefreshingRequests(false);
     }
   };
 
@@ -109,17 +132,45 @@ export default function AdminPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
           <div>
             {tab === "users" ? (
-              <AdminUsersTable
-                users={users}
-                selectedNetid={selectedUser?.netid}
-                onSelect={(user) => setSelectedUser(user)}
-              />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold text-slate-200">Users</div>
+                  <button
+                    type="button"
+                    onClick={refreshUsers}
+                    disabled={refreshingUsers}
+                    className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:text-white"
+                  >
+                    {refreshingUsers ? "Refreshing..." : "Refresh"}
+                  </button>
+                </div>
+                <AdminUsersTable
+                  users={users}
+                  selectedNetid={selectedUser?.netid}
+                  onSelect={(user) => setSelectedUser(user)}
+                />
+              </div>
             ) : (
-              <AdminAccessRequestsTable
-                requests={requests}
-                selectedNetid={selectedRequest?.netid}
-                onSelect={(request) => setSelectedRequest(request)}
-              />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold text-slate-200">
+                    Access requests
+                  </div>
+                  <button
+                    type="button"
+                    onClick={refreshRequests}
+                    disabled={refreshingRequests}
+                    className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:text-white"
+                  >
+                    {refreshingRequests ? "Refreshing..." : "Refresh"}
+                  </button>
+                </div>
+                <AdminAccessRequestsTable
+                  requests={requests}
+                  selectedNetid={selectedRequest?.netid}
+                  onSelect={(request) => setSelectedRequest(request)}
+                />
+              </div>
             )}
           </div>
           <div>
