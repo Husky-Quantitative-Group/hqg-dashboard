@@ -2,9 +2,17 @@ import type { AdminUser } from "~/api/admin";
 
 type AdminUsersDetailProps = {
   user?: AdminUser | null;
+  loading?: boolean;
 };
 
-export default function AdminUsersDetail({ user }: AdminUsersDetailProps) {
+export default function AdminUsersDetail({ user, loading }: AdminUsersDetailProps) {
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6 text-slate-400">
+        Loading user...
+      </div>
+    );
+  }
   if (!user) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/30 p-6 text-slate-400">

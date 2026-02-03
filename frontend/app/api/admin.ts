@@ -33,6 +33,11 @@ export async function fetchAdminUsers(): Promise<AdminUser[]> {
   return data.items ?? [];
 }
 
+export async function fetchAdminUser(netid: string): Promise<AdminUser> {
+  const response = await coreApi.get(`/admin/users/${netid}`);
+  return response.data as AdminUser;
+}
+
 export async function fetchAdminAccessRequests(): Promise<AccessRequest[]> {
   const response = await coreApi.get("/admin/access-requests");
   const data = response.data as { items?: AccessRequest[] } | AccessRequest[];

@@ -36,7 +36,8 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         return _list_users()
 
     if route_key == "GET /admin/users/{netid}":
-        return _not_implemented()
+        netid = _get_netid_param(event)
+        return _get_user(netid)
 
     if route_key == "PATCH /admin/users/{netid}":
         return _not_implemented()
@@ -75,6 +76,16 @@ def _list_access_requests() -> Dict[str, Any]:
     resp = USER_ACCESS_APPLICATIONS_TABLE.scan()
     items: List[Dict[str, Any]] = resp.get("Items", [])
     return _json(200, _clean_decimals(items))
+
+
+def _get_user(netid: str | None) -> Dict[str, Any]:
+    if not netid:
+        return _json(400, {"message": "netid is required"})
+    resp = USERS_TABLE.get_item(Key={"netid": netid})
+    item = resp.get("Item")
+    if not item:
+        return _json(404, {"message": "User not found"})
+    return _json(200, _clean_decimals(item))
 
 
 def _approve_access_request(netid: str | None, decision_notes: str, decided_by: str | None) -> Dict[str, Any]:

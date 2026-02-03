@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   fetchAdminAccessRequests,
+  fetchAdminUser,
   fetchAdminUsers,
   type AccessRequest,
   type AdminUser,
@@ -27,6 +28,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshingUsers, setRefreshingUsers] = useState(false);
   const [refreshingRequests, setRefreshingRequests] = useState(false);
+  const [userDetailLoading, setUserDetailLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +71,20 @@ export default function AdminPage() {
       setError("Failed to refresh users.");
     } finally {
       setRefreshingUsers(false);
+    }
+  };
+
+  const handleUserSelect = async (user: AdminUser) => {
+    setSelectedUser(user);
+    setUserDetailLoading(true);
+    setError(null);
+    try {
+      const detail = await fetchAdminUser(user.netid);
+      setSelectedUser(detail);
+    } catch (err) {
+      setError("Failed to load user details.");
+    } finally {
+      setUserDetailLoading(false);
     }
   };
 
@@ -147,7 +163,7 @@ export default function AdminPage() {
                 <AdminUsersTable
                   users={users}
                   selectedNetid={selectedUser?.netid}
-                  onSelect={(user) => setSelectedUser(user)}
+                  onSelect={handleUserSelect}
                 />
               </div>
             ) : (
@@ -175,7 +191,10 @@ export default function AdminPage() {
           </div>
           <div>
             {tab === "users" ? (
-              <AdminUsersDetail user={selectedUser} />
+              <AdminUsersDetail
+                user={selectedUser}
+                loading={userDetailLoading}
+              />
             ) : (
               <AdminAccessRequestDetail
                 request={selectedRequest}
