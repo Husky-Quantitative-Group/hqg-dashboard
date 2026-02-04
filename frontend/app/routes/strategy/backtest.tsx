@@ -96,6 +96,7 @@ export default function StrategyBacktest() {
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [hasHydratedResults, setHasHydratedResults] = useState(false);
   const [backtestData, setBacktestData] = useState<BacktestResponse | null>(null);
+  const [lastRunParameters, setLastRunParameters] = useState<BacktestParameter[]>(DEFAULT_PARAMETERS);
 
   const handleRunBacktest = async (values: RunParameterState) => {
     if (isRunningBacktest) return;
@@ -112,6 +113,12 @@ export default function StrategyBacktest() {
     setIsRunningBacktest(true);
     setHasHydratedResults(false);
     addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
+    setLastRunParameters(
+      DEFAULT_PARAMETERS.map((param) => ({
+        ...param,
+        value: values[param.id] ?? param.value,
+      }))
+    );
 
     try {
       const response = await runBacktest({
@@ -136,7 +143,7 @@ export default function StrategyBacktest() {
     addToast("Saved backtest snapshot to results", "success");
   };
 
-  const showPlaceholder = !hasHydratedResults || isRunningBacktest;
+  const showPlaceholder = !backtestData || isRunningBacktest;
   const animatePlaceholder = isRunningBacktest;
   const skeletonBaseColor = "#111a26";
   const skeletonHighlightColor = animatePlaceholder ? "#1d2a3f" : skeletonBaseColor;
@@ -160,7 +167,7 @@ export default function StrategyBacktest() {
           <div className="space-y-6">
             <BacktestParameters
               strategyName={strategy.name}
-              parameters={MOCK_PARAMETERS}
+              parameters={lastRunParameters}
               isRunning={isRunningBacktest}
               onRun={handleRunBacktest}
             />
@@ -473,7 +480,7 @@ function toUnixTime(dateString: string): UTCTimestamp {
   return Math.floor(new Date(dateString).getTime() / 1000) as UTCTimestamp;
 }
 
-const MOCK_PARAMETERS: BacktestParameter[] = [
+const DEFAULT_PARAMETERS: BacktestParameter[] = [
   { id: "name", label: "Name", value: "Backtest Trial 1", type: "text" },
   { id: "startingEquity", label: "Starting Equity", value: "100000", prefix: "$", type: "currency" },
   { id: "startDate", label: "Start Date", value: "2020-01-03", type: "date" },
