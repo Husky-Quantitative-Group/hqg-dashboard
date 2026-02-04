@@ -29,6 +29,7 @@ locals {
   strategy_artifacts_table_name    = coalesce(var.strategy_artifacts_table_name, "${local.name_prefix}-strategy-artifacts")
   strategy_artifact_versions_table = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
   users_table_name                 = coalesce(var.users_table_name, "${local.name_prefix}-users")
+  user_access_applications_table_name = coalesce(var.user_access_applications_table_name, "${local.name_prefix}-user-access-applications")
 
   tags = merge(
     {
@@ -187,6 +188,33 @@ resource "aws_dynamodb_table" "users" {
   tags = local.tags
 }
 
+resource "aws_dynamodb_table" "user_access_applications" {
+  name         = local.user_access_applications_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "netid"
+  range_key    = "created_at"
+
+  attribute {
+    name = "netid"
+    type = "S"
+  }
+
+  attribute {
+    name = "created_at"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = local.tags
+}
+
 # ------------------------------
 # IAM policy: allow Lambdas to use storage
 # ------------------------------
@@ -259,6 +287,29 @@ data "aws_iam_policy_document" "users_read" {
 resource "aws_iam_policy" "users_read" {
   name   = "${local.name_prefix}-users-read"
   policy = data.aws_iam_policy_document.users_read.json
+
+  tags = local.tags
+}
+
+data "aws_iam_policy_document" "user_access_applications_write" {
+  statement {
+    sid    = "DynamoUserAccessApplicationsWrite"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:PutItem",
+      "dynamodb:Query",
+    ]
+
+    resources = [
+      aws_dynamodb_table.user_access_applications.arn,
+    ]
+  }
+}
+
+resource "aws_iam_policy" "user_access_applications_write" {
+  name   = "${local.name_prefix}-user-access-applications-write"
+  policy = data.aws_iam_policy_document.user_access_applications_write.json
 
   tags = local.tags
 }
@@ -414,6 +465,11 @@ resource "aws_iam_role_policy_attachment" "auth_granter_lambda_users_read" {
   policy_arn = aws_iam_policy.users_read.arn
 }
 
+resource "aws_iam_role_policy_attachment" "auth_granter_lambda_user_access_applications_write" {
+  role       = aws_iam_role.auth_granter_lambda.name
+  policy_arn = aws_iam_policy.user_access_applications_write.arn
+}
+
 resource "aws_iam_role_policy_attachment" "auth_checker_lambda_basic_logs" {
   role       = aws_iam_role.auth_checker_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -501,6 +557,7 @@ resource "aws_lambda_function" "auth_granter" {
       JWT_SECRET = var.jwt_secret
       APP_ENV = var.env
       USERS_TABLE = aws_dynamodb_table.users.name
+      USER_ACCESS_APPLICATIONS_TABLE = aws_dynamodb_table.user_access_applications.name
     }
   }
 
@@ -662,6 +719,18 @@ resource "aws_apigatewayv2_route" "auth_callback" {
 resource "aws_apigatewayv2_route" "auth_me" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /auth/me"
+  target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
+}
+
+resource "aws_apigatewayv2_route" "auth_apply" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "POST /auth/apply"
+  target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
+}
+
+resource "aws_apigatewayv2_route" "auth_apply_check" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /auth/apply/check"
   target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
 }
 

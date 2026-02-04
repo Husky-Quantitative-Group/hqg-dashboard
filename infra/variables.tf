@@ -43,6 +43,12 @@ variable "users_table_name" {
   default     = null
 }
 
+variable "user_access_applications_table_name" {
+  description = "Optional explicit name for the UserAccessApplications table. Defaults to \"<project>-<env>-user-access-applications\"."
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "Additional tags to apply to resources."
   type        = map(string)
