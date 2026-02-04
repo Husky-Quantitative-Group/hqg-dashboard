@@ -194,6 +194,10 @@ export default function AdminPage() {
               <AdminUsersDetail
                 user={selectedUser}
                 loading={userDetailLoading}
+                onSaveComplete={(updated) => {
+                  setSelectedUser(updated);
+                  refreshUsers();
+                }}
               />
             ) : (
               <AdminAccessRequestDetail

@@ -40,7 +40,9 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         return _get_user(netid)
 
     if route_key == "PATCH /admin/users/{netid}":
-        return _not_implemented()
+        netid = _get_netid_param(event)
+        body = _parse_body(event)
+        return _patch_user(netid, body)
 
     if route_key == "GET /admin/access-requests":
         return _list_access_requests()
@@ -86,6 +88,67 @@ def _get_user(netid: str | None) -> Dict[str, Any]:
     if not item:
         return _json(404, {"message": "User not found"})
     return _json(200, _clean_decimals(item))
+
+
+def _patch_user(netid: str | None, body: Dict[str, Any]) -> Dict[str, Any]:
+    if not netid:
+        return _json(400, {"message": "netid is required"})
+    if not body:
+        return _json(400, {"message": "body is required"})
+
+    allowed_fields = {
+        "full_name",
+        "uconn_email",
+        "discord_username",
+        "linkedin_url",
+        "github_url",
+        "roles",
+        "is_banned",
+        "notes",
+    }
+    body = {k: v for k, v in body.items() if k in allowed_fields}
+    if not body:
+        return _json(400, {"message": "no updatable fields provided"})
+
+    roles = body.get("roles")
+    if roles is not None:
+        allowed_roles = {"MEMBER", "ADMIN"}
+        if not isinstance(roles, list) or any(role not in allowed_roles for role in roles):
+            return _json(400, {"message": "roles must be a list of MEMBER/ADMIN"})
+
+    update_parts: List[str] = []
+    expr_names: Dict[str, str] = {}
+    expr_values: Dict[str, Any] = {}
+
+    for idx, (key, value) in enumerate(body.items()):
+        name_key = f"#k{idx}"
+        value_key = f":v{idx}"
+        expr_names[name_key] = key
+        expr_values[value_key] = value
+        update_parts.append(f"{name_key} = {value_key}")
+
+    expr_names["#updated_at"] = "updated_at"
+    expr_values[":updated_at"] = _now_iso()
+    update_parts.append("#updated_at = :updated_at")
+
+    update_expr = "SET " + ", ".join(update_parts)
+
+    try:
+        resp = USERS_TABLE.update_item(
+            Key={"netid": netid},
+            UpdateExpression=update_expr,
+            ExpressionAttributeNames=expr_names,
+            ExpressionAttributeValues=expr_values,
+            ConditionExpression="attribute_exists(netid)",
+            ReturnValues="ALL_NEW",
+        )
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code")
+        if code == "ConditionalCheckFailedException":
+            return _json(404, {"message": "User not found"})
+        return _json(500, {"message": "Failed to update user"})
+
+    return _json(200, _clean_decimals(resp.get("Attributes") or {}))
 
 
 def _approve_access_request(netid: str | None, decision_notes: str, decided_by: str | None) -> Dict[str, Any]:
@@ -202,7 +265,7 @@ def _deny_access_request(netid: str | None, decision_notes: str, decided_by: str
             ExpressionAttributeNames=expr_names,
             ExpressionAttributeValues=expr_values,
         )
-    except ClientError as exc:
+    except ClientError:
         return _json(500, {"message": "Failed to deny access request"})
 
     return _json(200, {"ok": True})
@@ -217,19 +280,22 @@ def _get_netid_param(event: Dict[str, Any]) -> str | None:
     return netid or None
 
 def _get_decision_notes(event: Dict[str, Any]) -> str:
-    raw_body = event.get("body")
-    if not raw_body:
-        return ""
-    try:
-        parsed = json.loads(raw_body)
-    except json.JSONDecodeError:
-        return ""
-    if not isinstance(parsed, dict):
-        return ""
+    parsed = _parse_body(event)
     value = parsed.get("decision_notes", "")
     if isinstance(value, str):
         return value
     return str(value)
+
+
+def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
+    raw_body = event.get("body")
+    if not raw_body:
+        return {}
+    try:
+        parsed = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _now_iso() -> str:

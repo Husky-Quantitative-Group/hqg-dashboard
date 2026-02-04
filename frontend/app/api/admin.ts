@@ -38,6 +38,11 @@ export async function fetchAdminUser(netid: string): Promise<AdminUser> {
   return response.data as AdminUser;
 }
 
+export async function patchAdminUser(netid: string, payload: Partial<AdminUser>) {
+  const response = await coreApi.patch(`/admin/users/${netid}`, payload);
+  return response.data as AdminUser;
+}
+
 export async function fetchAdminAccessRequests(): Promise<AccessRequest[]> {
   const response = await coreApi.get("/admin/access-requests");
   const data = response.data as { items?: AccessRequest[] } | AccessRequest[];

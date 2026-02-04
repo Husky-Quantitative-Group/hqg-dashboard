@@ -841,6 +841,14 @@ resource "aws_apigatewayv2_route" "get_admin_user_by_netid" {
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
+resource "aws_apigatewayv2_route" "patch_admin_user_by_netid" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "PATCH /admin/users/{netid}"
+  target    = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
 resource "aws_apigatewayv2_route" "get_admin_access_requests" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /admin/access-requests"
