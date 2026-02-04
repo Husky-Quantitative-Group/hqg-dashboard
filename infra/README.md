@@ -33,10 +33,10 @@ terraform apply -var-file="example.tfvars"
 Example:
 ```bash
 python infra/seed/main.py \
-  --bucket hqg-dev-strategy-artifacts \
-  --strategies-table hqg-dev-strategies \
-  --artifacts-table hqg-dev-strategy-artifacts \
-  --artifact-versions-table hqg-dev-strategy-artifact-versions \
+  --bucket "$(terraform output -raw artifacts_bucket_name)" \
+  --strategies-table "$(terraform output -raw strategies_table_name)" \
+  --artifacts-table "$(terraform output -raw strategy_artifacts_table_name)" \
+  --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
   --region us-east-1
 ```
 

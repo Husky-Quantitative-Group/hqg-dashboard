@@ -7,11 +7,11 @@ Creates:
 - DynamoDB items in Strategies, StrategyArtifacts, StrategyArtifactVersions.
 
 Example:
-  python seed/main.py \
-    --bucket my-dev-strategy-artifacts \
-    --strategies-table dev-strategies \
-    --artifacts-table dev-strategy-artifacts \
-    --artifact-versions-table dev-strategy-artifact-versions \
+    python infra/seed/main.py \
+    --bucket "$(terraform output -raw artifacts_bucket_name)" \
+    --strategies-table "$(terraform output -raw strategies_table_name)" \
+    --artifacts-table "$(terraform output -raw strategy_artifacts_table_name)" \
+    --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
     --region us-east-1
 """
 
