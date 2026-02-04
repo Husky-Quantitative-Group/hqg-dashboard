@@ -9,6 +9,7 @@ import {
 } from "lightweight-charts";
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
+import { runBacktest, type BacktestResponse } from "~/api/backtest";
 import { useStrategyWorkspace } from "./layout";
 
 type BacktestParameter = {
@@ -91,9 +92,10 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 export default function StrategyBacktest() {
-  const { strategy, addToast } = useStrategyWorkspace();
+  const { strategy, entrypoint, addToast } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [hasHydratedResults, setHasHydratedResults] = useState(false);
+  const [backtestData, setBacktestData] = useState<BacktestResponse | null>(null);
   const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -104,18 +106,27 @@ export default function StrategyBacktest() {
     };
   }, []);
 
-  const handleRunBacktest = (values: RunParameterState) => {
-    if (isRunningBacktest) {
-      return;
-    }
+  const handleRunBacktest = async (values: RunParameterState) => {
+    if (isRunningBacktest) return;
+
     setIsRunningBacktest(true);
     setHasHydratedResults(false);
     addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
-    pendingTimeoutRef.current = setTimeout(() => {
-      setIsRunningBacktest(false);
-      setHasHydratedResults(true);
-      addToast("Mock backtest finished", "success");
-    }, 2000);
+
+    const strategyCode = entrypoint?.content ?? "";
+    const parsedStartingEquity = Number.parseFloat((values.startingEquity ?? "").replace(/,/g, ""));
+    const initialCapital = Number.isFinite(parsedStartingEquity) ? parsedStartingEquity : 0;
+
+    const response = await runBacktest({
+      strategy_code: strategyCode,
+      start_date: values.startDate ?? "",
+      end_date: values.endDate ?? "",
+      initial_capital: initialCapital,
+    });
+
+    setBacktestData(response);
+    setIsRunningBacktest(false);
+    setHasHydratedResults(true);
   };
 
   const handleSaveResults = () => {
