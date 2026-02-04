@@ -1,70 +1,70 @@
 [
   {
     "id": "1",
-    "title": "Buy & Hold SPY",
+    "title": "Buy and Hold SPY",
     "author": "hqg",
     "entrypoint": "main.py",
     "files": ["main.py", "README.md", "requirements.txt"]
   },
   {
     "id": "2",
-    "title": "",
+    "title": "60/40 Portfolio",
     "author": "hqg",
     "entrypoint": "main.py",
     "files": ["main.py", "README.md", "requirements.txt"]
   },
   {
     "id": "3",
-    "title": "",
+    "title": "Simple Momentum",
     "author": "hqg",
     "entrypoint": "main.py",
     "files": ["main.py", "README.md", "requirements.txt"]
   },
   {
     "id": "4",
-    "title": "",
+    "title": "Pairs Trading",
     "author": "hqg",
     "entrypoint": "main.py",
     "files": ["main.py", "README.md", "requirements.txt"]
   },
   {
     "id": "5",
-    "title": "",
+    "title": "Moving Average Crossover",
     "author": "hqg",
     "entrypoint": "main.py",
     "files": ["main.py", "README.md", "requirements.txt"]
   },
   {
     "id": "6",
-    "title": "",
+    "title": "Volatility Targeting",
     "author": "hqg",
     "entrypoint": "main.py",
     "files": ["main.py", "README.md", "requirements.txt"]
   },
   {
     "id": "7",
-    "title": "",
+    "title": "Equal Risk Contribution (Risk Parity Lite)",
     "author": "hqg",
     "entrypoint": "main.py",
     "files": ["main.py", "README.md", "requirements.txt"]
   },
   {
     "id": "8",
-    "title": "",
+    "title": "Multi-Factor Ranking",
     "author": "hqg",
     "entrypoint": "main.py",
     "files": ["main.py", "README.md", "requirements.txt"]
   },
   {
     "id": "9",
-    "title": "",
+    "title": "Sector Rotation",
     "author": "hqg",
     "entrypoint": "main.py",
     "files": ["main.py", "README.md", "requirements.txt"]
   },
   {
     "id": "10",
-    "title": "",
+    "title": "Mean-Variance Optimization (Markowitz)",
     "author": "hqg",
     "entrypoint": "main.py",
     "files": ["main.py", "README.md", "requirements.txt"]
