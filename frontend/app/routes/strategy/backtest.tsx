@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState, useMemo } from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -9,7 +9,7 @@ import {
 } from "lightweight-charts";
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
-import { runBacktest, type BacktestResponse } from "~/api/backtest";
+import { runBacktest, type BacktestResponse, type EquityCurve, type Metrics, type Trade } from "~/api/backtest";
 import { useStrategyWorkspace } from "./layout";
 
 type BacktestParameter = {
@@ -141,6 +141,10 @@ export default function StrategyBacktest() {
   const skeletonBaseColor = "#111a26";
   const skeletonHighlightColor = animatePlaceholder ? "#1d2a3f" : skeletonBaseColor;
 
+  const metrics = useMemo(() => buildMetrics(backtestData?.metrics), [backtestData]);
+  const candles = useMemo(() => buildCandles(backtestData?.equity_curve), [backtestData]);
+  const orders = useMemo(() => buildOrders(backtestData?.trades), [backtestData]);
+
   return (
     <SkeletonTheme baseColor={skeletonBaseColor} highlightColor={skeletonHighlightColor}>
       <div className="space-y-6">
@@ -160,19 +164,19 @@ export default function StrategyBacktest() {
               isRunning={isRunningBacktest}
               onRun={handleRunBacktest}
             />
-            <BacktestMetrics metrics={MOCK_METRICS} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
+            <BacktestMetrics metrics={metrics} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
           </div>
 
           <div className="space-y-6">
             <StrategyEquityChart
               strategyName={strategy.name}
               stats={MOCK_EQUITY_STATS}
-              candles={MOCK_CANDLES}
+              candles={candles}
               onSave={handleSaveResults}
               showPlaceholder={showPlaceholder}
               animatePlaceholder={animatePlaceholder}
             />
-            <BacktestOrdersTable orders={MOCK_ORDERS} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
+            <BacktestOrdersTable orders={orders} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
           </div>
         </div>
       </div>
@@ -475,6 +479,89 @@ const MOCK_PARAMETERS: BacktestParameter[] = [
   { id: "startDate", label: "Start Date", value: "2020-01-03", type: "date" },
   { id: "endDate", label: "End Date", value: "2024-01-03", type: "date" },
 ];
+
+const toDecimal = (value: number | undefined) => (Number.isFinite(value) ? (value as number) : null);
+
+const formatNumber = (value: number | null, decimals = 2) =>
+  value === null ? "—" : value.toFixed(decimals);
+
+const formatPercent = (value: number | null, decimals = 2) => {
+  if (value === null) return "—";
+  const normalized = Math.abs(value) <= 1 ? value * 100 : value;
+  return `${normalized.toFixed(decimals)}%`;
+};
+
+const formatMoney = (value: number | null) => (value === null ? "—" : currencyFormatter.format(value));
+
+const buildMetrics = (metrics?: Metrics): BacktestMetric[] => {
+  const sharpe = toDecimal(metrics?.sharpe_ratio);
+  const sortino = toDecimal(metrics?.sortino);
+  const alpha = toDecimal(metrics?.alpha);
+  const beta = toDecimal(metrics?.beta);
+  const psr = toDecimal(metrics?.psr);
+  const winRate = toDecimal(metrics?.win_rate);
+  const maxDrawdown = toDecimal(metrics?.max_drawdown);
+  const totalOrders = toDecimal(metrics?.total_orders);
+  const avgWin = toDecimal(metrics?.avg_win);
+  const avgLoss = toDecimal(metrics?.avg_loss);
+  const totalReturn = toDecimal(metrics?.total_return);
+  const annualizedReturn = toDecimal(metrics?.annualized_return);
+
+  return [
+    { id: "sharpe", label: "Sharpe", value: formatNumber(sharpe), column: "left" },
+    { id: "sortino", label: "Sortino", value: formatNumber(sortino), column: "left" },
+    { id: "alpha", label: "Alpha", value: formatNumber(alpha), column: "left" },
+    { id: "beta", label: "Beta", value: formatNumber(beta), column: "left" },
+    { id: "psr", label: "PSR", value: formatNumber(psr), column: "left" },
+    { id: "winRate", label: "Win Rate", value: formatPercent(winRate), column: "left" },
+    { id: "totalReturn", label: "Total Return", value: formatPercent(totalReturn), column: "right" },
+    { id: "annualizedReturn", label: "Ann. Return", value: formatPercent(annualizedReturn), column: "right" },
+    { id: "maxDrawdown", label: "Max Drawdown", value: formatPercent(maxDrawdown), column: "right" },
+    { id: "totalOrders", label: "Total Orders", value: totalOrders === null ? "—" : numberFormatter.format(totalOrders), column: "right" },
+    { id: "avgWin", label: "Avg Win %", value: formatPercent(avgWin), column: "right" },
+    { id: "avgLoss", label: "Avg Loss %", value: formatPercent(avgLoss), column: "right" },
+  ];
+};
+
+const buildCandles = (equityCurve?: EquityCurve): EquityCandle[] => {
+  if (!equityCurve) return [];
+
+  const entries = Object.entries(equityCurve)
+    .map(([date, value]) => ({ date, value }))
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  if (entries.length === 0) return [];
+
+  const candles: EquityCandle[] = [];
+  let previous = entries[0].value;
+  for (const entry of entries) {
+    const open = previous;
+    const close = entry.value;
+    candles.push({
+      time: toUnixTime(entry.date),
+      open,
+      high: Math.max(open, close),
+      low: Math.min(open, close),
+      close,
+    });
+    previous = close;
+  }
+
+  return candles;
+};
+
+const buildOrders = (trades?: Trade[]): BacktestOrder[] => {
+  if (!trades) return [];
+
+  return trades.map((trade, index) => ({
+    id: `${trade.timestamp}-${trade.symbol}-${index}`,
+    timestamp: trade.timestamp,
+    ticker: trade.symbol,
+    type: trade.action === "buy" ? "Buy" : "Sell",
+    price: trade.price,
+    amount: trade.shares,
+  }));
+};
 
 const MOCK_METRICS: BacktestMetric[] = [
   { id: "sharpe", label: "Sharpe", value: "4.42", column: "left" },
