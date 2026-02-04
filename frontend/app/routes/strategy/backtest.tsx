@@ -96,38 +96,41 @@ export default function StrategyBacktest() {
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [hasHydratedResults, setHasHydratedResults] = useState(false);
   const [backtestData, setBacktestData] = useState<BacktestResponse | null>(null);
-  const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (pendingTimeoutRef.current) {
-        clearTimeout(pendingTimeoutRef.current);
-      }
-    };
-  }, []);
 
   const handleRunBacktest = async (values: RunParameterState) => {
     if (isRunningBacktest) return;
+
+    const strategyCode = entrypoint?.content ?? "";
+    if (!strategyCode.trim()) {
+      addToast("Entrypoint file is empty. Open the file to load its contents before running.", "warning");
+      return;
+    }
+
+    const parsedStartingEquity = Number.parseFloat((values.startingEquity ?? "").replace(/,/g, ""));
+    const initialCapital = Number.isFinite(parsedStartingEquity) ? parsedStartingEquity : 0;
 
     setIsRunningBacktest(true);
     setHasHydratedResults(false);
     addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
 
-    const strategyCode = entrypoint?.content ?? "";
-    const parsedStartingEquity = Number.parseFloat((values.startingEquity ?? "").replace(/,/g, ""));
-    const initialCapital = Number.isFinite(parsedStartingEquity) ? parsedStartingEquity : 0;
+    try {
+      const response = await runBacktest({
+        strategy_code: strategyCode,
+        start_date: values.startDate ?? "",
+        end_date: values.endDate ?? "",
+        initial_capital: initialCapital,
+      });
 
-    const response = await runBacktest({
-      strategy_code: strategyCode,
-      start_date: values.startDate ?? "",
-      end_date: values.endDate ?? "",
-      initial_capital: initialCapital,
-    });
-
-    setBacktestData(response);
-    setIsRunningBacktest(false);
-    setHasHydratedResults(true);
+      setBacktestData(response);
+      addToast("Backtest finished", "success");
+      setHasHydratedResults(true);
+    } catch {
+      addToast("Backtest failed", "warning");
+    } finally {
+      setIsRunningBacktest(false);
+    }
   };
+
 
   const handleSaveResults = () => {
     addToast("Saved backtest snapshot to results", "success");
