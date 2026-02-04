@@ -5,6 +5,8 @@ Seed the storage layer with an initial root strategy.
 Creates:
 - S3 objects for versioned files (sourced from infra/seed/files).
 - DynamoDB items in Strategies, StrategyArtifacts, StrategyArtifactVersions.
+Optional:
+- DynamoDB item in Users to grant an admin role.
 
 Example:
     python infra/seed/main.py \
@@ -12,6 +14,8 @@ Example:
     --strategies-table "$(terraform output -raw strategies_table_name)" \
     --artifacts-table "$(terraform output -raw strategy_artifacts_table_name)" \
     --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
+    --users-table "$(terraform output -raw users_table_name)" \
+    --admin-netid "YOUR_NETID" \
     --region us-east-1
 """
 
@@ -109,6 +113,22 @@ def seed_tables(
         print(f"Upserted artifact {filename} and version row for v{VERSION}")
 
 
+def seed_admin_user(dynamo, users_table: str, netid: str) -> None:
+    now = utcnow_iso()
+    users = dynamo.Table(users_table)
+    users.put_item(
+        Item={
+            "netid": netid,
+            "roles": ["ADMIN"],
+            "is_banned": False,
+            "created_at": now,
+            "updated_at": now,
+            "joined_at": now,
+        }
+    )
+    print(f"Upserted admin user {netid} in {users_table}")
+
+
 def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed initial strategy data.")
     parser.add_argument("--bucket", required=True, help="Artifacts S3 bucket name.")
@@ -119,8 +139,13 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
         required=True,
         help="DynamoDB StrategyArtifactVersions table name.",
     )
+    parser.add_argument("--users-table", default=None, help="DynamoDB Users table name.")
+    parser.add_argument("--admin-netid", default=None, help="NetID to seed as an admin user.")
     parser.add_argument("--region", default=None, help="AWS region (overrides default resolver).")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.admin_netid and not args.users_table:
+        parser.error("--users-table is required when --admin-netid is set.")
+    return args
 
 
 def main(argv: Iterable[str]) -> int:
@@ -149,6 +174,9 @@ def main(argv: Iterable[str]) -> int:
             versions_table=args.artifact_versions_table,
             s3_keys=keys,
         )
+        admin_netid = args.admin_netid.strip() if args.admin_netid else None
+        if admin_netid and args.users_table:
+            seed_admin_user(dynamo=dynamo, users_table=args.users_table, netid=admin_netid)
     except (ClientError, BotoCoreError) as exc:
         print(f"Failed to seed data: {exc}", file=sys.stderr)
         return 1

@@ -59,6 +59,18 @@ python3 seed/main.py \
 
 Run this from the `infra/` directory and use the same region as `aws_region` in `dev.tfvars`.
 
+Optional: seed your NetID as an admin user to skip the apply flow.
+```bash
+python3 seed/main.py \
+  --bucket "$(terraform output -raw artifacts_bucket_name)" \
+  --strategies-table "$(terraform output -raw strategies_table_name)" \
+  --artifacts-table "$(terraform output -raw strategy_artifacts_table_name)" \
+  --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
+  --users-table "$(terraform output -raw users_table_name)" \
+  --admin-netid "YOUR_NETID" \
+  --region us-east-1
+```
+
 ### Tear down
 ```bash
 terraform destroy -var-file=dev.tfvars
