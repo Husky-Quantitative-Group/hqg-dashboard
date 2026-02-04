@@ -1,0 +1,72 @@
+[
+  {
+    "id": "1",
+    "title": "Buy & Hold SPY",
+    "author": "hqg",
+    "entrypoint": "main.py",
+    "files": ["main.py", "README.md", "requirements.txt"]
+  },
+  {
+    "id": "2",
+    "title": "",
+    "author": "hqg",
+    "entrypoint": "main.py",
+    "files": ["main.py", "README.md", "requirements.txt"]
+  },
+  {
+    "id": "3",
+    "title": "",
+    "author": "hqg",
+    "entrypoint": "main.py",
+    "files": ["main.py", "README.md", "requirements.txt"]
+  },
+  {
+    "id": "4",
+    "title": "",
+    "author": "hqg",
+    "entrypoint": "main.py",
+    "files": ["main.py", "README.md", "requirements.txt"]
+  },
+  {
+    "id": "5",
+    "title": "",
+    "author": "hqg",
+    "entrypoint": "main.py",
+    "files": ["main.py", "README.md", "requirements.txt"]
+  },
+  {
+    "id": "6",
+    "title": "",
+    "author": "hqg",
+    "entrypoint": "main.py",
+    "files": ["main.py", "README.md", "requirements.txt"]
+  },
+  {
+    "id": "7",
+    "title": "",
+    "author": "hqg",
+    "entrypoint": "main.py",
+    "files": ["main.py", "README.md", "requirements.txt"]
+  },
+  {
+    "id": "8",
+    "title": "",
+    "author": "hqg",
+    "entrypoint": "main.py",
+    "files": ["main.py", "README.md", "requirements.txt"]
+  },
+  {
+    "id": "9",
+    "title": "",
+    "author": "hqg",
+    "entrypoint": "main.py",
+    "files": ["main.py", "README.md", "requirements.txt"]
+  },
+  {
+    "id": "10",
+    "title": "",
+    "author": "hqg",
+    "entrypoint": "main.py",
+    "files": ["main.py", "README.md", "requirements.txt"]
+  }
+]
