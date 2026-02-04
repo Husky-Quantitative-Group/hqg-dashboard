@@ -151,6 +151,10 @@ export default function StrategyBacktest() {
   const metrics = useMemo(() => buildMetrics(backtestData?.metrics), [backtestData]);
   const candles = useMemo(() => buildCandles(backtestData?.equity_curve), [backtestData]);
   const orders = useMemo(() => buildOrders(backtestData?.trades), [backtestData]);
+  const equityStats = useMemo(
+    () => buildEquityStats(backtestData, lastRunParameters),
+    [backtestData, lastRunParameters]
+  );
 
   return (
     <SkeletonTheme baseColor={skeletonBaseColor} highlightColor={skeletonHighlightColor}>
@@ -177,7 +181,7 @@ export default function StrategyBacktest() {
           <div className="space-y-6">
             <StrategyEquityChart
               strategyName={strategy.name}
-              stats={MOCK_EQUITY_STATS}
+              stats={equityStats}
               candles={candles}
               onSave={handleSaveResults}
               showPlaceholder={showPlaceholder}
@@ -569,6 +573,33 @@ const buildOrders = (trades?: Trade[]): BacktestOrder[] => {
     amount: trade.shares,
   }));
 };
+
+const buildEquityStats = (data: BacktestResponse | null, params: BacktestParameter[]): EquityStat[] => {
+  if (!data) return [];
+
+  const startingEquityParam = params.find((p) => p.id === "startingEquity")?.value ?? "0";
+  const parsedStarting = Number.parseFloat(startingEquityParam.replace(/,/g, ""));
+  const initialCapital = Number.isFinite(parsedStarting) ? parsedStarting : 0;
+
+  const finalEquity = data.final_value ?? null;
+  const cash = data.final_cash ?? null;
+  const netProfit = finalEquity === null ? null : finalEquity - initialCapital;
+  const returnPct = netProfit === null || initialCapital === 0 ? null : netProfit / initialCapital;
+
+  const profitAccent = netProfit !== null && netProfit >= 0 ? "text-emerald-300" : "text-rose-300";
+  const returnAccent = returnPct !== null && returnPct >= 0 ? "text-emerald-300" : "text-rose-300";
+
+  const positionsCount = Array.isArray(data.final_positions) ? data.final_positions.length : 0;
+
+  return [
+    { id: "finalEquity", label: "Final Equity", value: formatMoney(finalEquity), accentClass: "text-white" },
+    { id: "netProfit", label: "Net Profit", value: formatMoney(netProfit), accentClass: profitAccent },
+    { id: "return", label: "Return", value: formatPercent(returnPct), accentClass: returnAccent },
+    { id: "cash", label: "Cash", value: formatMoney(cash), accentClass: "text-white" },
+    { id: "positions", label: "Positions", value: String(positionsCount), accentClass: "text-white" },
+  ];
+};
+
 
 const MOCK_METRICS: BacktestMetric[] = [
   { id: "sharpe", label: "Sharpe", value: "4.42", column: "left" },
