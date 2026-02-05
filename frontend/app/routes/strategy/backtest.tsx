@@ -495,8 +495,7 @@ const formatNumber = (value: number | null, decimals = 2) =>
 
 const formatPercent = (value: number | null, decimals = 2) => {
   if (value === null) return "—";
-  const normalized = Math.abs(value) <= 1 ? value * 100 : value;
-  return `${normalized.toFixed(decimals)}%`;
+  return `${(value * 100).toFixed(decimals)}%`;
 };
 
 const formatMoney = (value: number | null) => (value === null ? "—" : currencyFormatter.format(value));
