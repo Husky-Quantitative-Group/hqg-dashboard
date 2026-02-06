@@ -443,6 +443,25 @@ export default function Portfolio() {
     void fetchPortfolioData();
   }, [selectedPortfolioId, selectedTimeframe]);
 
+  const chartData = useMemo(() => transformEquityToLineData(equityData), [equityData]);
+  const highlights = useMemo(
+    () => transformSnapshotToHighlights(snapshotData, equityData[0]?.equity_value),
+    [snapshotData, equityData]
+  );
+  const displayMetrics = useMemo(() => transformMetricsToDisplay(metricsData), [metricsData]);
+  const portfolioEvents = useMemo(
+    () => transformEventsToTable(executionEvents, allocationEvents),
+    [executionEvents, allocationEvents]
+  );
+  const strategyAllocationSlices = useMemo(
+    () => transformAllocationsToSlices(strategyAllocations, snapshotData?.equity || 0),
+    [strategyAllocations, snapshotData]
+  );
+  const assetAllocationSlices = useMemo(
+    () => transformAllocationsToSlices(assetAllocations, snapshotData?.equity || 0),
+    [assetAllocations, snapshotData]
+  );
+
   const handleStopTrading = async () => {
     if (!selectedPortfolioId) {
       alert("Please select a portfolio");
@@ -520,6 +539,20 @@ export default function Portfolio() {
           <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Portfolio</p>
           <h1 className="text-3xl font-semibold text-white">Multi-Strategy Portfolio</h1>
         </div>
+        <div className="flex items-center gap-3">
+          <label htmlFor="portfolio-select" className="text-sm text-slate-300">
+            Portfolio ID:
+          </label>
+          <input
+            id="portfolio-select"
+            type="number"
+            min="1"
+            value={selectedPortfolioId || ""}
+            onChange={(e) => setSelectedPortfolioId(e.target.value ? parseInt(e.target.value, 10) : null)}
+            placeholder="Enter portfolio ID"
+            className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -560,21 +593,31 @@ export default function Portfolio() {
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(260px,1fr)]">
-        <div className="space-y-6">
-          <PortfolioEquityChart
-            candles={PORTFOLIO_CANDLES}
-            highlights={PORTFOLIO_HIGHLIGHTS}
-            selectedTimeframe={selectedTimeframe}
-            onTimeframeChange={setSelectedTimeframe}
-          />
-          <PortfolioEventsTable events={PORTFOLIO_EVENTS} />
+      {selectedPortfolioId ? (
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(260px,1fr)]">
+          <div className="space-y-6">
+            <PortfolioEquityChart
+              candles={chartData.map((point) => ({ time: point.time, open: point.value, high: point.value, low: point.value, close: point.value }))}
+              highlights={highlights}
+              selectedTimeframe={selectedTimeframe}
+              onTimeframeChange={setSelectedTimeframe}
+            />
+            <PortfolioEventsTable events={portfolioEvents} />
+          </div>
+          <div className="space-y-6">
+            <PortfolioMetrics metrics={displayMetrics} />
+            <AllocationBreakdown
+              view={allocationView}
+              slices={allocationView === "strategy" ? strategyAllocationSlices : assetAllocationSlices}
+              onChangeView={handleAllocationViewChange}
+            />
+          </div>
         </div>
-        <div className="space-y-6">
-          <PortfolioMetrics metrics={PORTFOLIO_METRICS} />
-          <AllocationBreakdown view={allocationView} slices={ALLOCATION_DATA[allocationView]} onChangeView={handleAllocationViewChange} />
+      ) : (
+        <div className="flex items-center justify-center py-12">
+          <p className="text-slate-400">Select a portfolio</p>
         </div>
-      </div>
+      )}
     </div>
   );
 }
