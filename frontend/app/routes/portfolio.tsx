@@ -66,6 +66,8 @@ type PortfolioMetric = {
 type PortfolioEquityChartProps = {
   candles: CandlestickData[];
   highlights: EquityHighlight[];
+  selectedTimeframe: "3M" | "6M" | "YTD" | null;
+  onTimeframeChange: (timeframe: "3M" | "6M" | "YTD" | null) => void;
 };
 
 type PortfolioEventsTableProps = {
@@ -391,7 +393,12 @@ export default function Portfolio() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(260px,1fr)]">
         <div className="space-y-6">
-          <PortfolioEquityChart candles={PORTFOLIO_CANDLES} highlights={PORTFOLIO_HIGHLIGHTS} />
+          <PortfolioEquityChart
+            candles={PORTFOLIO_CANDLES}
+            highlights={PORTFOLIO_HIGHLIGHTS}
+            selectedTimeframe={selectedTimeframe}
+            onTimeframeChange={setSelectedTimeframe}
+          />
           <PortfolioEventsTable events={PORTFOLIO_EVENTS} />
         </div>
         <div className="space-y-6">
@@ -403,7 +410,7 @@ export default function Portfolio() {
   );
 }
 
-function PortfolioEquityChart({ candles, highlights }: PortfolioEquityChartProps) {
+function PortfolioEquityChart({ candles, highlights, selectedTimeframe, onTimeframeChange }: PortfolioEquityChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lineSeriesData = useMemo<LineData[]>(
     () => candles.map((candle) => ({ time: candle.time, value: candle.close })),
@@ -469,9 +476,36 @@ function PortfolioEquityChart({ candles, highlights }: PortfolioEquityChartProps
           <h2 className="text-xl font-semibold text-white">Portfolio Equity Curve</h2>
         </div>
         <div className="flex items-center gap-2">
-          <button className="rounded-lg border border-slate-800 px-3 py-1 text-xs font-medium text-slate-300 hover:border-slate-700 hover:text-white">3M</button>
-          <button className="rounded-lg border border-slate-800 px-3 py-1 text-xs font-medium text-slate-300 hover:border-slate-700 hover:text-white">6M</button>
-          <button className="rounded-lg border border-slate-800 px-3 py-1 text-xs font-medium text-slate-300 hover:border-slate-700 hover:text-white">YTD</button>
+          <button
+            onClick={() => onTimeframeChange(selectedTimeframe === "3M" ? null : "3M")}
+            className={`rounded-lg border px-3 py-1 text-xs font-medium transition ${
+              selectedTimeframe === "3M"
+                ? "border-indigo-500 bg-indigo-500/20 text-indigo-300"
+                : "border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white"
+            }`}
+          >
+            3M
+          </button>
+          <button
+            onClick={() => onTimeframeChange(selectedTimeframe === "6M" ? null : "6M")}
+            className={`rounded-lg border px-3 py-1 text-xs font-medium transition ${
+              selectedTimeframe === "6M"
+                ? "border-indigo-500 bg-indigo-500/20 text-indigo-300"
+                : "border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white"
+            }`}
+          >
+            6M
+          </button>
+          <button
+            onClick={() => onTimeframeChange(selectedTimeframe === "YTD" ? null : "YTD")}
+            className={`rounded-lg border px-3 py-1 text-xs font-medium transition ${
+              selectedTimeframe === "YTD"
+                ? "border-indigo-500 bg-indigo-500/20 text-indigo-300"
+                : "border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white"
+            }`}
+          >
+            YTD
+          </button>
         </div>
       </header>
 
