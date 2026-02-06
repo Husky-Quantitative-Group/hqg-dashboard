@@ -1,4 +1,9 @@
-import { coreApi } from "./core";
+import axios from "axios";
+
+export const backtesterApi = axios.create({
+  baseURL: "/backtester-api",
+  withCredentials: true,
+});
 
 export type Trade = {
   timestamp: string;
@@ -45,11 +50,6 @@ export type BacktestRequest = {
 };
 
 export const runBacktest = async (payload: BacktestRequest): Promise<BacktestResponse> => {
-  const response = await coreApi.post<BacktestResponse>("/backtest", {
-    strategy_code: payload.strategy_code,
-    start_date: payload.start_date,
-    end_date: payload.end_date,
-    initial_capital: payload.initial_capital,
-  });
+  const response = await backtesterApi.post<BacktestResponse>("", payload);
   return response.data;
 };

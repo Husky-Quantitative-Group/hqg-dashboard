@@ -156,3 +156,9 @@ docker compose up --build
 ```
 
 The API should be available at http://localhost:8005
+
+If you're running the dashboard locally, set the backtester URL in `frontend/.env` so the Vite proxy can reach it:
+
+```bash
+BACKTESTER_URL=http://localhost:8005
+```
