@@ -25,6 +25,9 @@ import {
   getAssetAllocations,
   getExecutionEvents,
   getAllocationEvents,
+  stopTrading,
+  resumeTrading,
+  liquidatePortfolio,
 } from "../api";
 
 type EquityHighlight = {
@@ -269,6 +272,76 @@ export default function Portfolio() {
     void fetchPortfolioData();
   }, [selectedPortfolioId, selectedTimeframe]);
 
+  const handleStopTrading = async () => {
+    if (!selectedPortfolioId) {
+      alert("Please select a portfolio");
+      return;
+    }
+
+    setIsActionLoading(true);
+    try {
+      const response = await stopTrading(selectedPortfolioId);
+      alert(response.message);
+      window.location.reload(); // refresh after stopping (or could refetch data)
+    } 
+    catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to stop trading");
+      console.error("Error stopping trading:", error);
+    } 
+    finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleResumeTrading = async () => {
+    if (!selectedPortfolioId) {
+      alert("Please select a portfolio");
+      return;
+    }
+
+    setIsActionLoading(true);
+    try {
+      const response = await resumeTrading(selectedPortfolioId);
+      alert(response.message);
+      window.location.reload(); // same consideration as before
+    } 
+    catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to resume trading");
+      console.error("Error resuming trading:", error);
+    } 
+    finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleLiquidate = async () => {
+    if (!selectedPortfolioId) {
+      alert("Please select a portfolio");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Are you sure you want to liquidate all positions? This cannot be undone."
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsActionLoading(true);
+    try {
+      const response = await liquidatePortfolio(selectedPortfolioId);
+      alert(response.message);
+      window.location.reload(); // same
+    } 
+    catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to liquidate portfolio");
+      console.error("Error liquidating portfolio:", error);
+    } 
+    finally {
+      setIsActionLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -291,15 +364,27 @@ export default function Portfolio() {
           </button>
           <button
             type="button"
-            className="rounded-xl border border-rose-500/60 bg-rose-700/70 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-rose-500/40 transition hover:bg-rose-600"
+            onClick={handleStopTrading}
+            disabled={!selectedPortfolioId || isActionLoading}
+            className="rounded-xl border border-rose-500/60 bg-rose-700/70 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-rose-500/40 transition hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Stop Trading
+            {isActionLoading ? "Processing..." : "Stop Trading"}
           </button>
           <button
             type="button"
-            className="rounded-xl border border-red-600/70 bg-red-700 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-red-600/40 transition hover:bg-red-600"
+            onClick={handleResumeTrading}
+            disabled={!selectedPortfolioId || isActionLoading}
+            className="rounded-xl border border-emerald-500/60 bg-emerald-700/70 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/40 transition hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Liquidate
+            {isActionLoading ? "Processing..." : "Resume Trading"}
+          </button>
+          <button
+            type="button"
+            onClick={handleLiquidate}
+            disabled={!selectedPortfolioId || isActionLoading}
+            className="rounded-xl border border-red-600/70 bg-red-700 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-red-600/40 transition hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isActionLoading ? "Processing..." : "Liquidate"}
           </button>
         </div>
       </header>
