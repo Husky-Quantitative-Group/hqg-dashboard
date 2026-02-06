@@ -326,7 +326,7 @@ export default function Portfolio() {
           setIsLoadingEquity(true);
           setEquityError(null);
           try {
-            const data = await getEquity(selectedPortfolioId, selectedTimeframe || undefined);
+            const data = await getEquity(selectedPortfolioId, selectedTimeframe || "YTD");
             setEquityData(data.data);
           } 
           catch (error) {
@@ -342,7 +342,7 @@ export default function Portfolio() {
           setIsLoadingSnapshot(true);
           setSnapshotError(null);
           try {
-            const data = await getSnapshot(selectedPortfolioId, selectedTimeframe || undefined);
+            const data = await getSnapshot(selectedPortfolioId, selectedTimeframe || "YTD");
             setSnapshotData(data);
           } 
           catch (error) {
@@ -358,7 +358,7 @@ export default function Portfolio() {
           setIsLoadingMetrics(true);
           setMetricsError(null);
           try {
-            const data = await getMetrics(selectedPortfolioId, selectedTimeframe || undefined);
+            const data = await getMetrics(selectedPortfolioId, selectedTimeframe || "YTD");
             setMetricsData(data);
           } 
           catch (error) {
@@ -374,7 +374,7 @@ export default function Portfolio() {
           setIsLoadingExecutionEvents(true);
           setEventsError(null);
           try {
-            const data = await getExecutionEvents(selectedPortfolioId, selectedTimeframe || undefined);
+            const data = await getExecutionEvents(selectedPortfolioId, selectedTimeframe || "YTD");
             setExecutionEvents(data.events);
           } 
           catch (error) {
@@ -390,7 +390,7 @@ export default function Portfolio() {
           setIsLoadingAllocationEvents(true);
           setEventsError(null);
           try {
-            const data = await getAllocationEvents(selectedPortfolioId, selectedTimeframe || undefined);
+            const data = await getAllocationEvents(selectedPortfolioId, selectedTimeframe || "YTD");
             setAllocationEvents(data.events);
           } 
           catch (error) {
