@@ -395,3 +395,58 @@ export const startStrategyRunExecution = (strategyId: number, existingRunCount: 
 
   return { draftRun, finalize };
 };
+
+export const stopTrading = async (id: number): Promise<TradeResponse> => {
+  const response = await hqgEngineClient.post<TradeResponse>(`/portfolio/${id}/stop`);
+  return response.data;
+};
+
+export const resumeTrading = async (id: number): Promise<TradeResponse> => {
+  const response = await hqgEngineClient.post<TradeResponse>(`/portfolio/${id}/resume`);
+  return response.data;
+};
+
+export const liquidatePortfolio = async (id: number): Promise<TradeResponse> => {
+  const response = await hqgEngineClient.post<TradeResponse>(`/portfolio/${id}/liquidate`);
+  return response.data;
+};
+
+export const getEquity = async (id: number, timeframe?: Timeframe): Promise<EquityResponse> => {
+  const params = timeframe ? { timeframe } : {};
+  const response = await hqgEngineClient.get<EquityResponse>(`/portfolio/${id}/equity`, { params });
+  return response.data;
+};
+
+export const getSnapshot = async (id: number, timeframe?: Timeframe): Promise<SnapshotResponse> => {
+  const params = timeframe ? { timeframe } : {};
+  const response = await hqgEngineClient.get<SnapshotResponse>(`/portfolio/${id}/snapshot`, { params });
+  return response.data;
+};
+
+export const getMetrics = async (id: number, timeframe?: Timeframe): Promise<MetricsResponse> => {
+  const params = timeframe ? { timeframe } : {};
+  const response = await hqgEngineClient.get<MetricsResponse>(`/portfolio/${id}/metrics`, { params });
+  return response.data;
+};
+
+export const getStrategyAllocations = async (id: number): Promise<StrategyAllocationsResponse> => {
+  const response = await hqgEngineClient.get<StrategyAllocationsResponse>(`/portfolio/${id}/allocations/strategies`);
+  return response.data;
+};
+
+export const getAssetAllocations = async (id: number): Promise<AssetAllocationsResponse> => {
+  const response = await hqgEngineClient.get<AssetAllocationsResponse>(`/portfolio/${id}/allocations/assets`);
+  return response.data;
+};
+
+export const getExecutionEvents = async (id: number, timeframe?: Timeframe): Promise<ExecutionEventsResponse> => {
+  const params = timeframe ? { timeframe } : {};
+  const response = await hqgEngineClient.get<ExecutionEventsResponse>(`/portfolio/${id}/events/executions`, { params });
+  return response.data;
+};
+
+export const getAllocationEvents = async (id: number, timeframe?: Timeframe): Promise<AllocationEventsResponse> => {
+  const params = timeframe ? { timeframe } : {};
+  const response = await hqgEngineClient.get<AllocationEventsResponse>(`/portfolio/${id}/events/allocations`, { params });
+  return response.data;
+};
