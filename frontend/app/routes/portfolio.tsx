@@ -107,6 +107,175 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 const AUM_DISPLAY = currencyFormatter.format(25600000);
 const AUM_DELTA = "+12.4% YTD";
 
+function transformEquityToLineData(equityPoints: EquityPoint[]): LineData[] {
+  return equityPoints.map((point) => ({
+    time: toUnixTime(point.timestamp),
+    value: point.equity_value,
+  }));
+}
+
+function transformSnapshotToHighlights(
+  snapshot: SnapshotResponse | null,
+  initialEquity?: number
+): EquityHighlight[] {
+  if (!snapshot) {
+    return [];
+  }
+
+  const profitChange = snapshot.net_profit >= 0 ? "+" : "";
+  const returnChange = snapshot.return_pct >= 0 ? "+" : "";
+
+  return [
+    {
+      id: "capital",
+      label: "Capital",
+      value: currencyFormatter.format(snapshot.capital),
+      change: "Capital deployed",
+      tone: "neutral",
+    },
+    {
+      id: "equity",
+      label: "Equity",
+      value: currencyFormatter.format(snapshot.equity),
+      change: initialEquity
+        ? `${profitChange}${currencyFormatter.format(Math.abs(snapshot.equity - initialEquity))} vs. start`
+        : "Current portfolio value",
+      tone: snapshot.equity >= (initialEquity || 0) ? "positive" : "negative",
+    },
+    {
+      id: "profit",
+      label: "Net Profit",
+      value: `${profitChange}${currencyFormatter.format(Math.abs(snapshot.net_profit))}`,
+      change: "After fees & carry",
+      tone: snapshot.net_profit >= 0 ? "positive" : "negative",
+    },
+    {
+      id: "return",
+      label: "Return %",
+      value: `${returnChange}${(snapshot.return_pct * 100).toFixed(2)}%`,
+      change: "Total return percentage",
+      tone: snapshot.return_pct >= 0 ? "positive" : "negative",
+    },
+  ];
+}
+
+function transformMetricsToDisplay(metrics: MetricsResponse | null): PortfolioMetric[] {
+  if (!metrics) {
+    return [];
+  }
+
+  const formatMetric = (value: number, isPercentage: boolean = false): string => {
+    if (isPercentage) {
+      return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}%`;
+    }
+    return value.toFixed(2);
+  };
+
+  const determineTrend = (value: number, isPositiveBetter: boolean = true): "up" | "down" | "neutral" => {
+    if (value === 0) return "neutral";
+    const isPositive = value > 0;
+    return isPositiveBetter === isPositive ? "up" : "down";
+  };
+
+  return [
+    {
+      id: "sharpe",
+      label: "Sharpe",
+      value: formatMetric(metrics.metrics.sharpe || 0),
+      helper: "",
+      trend: determineTrend(metrics.metrics.sharpe || 0),
+    },
+    {
+      id: "sortino",
+      label: "Sortino",
+      value: formatMetric(metrics.metrics.sortino || 0),
+      helper: "",
+      trend: determineTrend(metrics.metrics.sortino || 0),
+    },
+    {
+      id: "cagr",
+      label: "CAGR",
+      value: formatMetric(metrics.metrics.cagr || 0, true),
+      helper: "",
+      trend: determineTrend(metrics.metrics.cagr || 0),
+    },
+    {
+      id: "drawdown",
+      label: "Max Drawdown",
+      value: formatMetric(metrics.metrics.max_drawdown || 0, true),
+      helper: "",
+      trend: determineTrend(metrics.metrics.max_drawdown || 0, false),
+    },
+    {
+      id: "alpha",
+      label: "Alpha",
+      value: formatMetric(metrics.metrics.alpha || 0, true),
+      helper: "",
+      trend: determineTrend(metrics.metrics.alpha || 0),
+    },
+    {
+      id: "beta",
+      label: "Beta",
+      value: formatMetric(metrics.metrics.beta || 0),
+      helper: "",
+      trend: "neutral",
+    },
+    {
+      id: "vol",
+      label: "Annual STD",
+      value: formatMetric(metrics.metrics.std || 0, true),
+      helper: "",
+      trend: "neutral",
+    },
+  ];
+}
+
+function transformAllocationsToSlices(
+  allocations: Record<string, number>,
+  totalValue: number
+): AllocationSlice[] {
+  return Object.entries(allocations)
+    .map(([key, value]) => ({
+      id: key.toLowerCase().replace(/\s+/g, "-"),
+      label: key,
+      value: value * 100,
+      color: "",
+      detail: `${compactCurrencyFormatter.format(value * totalValue)} • ${(value * 100).toFixed(1)}%`,
+    }))
+    .sort((a, b) => b.value - a.value); // sort descending
+}
+
+function transformEventsToTable(
+  executionEvents: ExecutionEvent[],
+  allocationEvents: AllocationEvent[]
+): PortfolioEvent[] {
+  const events: PortfolioEvent[] = [];
+
+  // transform execution events
+  executionEvents.forEach((event, index) => {
+    events.push({
+      id: `exec-${index}`,
+      timestamp: event.timestamp,
+      type: "Order",
+      action: `${event.action} ${event.symbol} (${event.quantity > 0 ? "Buy" : "Sell"} ${Math.abs(event.quantity)})`,
+    });
+  });
+
+  // transform allocation events
+  allocationEvents.forEach((event, index) => {
+    const allocationCount = Object.keys(event.allocations.allocations).length;
+    events.push({
+      id: `alloc-${index}`,
+      timestamp: event.timestamp,
+      type: "Rebalance",
+      action: `Portfolio rebalanced across ${allocationCount} ${allocationCount === 1 ? "position" : "positions"}`,
+    });
+  });
+
+  // sort recent
+  return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+}
+
 export default function Portfolio() {
   const [allocationView, setAllocationView] = useState<AllocationView>("strategy");
   
