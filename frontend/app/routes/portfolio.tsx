@@ -10,6 +10,13 @@ import {
 } from "lightweight-charts";
 import { PieChart } from "react-minimal-pie-chart";
 import mockSpyCandles from "../data/mock-spy-candles.json";
+import type {
+  EquityPoint,
+  SnapshotResponse,
+  MetricsResponse,
+  ExecutionEvent,
+  AllocationEvent,
+} from "../api";
 
 type EquityHighlight = {
   id: string;
@@ -88,6 +95,38 @@ const AUM_DELTA = "+12.4% YTD";
 
 export default function Portfolio() {
   const [allocationView, setAllocationView] = useState<AllocationView>("strategy");
+  
+  // port selection
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<number | null>(null);
+  const [availablePortfolios, setAvailablePortfolios] = useState<Array<{ id: number; name: string }>>([]);
+  
+  const [selectedTimeframe, setSelectedTimeframe] = useState<"3M" | "6M" | "YTD" | null>(null);
+  
+  // loading states
+  const [isLoadingEquity, setIsLoadingEquity] = useState(false);
+  const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false);
+  const [isLoadingMetrics, setIsLoadingMetrics] = useState(false);
+  const [isLoadingStrategyAllocations, setIsLoadingStrategyAllocations] = useState(false);
+  const [isLoadingAssetAllocations, setIsLoadingAssetAllocations] = useState(false);
+  const [isLoadingExecutionEvents, setIsLoadingExecutionEvents] = useState(false);
+  const [isLoadingAllocationEvents, setIsLoadingAllocationEvents] = useState(false);
+  const [isActionLoading, setIsActionLoading] = useState(false);
+  
+  // error states
+  const [equityError, setEquityError] = useState<string | null>(null);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [allocationsError, setAllocationsError] = useState<string | null>(null);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  
+  // portfolio data 
+  const [equityData, setEquityData] = useState<EquityPoint[]>([]);
+  const [snapshotData, setSnapshotData] = useState<SnapshotResponse | null>(null);
+  const [metricsData, setMetricsData] = useState<MetricsResponse | null>(null);
+  const [strategyAllocations, setStrategyAllocations] = useState<Record<string, number>>({});
+  const [assetAllocations, setAssetAllocations] = useState<Record<string, number>>({});
+  const [executionEvents, setExecutionEvents] = useState<ExecutionEvent[]>([]);
+  const [allocationEvents, setAllocationEvents] = useState<AllocationEvent[]>([]);
 
   const handleAllocationViewChange = (nextView: AllocationView) => {
     setAllocationView(nextView);
