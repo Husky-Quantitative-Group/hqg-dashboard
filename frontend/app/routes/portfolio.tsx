@@ -17,6 +17,15 @@ import type {
   ExecutionEvent,
   AllocationEvent,
 } from "../api";
+import {
+  getEquity,
+  getSnapshot,
+  getMetrics,
+  getStrategyAllocations,
+  getAssetAllocations,
+  getExecutionEvents,
+  getAllocationEvents,
+} from "../api";
 
 type EquityHighlight = {
   id: string;
@@ -131,6 +140,134 @@ export default function Portfolio() {
   const handleAllocationViewChange = (nextView: AllocationView) => {
     setAllocationView(nextView);
   };
+
+  useEffect(() => {
+    if (!selectedPortfolioId) {
+      return;
+    }
+
+    const fetchPortfolioData = async () => {
+      const tfDependentCalls = [
+        async () => {
+          setIsLoadingEquity(true);
+          setEquityError(null);
+          try {
+            const data = await getEquity(selectedPortfolioId, selectedTimeframe || undefined);
+            setEquityData(data.data);
+          } 
+          catch (error) {
+            setEquityError(error instanceof Error ? error.message : "Failed to load equity data");
+            console.error("Error fetching equity:", error);
+          } 
+          finally {
+            setIsLoadingEquity(false);
+          }
+        },
+
+        async () => {
+          setIsLoadingSnapshot(true);
+          setSnapshotError(null);
+          try {
+            const data = await getSnapshot(selectedPortfolioId, selectedTimeframe || undefined);
+            setSnapshotData(data);
+          } 
+          catch (error) {
+            setSnapshotError(error instanceof Error ? error.message : "Failed to load snapshot");
+            console.error("Error fetching snapshot:", error);
+          } 
+          finally {
+            setIsLoadingSnapshot(false);
+          }
+        },
+
+        async () => {
+          setIsLoadingMetrics(true);
+          setMetricsError(null);
+          try {
+            const data = await getMetrics(selectedPortfolioId, selectedTimeframe || undefined);
+            setMetricsData(data);
+          } 
+          catch (error) {
+            setMetricsError(error instanceof Error ? error.message : "Failed to load metrics");
+            console.error("Error fetching metrics:", error);
+          } 
+          finally {
+            setIsLoadingMetrics(false);
+          }
+        },
+
+        async () => {
+          setIsLoadingExecutionEvents(true);
+          setEventsError(null);
+          try {
+            const data = await getExecutionEvents(selectedPortfolioId, selectedTimeframe || undefined);
+            setExecutionEvents(data.events);
+          } 
+          catch (error) {
+            setEventsError(error instanceof Error ? error.message : "Failed to load execution events");
+            console.error("Error fetching execution events:", error);
+          } 
+          finally {
+            setIsLoadingExecutionEvents(false);
+          }
+        },
+
+        async () => {
+          setIsLoadingAllocationEvents(true);
+          setEventsError(null);
+          try {
+            const data = await getAllocationEvents(selectedPortfolioId, selectedTimeframe || undefined);
+            setAllocationEvents(data.events);
+          } 
+          catch (error) {
+            setEventsError(error instanceof Error ? error.message : "Failed to load allocation events");
+            console.error("Error fetching allocation events:", error);
+          } 
+          finally {
+            setIsLoadingAllocationEvents(false);
+          }
+        },
+      ];
+
+      const tfIndependentCalls = [
+        async () => {
+          setIsLoadingStrategyAllocations(true);
+          setAllocationsError(null);
+          try {
+            const data = await getStrategyAllocations(selectedPortfolioId);
+            setStrategyAllocations(data.allocations);
+          } 
+          catch (error) {
+            setAllocationsError(error instanceof Error ? error.message : "Failed to load strategy allocations");
+            console.error("Error fetching strategy allocations:", error);
+          } 
+          finally {
+            setIsLoadingStrategyAllocations(false);
+          }
+        },
+
+        async () => {
+          setIsLoadingAssetAllocations(true);
+          setAllocationsError(null);
+          try {
+            const data = await getAssetAllocations(selectedPortfolioId);
+            setAssetAllocations(data.allocations);
+          } 
+          catch (error) {
+            setAllocationsError(error instanceof Error ? error.message : "Failed to load asset allocations");
+            console.error("Error fetching asset allocations:", error);
+          } 
+          finally {
+            setIsLoadingAssetAllocations(false);
+          }
+        },
+      ];
+
+      await Promise.all([...tfDependentCalls, ...tfIndependentCalls].map((call) => call()));
+    };
+
+    void fetchPortfolioData();
+  }, [selectedPortfolioId, selectedTimeframe]);
 
   return (
     <div className="space-y-6">
