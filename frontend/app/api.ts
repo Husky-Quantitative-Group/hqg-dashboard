@@ -133,6 +133,10 @@ const apiClient = axios.create({
   baseURL: "http://localhost:5000",
 });
 
+const hqgEngineClient = axios.create({
+  baseURL: import.meta.env.VITE_ENGINE_API,
+});
+
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const cloneFiles = (files: StrategyFile[]): StrategyFile[] => files.map((file) => ({ ...file }));
