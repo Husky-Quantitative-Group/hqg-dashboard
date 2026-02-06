@@ -74,6 +74,61 @@ export type StrategyWorkspaceResponse = {
   runs: BacktestResult[];
 };
 
+export type Timeframe = "3M" | "6M" | "YTD";
+
+export type TradeResponse = {
+  success: boolean;
+  message: string;
+};
+
+export type EquityPoint = {
+  timestamp: string;
+  equity_value: number;
+};
+
+export type EquityResponse = {
+  data: EquityPoint[];
+};
+
+export type SnapshotResponse = {
+  equity: number;
+  capital: number;
+  net_profit: number;
+  return_pct: number;
+};
+
+export type MetricsResponse = {
+  metrics: Record<string, number>;
+};
+
+export type StrategyAllocationsResponse = {
+  allocations: Record<string, number>;
+};
+
+export type AssetAllocationsResponse = {
+  allocations: Record<string, number>;
+};
+
+export type ExecutionEvent = {
+  action: string;
+  symbol: string;
+  quantity: number;
+  timestamp: string;
+};
+
+export type ExecutionEventsResponse = {
+  events: ExecutionEvent[];
+};
+
+export type AllocationEvent = {
+  timestamp: string;
+  allocations: AssetAllocationsResponse;
+};
+
+export type AllocationEventsResponse = {
+  events: AllocationEvent[];
+};
+
 const apiClient = axios.create({
   baseURL: "http://localhost:5000",
 });
