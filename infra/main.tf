@@ -344,6 +344,40 @@ resource "aws_iam_policy" "admin_dynamodb" {
 }
 
 # ------------------------------
+# SSM parameter for JWT private key
+# ------------------------------
+
+resource "aws_ssm_parameter" "jwt_private_key" {
+  name  = "${local.name_prefix}-jwt-private-key"
+  type  = "SecureString"
+  value = var.jwt_secret
+
+  tags = local.tags
+}
+
+data "aws_iam_policy_document" "jwt_private_key_read" {
+  statement {
+    sid    = "SsmJwtPrivateKeyRead"
+    effect = "Allow"
+
+    actions = [
+      "ssm:GetParameter",
+    ]
+
+    resources = [
+      aws_ssm_parameter.jwt_private_key.arn,
+    ]
+  }
+}
+
+resource "aws_iam_policy" "jwt_private_key_read" {
+  name   = "${local.name_prefix}-jwt-private-key-read"
+  policy = data.aws_iam_policy_document.jwt_private_key_read.json
+
+  tags = local.tags
+}
+
+# ------------------------------
 # API Gateway (HTTP API) scaffold
 # ------------------------------
 
@@ -507,6 +541,11 @@ resource "aws_iam_role_policy_attachment" "auth_granter_lambda_users_read" {
   policy_arn = aws_iam_policy.users_read.arn
 }
 
+resource "aws_iam_role_policy_attachment" "auth_granter_lambda_jwt_private_key_read" {
+  role       = aws_iam_role.auth_granter_lambda.name
+  policy_arn = aws_iam_policy.jwt_private_key_read.arn
+}
+
 resource "aws_iam_role_policy_attachment" "auth_granter_lambda_user_access_applications_write" {
   role       = aws_iam_role.auth_granter_lambda.name
   policy_arn = aws_iam_policy.user_access_applications_write.arn
@@ -520,6 +559,11 @@ resource "aws_iam_role_policy_attachment" "auth_checker_lambda_basic_logs" {
 resource "aws_iam_role_policy_attachment" "auth_checker_lambda_users_read" {
   role       = aws_iam_role.auth_checker_lambda.name
   policy_arn = aws_iam_policy.users_read.arn
+}
+
+resource "aws_iam_role_policy_attachment" "auth_checker_lambda_jwt_private_key_read" {
+  role       = aws_iam_role.auth_checker_lambda.name
+  policy_arn = aws_iam_policy.jwt_private_key_read.arn
 }
 
 resource "aws_iam_role_policy_attachment" "admin_lambda_basic_logs" {
@@ -606,7 +650,7 @@ resource "aws_lambda_function" "auth_granter" {
     variables = {
       CAS_CALLBACK_URL  = "${trimsuffix(aws_apigatewayv2_stage.stage.invoke_url, "/")}/auth/callback"
       FRONTEND_BASE_URL = var.frontend_base_url
-      JWT_SECRET = var.jwt_secret
+      JWT_PRIVATE_KEY_PARAMETER = aws_ssm_parameter.jwt_private_key.name
       APP_ENV = var.env
       USERS_TABLE = aws_dynamodb_table.users.name
       USER_ACCESS_APPLICATIONS_TABLE = aws_dynamodb_table.user_access_applications.name
@@ -630,7 +674,7 @@ resource "aws_lambda_function" "auth_checker" {
   environment {
     variables = {
       USERS_TABLE = aws_dynamodb_table.users.name
-      JWT_SECRET  = var.jwt_secret
+      JWT_PRIVATE_KEY_PARAMETER = aws_ssm_parameter.jwt_private_key.name
     }
   }
 

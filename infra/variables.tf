@@ -67,6 +67,6 @@ variable "frontend_base_url" {
 }
 
 variable "jwt_secret" {
-  description = "Secret for JWT encoding and decoding"
+  description = "Secret for JWT encoding and decoding (stored in SSM)"
   type        = string
 }

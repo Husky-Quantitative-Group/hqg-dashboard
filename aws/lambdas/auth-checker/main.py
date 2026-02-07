@@ -1,16 +1,22 @@
 import json
 import os
 from http.cookies import SimpleCookie
+from functools import lru_cache
 from typing import Any, Dict, Optional
 
 import boto3
 import jwt
 
 dynamo = boto3.resource("dynamodb")
+ssm = boto3.client("ssm")
 
 USERS_TABLE = dynamo.Table(os.environ["USERS_TABLE"])
-JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_PRIVATE_KEY_PARAMETER = os.environ["JWT_PRIVATE_KEY_PARAMETER"]
 
+@lru_cache(maxsize=1)
+def _get_jwt_secret() -> str:
+    resp = ssm.get_parameter(Name=JWT_PRIVATE_KEY_PARAMETER, WithDecryption=True)
+    return resp["Parameter"]["Value"]
 
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     token = extract_token(event)
@@ -53,7 +59,7 @@ def decode_netid(token: str) -> Optional[str]:
     try:
         payload = jwt.decode(
             token,
-            JWT_SECRET,
+            _get_jwt_secret(),
             algorithms=["HS256"],
             options={"require": ["exp", "sub"]},
         )

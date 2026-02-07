@@ -6,6 +6,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from http.cookies import SimpleCookie
+from functools import lru_cache
 from typing import Any, Dict, Optional
 
 import boto3
@@ -20,13 +21,19 @@ CAS_NS = {"cas": "http://www.yale.edu/tp/cas"}
 FRONTEND_BASE_URL = os.environ["FRONTEND_BASE_URL"] # eg. http://localhost:3000 OR https://hqg-dash.com
 CAS_CALLBACK_URL = FRONTEND_BASE_URL + "/api/auth/callback"
 
-JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_PRIVATE_KEY_PARAMETER = os.environ["JWT_PRIVATE_KEY_PARAMETER"]
 USERS_TABLE = os.environ["USERS_TABLE"]
 USER_ACCESS_APPLICATIONS_TABLE = os.environ["USER_ACCESS_APPLICATIONS_TABLE"]
 
 dynamo = boto3.resource("dynamodb")
+ssm = boto3.client("ssm")
 users_table = dynamo.Table(USERS_TABLE)
 user_access_applications_table = dynamo.Table(USER_ACCESS_APPLICATIONS_TABLE)
+
+@lru_cache(maxsize=1)
+def _get_jwt_secret() -> str:
+    resp = ssm.get_parameter(Name=JWT_PRIVATE_KEY_PARAMETER, WithDecryption=True)
+    return resp["Parameter"]["Value"]
 
 def _build_auth_cookie(token: str) -> str:
     is_dev = APP_ENV == "dev"
@@ -179,7 +186,7 @@ def mint_jwt(netid: str):
         "iat": now,
         "exp": now + 60 * 60 * 24,  # 24 hours
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    return jwt.encode(payload, _get_jwt_secret(), algorithm="HS256")
 
 # ----------------------------
 # Cookie/JWT helpers
@@ -194,7 +201,7 @@ def _decode_netid(token: str) -> Optional[str]:
     try:
         payload = jwt.decode(
             token,
-            JWT_SECRET,
+            _get_jwt_secret(),
             algorithms=["HS256"],
             options={"require": ["exp", "sub"]},
         )
