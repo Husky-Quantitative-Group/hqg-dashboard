@@ -37,3 +37,60 @@ export const uploadStrategyArtifacts = async (
   const response = await coreApi.post(`/strategies/${strategyId}/artifacts`, payload);
   return response.data;
 };
+
+export const deleteStrategyArtifact = async (
+  strategyId: string | number,
+  artifactId: string
+): Promise<{ ok?: boolean }> => {
+  try {
+    const response = await coreApi.delete(`/strategies/${strategyId}/artifacts/${artifactId}`);
+    return response.data;
+  } catch (error) {
+    console.error("Delete artifact error details:", {
+      status: (error as any)?.response?.status,
+      data: (error as any)?.response?.data,
+      message: (error as any)?.message,
+    });
+    throw error;
+  }
+};
+
+export const renameStrategyArtifact = async (
+  strategyId: string | number,
+  artifactId: string,
+  newArtifactId: string
+): Promise<{ ok?: boolean; newName?: string }> => {
+  try {
+    const response = await coreApi.patch(`/strategies/${strategyId}/artifacts/${artifactId}`, {
+      newArtifactId,
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Rename artifact error details:", {
+      status: (error as any)?.response?.status,
+      data: (error as any)?.response?.data,
+      message: (error as any)?.message,
+    });
+    throw error;
+  }
+};
+
+export type FileRestrictions = {
+  lockedFiles: string[];
+  allowedExtensions: string[];
+};
+
+export const DEFAULT_FILE_RESTRICTIONS: FileRestrictions = {
+  lockedFiles: ["README.md", "main.py", "requirements.txt"],
+  allowedExtensions: [".py", ".md", ".txt"],
+};
+
+export const fetchFileRestrictions = async (): Promise<FileRestrictions> => {
+  try {
+    const response = await coreApi.get<FileRestrictions>(`/config/file-restrictions`);
+    return response.data;
+  } catch (error) {
+    console.error("Failed to fetch file restrictions:", error);
+    return DEFAULT_FILE_RESTRICTIONS;
+  }
+};

@@ -625,6 +625,28 @@ resource "aws_apigatewayv2_route" "get_strategy_artifact_by_id" {
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
+resource "aws_apigatewayv2_route" "delete_strategy_artifact" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "DELETE /strategies/{id}/artifacts/{artifactId}"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "patch_strategy_artifact" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "PATCH /strategies/{id}/artifacts/{artifactId}"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "get_file_restrictions" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /config/file-restrictions"
+  target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+}
+
 resource "aws_lambda_permission" "allow_apigw_invoke_strategy_artifacts" {
   statement_id  = "AllowAPIGWInvokeStrategyArtifacts"
   action        = "lambda:InvokeFunction"

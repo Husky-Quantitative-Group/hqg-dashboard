@@ -20,6 +20,9 @@ export type StrategyWorkspaceContext = {
   selectedFilePath: string | null;
   selectFile: (path: string) => void;
   updateFileContent: (path: string, content: string) => void;
+  addFile: (file: StrategyFile) => void;
+  deleteFile: (path: string) => void;
+  renameFile: (oldPath: string, newPath: string) => void;
   isRunning: boolean;
   isSaving: boolean;
   isDirty: boolean;
@@ -131,6 +134,26 @@ export default function StrategyLayout() {
     },
     [markDirty]
   );
+
+  const addFile = useCallback((file: StrategyFile) => {
+    setFiles((prev) => [...prev, file]);
+  }, []);
+
+  const deleteFile = useCallback((path: string) => {
+    setFiles((prev) => prev.filter((file) => file.path !== path));
+    if (selectedFilePath === path) {
+      setSelectedFilePath(null);
+    }
+  }, [selectedFilePath]);
+
+  const renameFile = useCallback((oldPath: string, newPath: string) => {
+    setFiles((prev) =>
+      prev.map((file) => (file.path === oldPath ? { ...file, path: newPath } : file))
+    );
+    if (selectedFilePath === oldPath) {
+      setSelectedFilePath(newPath);
+    }
+  }, [selectedFilePath]);
 
   // Lazy-load file content when a file is selected and not yet loaded.
   useEffect(() => {
@@ -291,6 +314,9 @@ export default function StrategyLayout() {
     selectedFilePath,
     selectFile,
     updateFileContent,
+    addFile,
+    deleteFile,
+    renameFile,
     isRunning,
     isSaving,
     isDirty,
