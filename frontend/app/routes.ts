@@ -14,6 +14,7 @@ export default [
     route("projects", "routes/projects.tsx"),
     route("portfolio", "routes/portfolio.tsx"),
     route("create-strategy", "routes/create-strategy.tsx"),
+    route("admin", "routes/admin.tsx"),
   ]),
 
   // Pages that SHOULD NOT use the dashboard chrome go here:

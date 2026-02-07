@@ -1,3 +1,4 @@
+import json
 import os
 from http.cookies import SimpleCookie
 from typing import Any, Dict, Optional
@@ -20,10 +21,21 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     if not netid:
         return {"isAuthorized": False, "context": {"error": "unauthorized"}}
     
-    if not user_allowed(netid):
+    user = load_user(netid)
+    if not user:
         return {"isAuthorized": False, "context": {"error": "forbidden"}}
-    
-    return {"isAuthorized": True, "context": {"netid": netid}}
+
+    roles = user.get("roles") or []
+    if not isinstance(roles, list):
+        roles = [roles]
+
+    return {
+        "isAuthorized": True,
+        "context": {
+            "netid": netid,
+            "roles": json.dumps(roles),
+        },
+    }
 
 
 def extract_token(event: Dict[str, Any]) -> Optional[str]:
@@ -55,14 +67,17 @@ def decode_netid(token: str) -> Optional[str]:
     netid = netid.strip()
     return netid or None
 
-def user_allowed(netid: str) -> bool:
-    """Return True if the user exists and is not banned."""
+def load_user(netid: str) -> Optional[Dict[str, Any]]:
+    """Return the user when they exist and are not banned."""
     resp = USERS_TABLE.get_item(Key={"netid": netid})
     user = resp.get("Item")
     if not user:
-        return False
+        return None
 
-    return not user.get("is_banned", False)
+    if user.get("is_banned", False):
+        return None
+
+    return user
 
 # HELPERS
 
@@ -100,4 +115,3 @@ def _cookie_value(cookie_header: str, name: str) -> Optional[str]:
     if name not in cookie:
         return None
     return cookie[name].value or None
-
