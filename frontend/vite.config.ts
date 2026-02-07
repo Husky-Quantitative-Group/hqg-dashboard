@@ -6,11 +6,21 @@ import tsconfigPaths from "vite-tsconfig-paths";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const coreApiBaseUrl = env.VITE_CORE_API ?? "http://localhost:5000";
+  const backtesterTarget = env.BACKTESTER_URL;
+  const backtesterEndpoint = "/api/v1/backtest";
 
   return {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
     server: {
       proxy: {
+        // Backtester rerouting (docker local host)
+        "/backtester-api": {
+          target: backtesterTarget,
+          changeOrigin: true,
+          secure: false,
+          rewrite: (path) => path.replace(/^\/backtester-api\/?$/, backtesterEndpoint),
+        },
+
         "/api": {
           target: coreApiBaseUrl,
           changeOrigin: true,

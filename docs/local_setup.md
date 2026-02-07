@@ -98,3 +98,30 @@ npm run dev
 ```
 
 Open `http://localhost:5173`.
+
+## 4) Backtester
+
+### Docker
+In order to have the backtester working, make sure you have [Docker Desktop](https://www.docker.com/get-started/) installed onto your device. The hqg-backtester repo is required for setup. It is recommonded to follow a similar file structure if you don't have the backtester repo cloned already:
+
+```text
+hqg/
+├── hqg-dashboard/
+└── hqg-backtester/
+```
+
+Clone and start the backtester:
+
+```bash
+git clone https://github.com/Husky-Quantitative-Group/hqg-backtester.git
+cd hqg-backtester
+docker compose up --build
+```
+
+The API should be available at http://localhost:8005
+
+If you're running the dashboard locally, set the backtester URL in `frontend/.env` so the Vite proxy can reach it:
+
+```ini
+BACKTESTER_URL=http://localhost:8005
+```

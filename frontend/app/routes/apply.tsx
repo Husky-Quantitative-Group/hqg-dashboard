@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { coreApi } from "../api/core";
 import type { Route } from "./+types/apply";
@@ -22,6 +22,40 @@ export default function Apply() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [checkingStatus, setCheckingStatus] = useState(true);
+  const [applicationStatus, setApplicationStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const checkStatus = async () => {
+      try {
+        const response = await coreApi.get("/auth/apply/check");
+        const status = response.data?.status as string | undefined;
+        if (!isCancelled && response.data?.has_application) {
+          setApplicationStatus(status ?? "PENDING");
+          if (status && status.toUpperCase() === "DENIED") {
+            setSuccess(false);
+          } else {
+            setSuccess(true);
+          }
+        }
+      } catch (err) {
+        if (!isCancelled) {
+          setCheckingStatus(false);
+        }
+        return;
+      }
+
+      if (!isCancelled) {
+        setCheckingStatus(false);
+      }
+    };
+
+    checkStatus();
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   const canSubmit = useMemo(() => {
     return formData.full_name.trim() && formData.uconn_email.trim();
@@ -76,7 +110,14 @@ export default function Apply() {
             </p>
           </div>
 
-          {success ? (
+          {checkingStatus ? (
+            <div className="mt-10 rounded-2xl border border-slate-800/70 bg-slate-900/40 p-6 text-slate-200">
+              <h2 className="text-lg font-semibold">Checking your application...</h2>
+              <p className="mt-2 text-sm text-slate-400">
+                Just a moment while we confirm your status.
+              </p>
+            </div>
+          ) : success ? (
             <div className="mt-10 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-6 text-emerald-100">
               <h2 className="text-lg font-semibold">Application received</h2>
               <p className="mt-2 text-sm text-emerald-100/80">
@@ -85,6 +126,11 @@ export default function Apply() {
             </div>
           ) : (
             <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+              {applicationStatus === "DENIED" && (
+                <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
+                  Your last application was denied. You can submit a new request below.
+                </div>
+              )}
               <div className="grid gap-5 md:grid-cols-2">
                 <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
                   Display Name *

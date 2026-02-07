@@ -20,9 +20,11 @@ provider "aws" {
   region = var.aws_region
 }
 
+data "aws_caller_identity" "current" {}
+
 locals {
   name_prefix                      = "${var.project}-${var.env}"
-  artifacts_bucket_name            = coalesce(var.artifacts_bucket_name, "${local.name_prefix}-strategy-artifacts")
+  artifacts_bucket_name            = coalesce(var.artifacts_bucket_name, "${local.name_prefix}-strategy-artifacts-${data.aws_caller_identity.current.account_id}")
   strategies_table_name            = coalesce(var.strategies_table_name, "${local.name_prefix}-strategies")
   strategy_artifacts_table_name    = coalesce(var.strategy_artifacts_table_name, "${local.name_prefix}-strategy-artifacts")
   strategy_artifact_versions_table = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
@@ -296,6 +298,7 @@ data "aws_iam_policy_document" "user_access_applications_write" {
 
     actions = [
       "dynamodb:PutItem",
+      "dynamodb:Query",
     ]
 
     resources = [
@@ -793,6 +796,12 @@ resource "aws_apigatewayv2_route" "auth_me" {
 resource "aws_apigatewayv2_route" "auth_apply" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "POST /auth/apply"
+  target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
+}
+
+resource "aws_apigatewayv2_route" "auth_apply_check" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /auth/apply/check"
   target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
 }
 
