@@ -19,6 +19,12 @@ variable "artifacts_bucket_name" {
   default     = null
 }
 
+variable "jwks_bucket_name" {
+  description = "Optional explicit name for the JWKS bucket. Defaults to \"<project>-<env>-jwks-<random>\"."
+  type        = string
+  default     = null
+}
+
 variable "strategies_table_name" {
   description = "Optional explicit name for the Strategies table. Defaults to \"<project>-<env>-strategies\"."
   type        = string

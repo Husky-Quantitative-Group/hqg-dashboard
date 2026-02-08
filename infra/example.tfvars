@@ -7,6 +7,7 @@ jwt_secret = "changeme"
 
 # Optional overrides (uncomment to set explicit names)
 # artifacts_bucket_name                 = "strategy-artifacts"
+# jwks_bucket_name                      = "hqg-dev-jwks-abcdef12"
 # strategies_table_name                 = "hqg-dev-strategies"
 # strategy_artifacts_table_name         = "hqg-dev-strategy-artifacts"
 # strategy_artifact_versions_table_name = "hqg-dev-strategy-artifact-versions"

@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/archive"
       version = "~> 2.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 
   # TODO: switch to remote state (S3 + DynamoDB lock table) before multi-user use.
@@ -25,6 +29,7 @@ data "aws_caller_identity" "current" {}
 locals {
   name_prefix                      = "${var.project}-${var.env}"
   artifacts_bucket_name            = coalesce(var.artifacts_bucket_name, "${local.name_prefix}-strategy-artifacts-${data.aws_caller_identity.current.account_id}")
+  jwks_bucket_name                 = coalesce(var.jwks_bucket_name, "${local.name_prefix}-jwks-${random_id.jwks_bucket_suffix.hex}")
   strategies_table_name            = coalesce(var.strategies_table_name, "${local.name_prefix}-strategies")
   strategy_artifacts_table_name    = coalesce(var.strategy_artifacts_table_name, "${local.name_prefix}-strategy-artifacts")
   strategy_artifact_versions_table = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
@@ -86,6 +91,56 @@ resource "aws_s3_bucket_cors_configuration" "strategy_artifacts" {
     allowed_origins = ["*"]
     max_age_seconds = 300
   }
+}
+
+# ------------------------------
+# S3 bucket for JWKS
+# ------------------------------
+
+resource "random_id" "jwks_bucket_suffix" {
+  byte_length = 4
+}
+
+resource "aws_s3_bucket" "jwks" {
+  bucket = local.jwks_bucket_name
+
+  tags = local.tags
+}
+
+resource "aws_s3_bucket_public_access_block" "jwks" {
+  bucket = aws_s3_bucket.jwks.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+data "aws_iam_policy_document" "jwks_public_read" {
+  statement {
+    sid    = "PublicReadJwks"
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+
+    actions = [
+      "s3:GetObject",
+    ]
+
+    resources = [
+      "${aws_s3_bucket.jwks.arn}/.well-known/jwks.json",
+    ]
+  }
+}
+
+resource "aws_s3_bucket_policy" "jwks_public_read" {
+  bucket = aws_s3_bucket.jwks.id
+  policy = data.aws_iam_policy_document.jwks_public_read.json
+
+  depends_on = [aws_s3_bucket_public_access_block.jwks]
 }
 
 # ------------------------------
@@ -377,6 +432,41 @@ resource "aws_iam_policy" "jwt_private_key_read" {
   tags = local.tags
 }
 
+data "aws_iam_policy_document" "jwt_key_rotator" {
+  statement {
+    sid    = "SsmJwtPrivateKeyWrite"
+    effect = "Allow"
+
+    actions = [
+      "ssm:PutParameter",
+    ]
+
+    resources = [
+      aws_ssm_parameter.jwt_private_key.arn,
+    ]
+  }
+
+  statement {
+    sid    = "S3JwksWrite"
+    effect = "Allow"
+
+    actions = [
+      "s3:PutObject",
+    ]
+
+    resources = [
+      "${aws_s3_bucket.jwks.arn}/.well-known/jwks.json",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "jwt_key_rotator" {
+  name   = "${local.name_prefix}-jwt-key-rotator"
+  policy = data.aws_iam_policy_document.jwt_key_rotator.json
+
+  tags = local.tags
+}
+
 # ------------------------------
 # API Gateway (HTTP API) scaffold
 # ------------------------------
@@ -455,6 +545,12 @@ data "archive_file" "auth_checker_lambda" {
   output_path = "${path.module}/dist/auth-checker-lambda.zip"
 }
 
+data "archive_file" "jwt_key_rotator_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/jwt-key-rotator"
+  output_path = "${path.module}/dist/jwt-key-rotator-lambda.zip"
+}
+
 data "archive_file" "admin_lambda" {
   type        = "zip"
   source_dir  = "${path.module}/../aws/lambdas/admin"
@@ -499,6 +595,13 @@ resource "aws_iam_role" "auth_granter_lambda" {
 
 resource "aws_iam_role" "auth_checker_lambda" {
   name               = "${local.name_prefix}-auth-checker-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = local.tags
+}
+
+resource "aws_iam_role" "jwt_key_rotator_lambda" {
+  name               = "${local.name_prefix}-jwt-key-rotator-lambda"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 
   tags = local.tags
@@ -566,6 +669,16 @@ resource "aws_iam_role_policy_attachment" "auth_checker_lambda_jwt_private_key_r
   policy_arn = aws_iam_policy.jwt_private_key_read.arn
 }
 
+resource "aws_iam_role_policy_attachment" "jwt_key_rotator_lambda_basic_logs" {
+  role       = aws_iam_role.jwt_key_rotator_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "jwt_key_rotator_lambda_access" {
+  role       = aws_iam_role.jwt_key_rotator_lambda.name
+  policy_arn = aws_iam_policy.jwt_key_rotator.arn
+}
+
 resource "aws_iam_role_policy_attachment" "admin_lambda_basic_logs" {
   role       = aws_iam_role.admin_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -584,6 +697,13 @@ resource "aws_lambda_layer_version" "pyjwt" {
   layer_name          = "${local.name_prefix}-pyjwt"
   filename            = "${path.module}/../aws/lambda_layers/pyjwt/build/pyjwt-layer.zip"
   source_code_hash    = filebase64sha256("${path.module}/../aws/lambda_layers/pyjwt/build/pyjwt-layer.zip")
+  compatible_runtimes = ["python3.11"]
+}
+
+resource "aws_lambda_layer_version" "cryptography" {
+  layer_name          = "${local.name_prefix}-cryptography"
+  filename            = "${path.module}/../aws/lambda_layers/cryptography/build/cryptography-layer.zip"
+  source_code_hash    = filebase64sha256("${path.module}/../aws/lambda_layers/cryptography/build/cryptography-layer.zip")
   compatible_runtimes = ["python3.11"]
 }
 
@@ -644,7 +764,10 @@ resource "aws_lambda_function" "auth_granter" {
   filename         = data.archive_file.auth_granter_lambda.output_path
   source_code_hash = data.archive_file.auth_granter_lambda.output_base64sha256
 
-  layers = [aws_lambda_layer_version.pyjwt.arn]
+  layers = [
+    aws_lambda_layer_version.pyjwt.arn,
+    aws_lambda_layer_version.cryptography.arn,
+  ]
 
   environment {
     variables = {
@@ -669,12 +792,36 @@ resource "aws_lambda_function" "auth_checker" {
   filename         = data.archive_file.auth_checker_lambda.output_path
   source_code_hash = data.archive_file.auth_checker_lambda.output_base64sha256
 
-  layers = [aws_lambda_layer_version.pyjwt.arn]
+  layers = [
+    aws_lambda_layer_version.pyjwt.arn,
+    aws_lambda_layer_version.cryptography.arn,
+  ]
 
   environment {
     variables = {
       USERS_TABLE = aws_dynamodb_table.users.name
       JWT_PRIVATE_KEY_PARAMETER = aws_ssm_parameter.jwt_private_key.name
+    }
+  }
+
+  tags = local.tags
+}
+
+resource "aws_lambda_function" "jwt_key_rotator" {
+  function_name = "${local.name_prefix}-jwt-key-rotator"
+  role          = aws_iam_role.jwt_key_rotator_lambda.arn
+  runtime       = "python3.11"
+  handler       = "main.handler"
+
+  filename         = data.archive_file.jwt_key_rotator_lambda.output_path
+  source_code_hash = data.archive_file.jwt_key_rotator_lambda.output_base64sha256
+
+  layers = [aws_lambda_layer_version.cryptography.arn]
+
+  environment {
+    variables = {
+      JWT_PRIVATE_KEY_PARAMETER = aws_ssm_parameter.jwt_private_key.name
+      JWKS_BUCKET               = aws_s3_bucket.jwks.bucket
     }
   }
 
