@@ -1,5 +1,6 @@
 import base64
 import hashlib
+from datetime import datetime
 import json
 import os
 import re
@@ -78,7 +79,23 @@ def _get_current_kid() -> Optional[str]:
     if not keys:
         return None
 
-    jwk = keys[0]
+    newest_key = None
+    newest_time: Optional[float] = None
+
+    for key in keys:
+        created_at = key.get("created_at")
+        if isinstance(created_at, str):
+            try:
+                parsed = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            except ValueError:
+                parsed = None
+            if parsed and parsed.tzinfo is not None:
+                ts = parsed.timestamp()
+                if newest_time is None or ts > newest_time:
+                    newest_time = ts
+                    newest_key = key
+
+    jwk = newest_key or keys[0]
     kid = jwk.get("kid")
     if kid:
         return kid

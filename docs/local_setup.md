@@ -106,11 +106,28 @@ hqg/
 └── hqg-backtester/
 ```
 
-Clone and start the backtester:
+Clone the backtester:
 
 ```bash
 git clone https://github.com/Husky-Quantitative-Group/hqg-backtester.git
 cd hqg-backtester
+```
+
+Set the backtester environment variable `HQG_JWKS_URL` to the JWKS endpoint from Terraform:
+
+```bash
+terraform output -raw jwks_object_url
+```
+
+If you're running this from the `hqg-backtester` directory, point Terraform at the dashboard infra folder:
+
+```bash
+terraform -chdir=../hqg-dashboard/infra output -raw jwks_object_url
+```
+
+Run the backtester:
+
+```bash
 docker compose up --build
 ```
 

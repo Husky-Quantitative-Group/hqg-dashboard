@@ -471,6 +471,46 @@ resource "aws_iam_policy" "jwt_key_rotator" {
   tags = local.tags
 }
 
+data "aws_iam_policy_document" "scheduler_assume_role" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["scheduler.amazonaws.com"]
+    }
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+resource "aws_iam_role" "jwt_key_rotator_scheduler" {
+  name               = "${local.name_prefix}-jwt-key-rotator-scheduler"
+  assume_role_policy = data.aws_iam_policy_document.scheduler_assume_role.json
+
+  tags = local.tags
+}
+
+data "aws_iam_policy_document" "jwt_key_rotator_scheduler" {
+  statement {
+    sid    = "InvokeJwtKeyRotator"
+    effect = "Allow"
+
+    actions = [
+      "lambda:InvokeFunction",
+    ]
+
+    resources = [
+      aws_lambda_function.jwt_key_rotator.arn,
+    ]
+  }
+}
+
+resource "aws_iam_policy" "jwt_key_rotator_scheduler" {
+  name   = "${local.name_prefix}-jwt-key-rotator-scheduler"
+  policy = data.aws_iam_policy_document.jwt_key_rotator_scheduler.json
+
+  tags = local.tags
+}
+
 # ------------------------------
 # API Gateway (HTTP API) scaffold
 # ------------------------------
@@ -678,6 +718,11 @@ resource "aws_iam_role_policy_attachment" "jwt_key_rotator_lambda_access" {
   policy_arn = aws_iam_policy.jwt_key_rotator.arn
 }
 
+resource "aws_iam_role_policy_attachment" "jwt_key_rotator_scheduler_invoke" {
+  role       = aws_iam_role.jwt_key_rotator_scheduler.name
+  policy_arn = aws_iam_policy.jwt_key_rotator_scheduler.arn
+}
+
 resource "aws_iam_role_policy_attachment" "admin_lambda_basic_logs" {
   role       = aws_iam_role.admin_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -823,6 +868,27 @@ resource "aws_lambda_function" "jwt_key_rotator" {
   }
 
   tags = local.tags
+}
+
+resource "aws_scheduler_schedule" "jwt_key_rotator_monthly" {
+  name                = "${local.name_prefix}-jwt-key-rotator-monthly"
+  schedule_expression = "cron(0 0 1 * ? *)"
+  schedule_expression_timezone = "UTC"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_lambda_function.jwt_key_rotator.arn
+    role_arn = aws_iam_role.jwt_key_rotator_scheduler.arn
+    input    = "{}"
+
+    retry_policy {
+      maximum_event_age_in_seconds = 3600
+      maximum_retry_attempts       = 5
+    }
+  }
 }
 
 resource "null_resource" "jwt_key_rotator_invoke" {
