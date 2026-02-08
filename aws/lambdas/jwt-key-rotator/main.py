@@ -6,13 +6,8 @@ from typing import Any, Dict
 
 import boto3
 
-try:
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-except Exception as exc:  # pragma: no cover - fails fast in runtime if dependency missing
-    raise RuntimeError(
-        "cryptography is required for RSA key generation in jwt-key-rotator"
-    ) from exc
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 
 JWT_PRIVATE_KEY_PARAMETER = os.environ["JWT_PRIVATE_KEY_PARAMETER"]

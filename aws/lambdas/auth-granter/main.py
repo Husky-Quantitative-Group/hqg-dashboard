@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 import os
 import re
@@ -5,8 +7,8 @@ import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from http.cookies import SimpleCookie
 from functools import lru_cache
+from http.cookies import SimpleCookie
 from typing import Any, Dict, Optional
 
 import boto3
@@ -22,6 +24,8 @@ FRONTEND_BASE_URL = os.environ["FRONTEND_BASE_URL"] # eg. http://localhost:3000 
 CAS_CALLBACK_URL = FRONTEND_BASE_URL + "/api/auth/callback"
 
 JWT_PRIVATE_KEY_PARAMETER = os.environ["JWT_PRIVATE_KEY_PARAMETER"]
+JWKS_BUCKET = os.environ["JWKS_BUCKET"]
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 USERS_TABLE = os.environ["USERS_TABLE"]
 USER_ACCESS_APPLICATIONS_TABLE = os.environ["USER_ACCESS_APPLICATIONS_TABLE"]
 
@@ -31,9 +35,65 @@ users_table = dynamo.Table(USERS_TABLE)
 user_access_applications_table = dynamo.Table(USER_ACCESS_APPLICATIONS_TABLE)
 
 @lru_cache(maxsize=1)
-def _get_jwt_secret() -> str:
+def _get_private_key() -> str:
     resp = ssm.get_parameter(Name=JWT_PRIVATE_KEY_PARAMETER, WithDecryption=True)
     return resp["Parameter"]["Value"]
+
+
+@lru_cache(maxsize=1)
+def _get_jwks() -> Dict[str, Any]:
+    url = f"https://{JWKS_BUCKET}.s3.{AWS_REGION}.amazonaws.com/.well-known/jwks.json"
+    with urllib.request.urlopen(url, timeout=5) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _get_public_key(token: str):
+    try:
+        header = jwt.get_unverified_header(token)
+    except jwt.PyJWTError:
+        return None
+
+    kid = header.get("kid")
+    jwks = _get_jwks()
+    keys = jwks.get("keys") or []
+    jwk = None
+
+    if kid:
+        jwk = next((key for key in keys if key.get("kid") == kid), None)
+    elif len(keys) == 1:
+        jwk = keys[0]
+
+    if not jwk:
+        return None
+
+    try:
+        return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk))
+    except Exception:
+        return None
+
+
+def _get_current_kid() -> Optional[str]:
+    jwks = _get_jwks()
+    keys = jwks.get("keys") or []
+    if not keys:
+        return None
+
+    jwk = keys[0]
+    kid = jwk.get("kid")
+    if kid:
+        return kid
+
+    try:
+        canonical = json.dumps(
+            {"e": jwk["e"], "kty": jwk["kty"], "n": jwk["n"]},
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    except KeyError:
+        return None
+
+    digest = hashlib.sha256(canonical).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 def _build_auth_cookie(token: str) -> str:
     is_dev = APP_ENV == "dev"
@@ -186,7 +246,11 @@ def mint_jwt(netid: str):
         "iat": now,
         "exp": now + 60 * 60 * 24,  # 24 hours
     }
-    return jwt.encode(payload, _get_jwt_secret(), algorithm="HS256")
+    headers: Optional[Dict[str, str]] = None
+    kid = _get_current_kid()
+    if kid:
+        headers = {"kid": kid}
+    return jwt.encode(payload, _get_private_key(), algorithm="RS256", headers=headers)
 
 # ----------------------------
 # Cookie/JWT helpers
@@ -198,11 +262,15 @@ def _extract_token(event: Dict[str, Any]) -> Optional[str]:
 
 
 def _decode_netid(token: str) -> Optional[str]:
+    public_key = _get_public_key(token)
+    if not public_key:
+        return None
+
     try:
         payload = jwt.decode(
             token,
-            _get_jwt_secret(),
-            algorithms=["HS256"],
+            public_key,
+            algorithms=["RS256"],
             options={"require": ["exp", "sub"]},
         )
     except jwt.PyJWTError:

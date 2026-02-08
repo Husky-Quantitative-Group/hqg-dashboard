@@ -20,11 +20,7 @@ cp infra/example.tfvars infra/dev.tfvars
 
 Edit `infra/dev.tfvars` with your values:
 - `project`, `env`, `aws_region`
-- `api_token` (shared secret required by the API)
 - `frontend_base_url` (CORS / allowed origin)
-- `jwt_secret` (used for JWT signing)
-
-You can use https://jwtsecretkeygenerator.com/ to generate a JWT secret.
 
 ### Build Lambda Layers
 This repository uses AWS Lambda Layers to manage Python dependencies that are shared across Lambdas (for example, JWT libraries).

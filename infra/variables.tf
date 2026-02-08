@@ -61,18 +61,7 @@ variable "tags" {
   default     = {}
 }
 
-variable "api_token" {
-  description = "Shared secret for Lambda auth (x-api-token)."
-  type        = string
-  sensitive   = true
-}
-
 variable "frontend_base_url" {
   description = "Base URL for the frontend app (used for auth redirects)."
-  type        = string
-}
-
-variable "jwt_secret" {
-  description = "Secret for JWT encoding and decoding (stored in SSM)"
   type        = string
 }

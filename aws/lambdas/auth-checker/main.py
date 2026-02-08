@@ -1,22 +1,49 @@
 import json
 import os
-from http.cookies import SimpleCookie
+import urllib.request
 from functools import lru_cache
+from http.cookies import SimpleCookie
 from typing import Any, Dict, Optional
 
 import boto3
 import jwt
 
 dynamo = boto3.resource("dynamodb")
-ssm = boto3.client("ssm")
 
 USERS_TABLE = dynamo.Table(os.environ["USERS_TABLE"])
-JWT_PRIVATE_KEY_PARAMETER = os.environ["JWT_PRIVATE_KEY_PARAMETER"]
+JWKS_BUCKET = os.environ["JWKS_BUCKET"]
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 @lru_cache(maxsize=1)
-def _get_jwt_secret() -> str:
-    resp = ssm.get_parameter(Name=JWT_PRIVATE_KEY_PARAMETER, WithDecryption=True)
-    return resp["Parameter"]["Value"]
+def _get_jwks() -> Dict[str, Any]:
+    url = f"https://{JWKS_BUCKET}.s3.{AWS_REGION}.amazonaws.com/.well-known/jwks.json"
+    with urllib.request.urlopen(url, timeout=5) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _get_public_key(token: str):
+    try:
+        header = jwt.get_unverified_header(token)
+    except jwt.PyJWTError:
+        return None
+
+    kid = header.get("kid")
+    jwks = _get_jwks()
+    keys = jwks.get("keys") or []
+    jwk = None
+
+    if kid:
+        jwk = next((key for key in keys if key.get("kid") == kid), None)
+    elif len(keys) == 1:
+        jwk = keys[0]
+
+    if not jwk:
+        return None
+
+    try:
+        return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk))
+    except Exception:
+        return None
 
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     token = extract_token(event)
@@ -56,11 +83,15 @@ def extract_token(event: Dict[str, Any]) -> Optional[str]:
 
 def decode_netid(token: str) -> Optional[str]:
     """Decode JWT and return the netid (sub) when valid."""
+    public_key = _get_public_key(token)
+    if not public_key:
+        return None
+
     try:
         payload = jwt.decode(
             token,
-            _get_jwt_secret(),
-            algorithms=["HS256"],
+            public_key,
+            algorithms=["RS256"],
             options={"require": ["exp", "sub"]},
         )
     except jwt.PyJWTError:
