@@ -10,7 +10,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from functools import lru_cache
 from http.cookies import SimpleCookie
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -151,7 +151,8 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         if not netid:
             return {"statusCode": 401, "body": "CAS validation failed"}
 
-        token = mint_jwt(netid)
+        roles = _get_user_roles(netid)
+        token = mint_jwt(netid, roles)
         cookie = _build_auth_cookie(token)
         return {
             "statusCode": 302,
@@ -255,13 +256,15 @@ def validate_cas_ticket(ticket) -> str | None:
 
     return success.findtext("cas:user", default="", namespaces=CAS_NS) or None
 
-def mint_jwt(netid: str):
+def mint_jwt(netid: str, roles: Optional[List[str]] = None):
     """Returns a JSON web token with the user's encoded netid and expiry"""
     now = int(time.time())
+    roles = roles or []
     payload = {
         "sub": netid, # subject
         "iat": now,
         "exp": now + 60 * 60 * 24,  # 24 hours
+        "roles": roles,
     }
     headers: Optional[Dict[str, str]] = None
     kid = _get_current_kid()
@@ -308,6 +311,15 @@ def _user_allowed(netid: str) -> bool:
         return False
 
     return not user.get("is_banned", False)
+
+
+def _get_user_roles(netid: str) -> List[str]:
+    resp = users_table.get_item(Key={"netid": netid})
+    user = resp.get("Item") or {}
+    roles = user.get("roles") or []
+    if not isinstance(roles, list):
+        roles = [roles]
+    return [str(role) for role in roles]
 
 
 def _normalize_headers(headers: Dict[str, Any]) -> Dict[str, str]:
