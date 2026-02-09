@@ -8,6 +8,16 @@ output "artifacts_bucket_arn" {
   description = "ARN of the artifacts bucket."
 }
 
+output "backtests_bucket_name" {
+  value       = aws_s3_bucket.backtest_metrics.bucket
+  description = "Name of the S3 bucket storing backtest metrics."
+}
+
+output "backtests_bucket_arn" {
+  value       = aws_s3_bucket.backtest_metrics.arn
+  description = "ARN of the backtests bucket."
+}
+
 output "strategies_table_name" {
   value       = aws_dynamodb_table.strategies.name
   description = "Name of the Strategies table."

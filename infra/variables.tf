@@ -19,6 +19,12 @@ variable "artifacts_bucket_name" {
   default     = null
 }
 
+variable "backtests_bucket_name" {
+  description = "Optional explicit name for the backtests bucket. Defaults to \"<project>-<env>-backtest-metrics\"."
+  type        = string
+  default     = null
+}
+
 variable "strategies_table_name" {
   description = "Optional explicit name for the Strategies table. Defaults to \"<project>-<env>-strategies\"."
   type        = string

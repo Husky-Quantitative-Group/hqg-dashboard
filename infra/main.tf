@@ -25,6 +25,7 @@ data "aws_caller_identity" "current" {}
 locals {
   name_prefix                      = "${var.project}-${var.env}"
   artifacts_bucket_name            = coalesce(var.artifacts_bucket_name, "${local.name_prefix}-strategy-artifacts-${data.aws_caller_identity.current.account_id}")
+  backtests_bucket_name            = coalesce(var.backtests_bucket_name, "${local.name_prefix}-backtest-metrics-${data.aws_caller_identity.current.account_id}")
   strategies_table_name            = coalesce(var.strategies_table_name, "${local.name_prefix}-strategies")
   strategy_artifacts_table_name    = coalesce(var.strategy_artifacts_table_name, "${local.name_prefix}-strategy-artifacts")
   strategy_artifact_versions_table = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
@@ -79,6 +80,54 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "strategy_artifact
 
 resource "aws_s3_bucket_cors_configuration" "strategy_artifacts" {
   bucket = aws_s3_bucket.strategy_artifacts.id
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["GET", "PUT", "HEAD"]
+    allowed_origins = ["*"]
+    max_age_seconds = 300
+  }
+}
+
+# ------------------------------
+# S3 bucket for backtest storage
+# ------------------------------
+
+resource "aws_s3_bucket" "backtest_metrics" {
+  bucket = local.backtests_bucket_name
+
+  tags = local.tags
+}
+
+resource "aws_s3_bucket_versioning" "backtest_metrics" {
+  bucket = aws_s3_bucket.backtest_metrics.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "backtest_metrics" {
+  bucket = aws_s3_bucket.backtest_metrics.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "backtest_metrics" {
+  bucket = aws_s3_bucket.backtest_metrics.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_cors_configuration" "backtest_metrics" {
+  bucket = aws_s3_bucket.backtest_metrics.id
 
   cors_rule {
     allowed_headers = ["*"]
