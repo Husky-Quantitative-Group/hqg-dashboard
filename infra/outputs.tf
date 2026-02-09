@@ -68,6 +68,16 @@ output "user_access_applications_table_arn" {
   description = "ARN of the UserAccessApplications table."
 }
 
+output "backtest_metrics_table_name" {
+  value       = aws_dynamodb_table.backtest_metrics.name
+  description = "Name of the BacktestMetrics table."
+}
+
+output "backtest_metrics_table_arn" {
+  value       = aws_dynamodb_table.backtest_metrics.arn
+  description = "ARN of the BacktestMetrics table."
+}
+
 output "http_api_id" {
   value       = aws_apigatewayv2_api.api.id
   description = "ID of the HTTP API Gateway."

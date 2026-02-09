@@ -31,6 +31,7 @@ locals {
   strategy_artifact_versions_table = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
   users_table_name                 = coalesce(var.users_table_name, "${local.name_prefix}-users")
   user_access_applications_table_name = coalesce(var.user_access_applications_table_name, "${local.name_prefix}-user-access-applications")
+  backtest_metrics_table_name      = coalesce(var.backtest_metrics_table_name, "${local.name_prefix}-backtest-metrics")
 
   tags = merge(
     {
@@ -250,6 +251,33 @@ resource "aws_dynamodb_table" "user_access_applications" {
 
   attribute {
     name = "created_at"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = local.tags
+}
+
+resource "aws_dynamodb_table" "backtest_metrics" {
+  name         = local.backtest_metrics
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "strategy_id"
+  range_key    = "run_id"
+
+  attribute {
+    name = "strategy_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "run_id"
     type = "S"
   }
 

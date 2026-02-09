@@ -55,6 +55,12 @@ variable "user_access_applications_table_name" {
   default     = null
 }
 
+variable "backtest_metrics_table_name" {
+  description = "Optional explicit name for the BacktestMetrics table. Defaults to \"<project>-<env>-backtest-metrics\"."
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "Additional tags to apply to resources."
   type        = map(string)
