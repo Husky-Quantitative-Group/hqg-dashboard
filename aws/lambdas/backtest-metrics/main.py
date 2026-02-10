@@ -28,22 +28,19 @@ def handler(event, _context):
     if route_key == "GET /strategies/{id}/backtests":
         return list_backtest_runs(event)
 
+    if route_key == "GET /strategies/{id}/backtests/{backtestId}":
+        return get_backtest_run(event)
+
     if route_key == "POST /strategies/{id}/backtests":
-        return finalize_backtest_run(event)
+        return dynamo_backtest_write(event)
 
     return _json(404, {"message": "Not found"})
 
 def presign_backtest_upload(event):
-    if not BACKTESTS_BUCKET:
-        return _json(500, {"message": "BACKTESTS_BUCKET is not configured"})
-
-    strategy_id = (event.get("pathParameters") or {}).get("id")
-    if not strategy_id:
-        return _json(400, {"message": "strategy id is required"})
-
-    netid = _netid_from_authorizer(event)
-    if not netid:
-        return _json(401, {"message": "unauthorized"})
+    ctx = _require_strategy_context(event, require_bucket=True)
+    if isinstance(ctx, dict):
+        return ctx
+    strategy_id, netid = ctx
 
     run_id = _ulid()
     key = f"strategies/{strategy_id}/runs/{run_id}/run.json.gz"
@@ -85,16 +82,10 @@ def presign_backtest_upload(event):
     )
 
 def list_backtest_runs(event):
-    if not BACKTEST_METRICS_TABLE:
-        return _json(500, {"message": "BACKTEST_METRICS_TABLE is not configured"})
-
-    strategy_id = (event.get("pathParameters") or {}).get("id")
-    if not strategy_id:
-        return _json(400, {"message": "strategy id is required"})
-
-    netid = _netid_from_authorizer(event)
-    if not netid:
-        return _json(401, {"message": "unauthorized"})
+    ctx = _require_strategy_context(event, require_table=True)
+    if isinstance(ctx, dict):
+        return ctx
+    strategy_id, _netid = ctx
 
     query_params = event.get("queryStringParameters") or {}
     try:
@@ -138,19 +129,63 @@ def list_backtest_runs(event):
         },
     )
 
-def finalize_backtest_run(event):
-    if not BACKTESTS_BUCKET:
-        return _json(500, {"message": "BACKTESTS_BUCKET is not configured"})
-    if not BACKTEST_METRICS_TABLE:
-        return _json(500, {"message": "BACKTEST_METRICS_TABLE is not configured"})
+def get_backtest_run(event):
+    ctx = _require_strategy_context(event, require_table=True, require_bucket=True)
+    if isinstance(ctx, dict):
+        return ctx
+    strategy_id, _netid = ctx
 
-    strategy_id = (event.get("pathParameters") or {}).get("id")
-    if not strategy_id:
-        return _json(400, {"message": "strategy id is required"})
+    run_id = (event.get("pathParameters") or {}).get("backtestId")
+    if not run_id:
+        return _json(400, {"message": "backtestId is required"})
 
-    netid = _netid_from_authorizer(event)
-    if not netid:
-        return _json(401, {"message": "unauthorized"})
+    table = dynamo.Table(BACKTEST_METRICS_TABLE)
+    try:
+        resp = table.get_item(Key={"strategy_id": strategy_id, "run_id": run_id})
+    except ClientError as exc:
+        code = (exc.response.get("Error") or {}).get("Code")
+        return _json(500, {"message": f"Failed to load run: {code or 'error'}"})
+
+    item = resp.get("Item")
+    if not item:
+        return _json(404, {"message": "Not found"})
+
+    bucket = item.get("s3_bucket") or BACKTESTS_BUCKET
+    key = item.get("s3_key") or f"strategies/{strategy_id}/runs/{run_id}/run.json.gz"
+
+    expires_in = 20 # 20 second TTL for download link
+    try:
+        download_url = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=expires_in,
+        )
+    except ClientError as exc:
+        code = (exc.response.get("Error") or {}).get("Code")
+        return _json(500, {"message": f"Failed to presign download: {code or 'error'}"})
+
+    item = _clean_decimals(item)
+
+    return _json(
+        200,
+        {
+            "strategy_id": strategy_id,
+            "run_id": run_id,
+            "item": item,
+            "s3": {
+                "bucket": bucket,
+                "key": key,
+                "expires_in": expires_in,
+                "download_url": download_url,
+            },
+        },
+    )
+
+def dynamo_backtest_write(event):
+    ctx = _require_strategy_context(event, require_table=True, require_bucket=True)
+    if isinstance(ctx, dict):
+        return ctx
+    strategy_id, netid = ctx
 
     try:
         body = json.loads(event.get("body") or "{}")
@@ -270,12 +305,27 @@ def _netid_from_authorizer(event):
 
     return None
 
+def _require_strategy_context(event, *, require_table=False, require_bucket=False):
+    if require_table and not BACKTEST_METRICS_TABLE:
+        return _json(500, {"message": "BACKTEST_METRICS_TABLE is not configured"})
+    if require_bucket and not BACKTESTS_BUCKET:
+        return _json(500, {"message": "BACKTESTS_BUCKET is not configured"})
+
+    strategy_id = (event.get("pathParameters") or {}).get("id")
+    if not strategy_id:
+        return _json(400, {"message": "strategy id is required"})
+
+    netid = _netid_from_authorizer(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    return strategy_id, netid
+
 def _ulid():
     ts_ms = int(time.time() * 1000)
     ts_str = _encode_crockford(ts_ms, 10)
     rand_str = _encode_crockford(secrets.randbits(80), 16)
     return ts_str + rand_str
-
 
 def _encode_crockford(value, length):
     chars = []
