@@ -9,7 +9,7 @@ import {
 } from "lightweight-charts";
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
-import { runBacktest, type BacktestResponse, type EquityCurve, type Metrics, type Trade } from "~/api/backtest";
+import { runBacktest, type BacktestResponse, type EquityCurve, type Metrics, type OhlcSeries, type Trade } from "~/api/backtest";
 import { useStrategyWorkspace } from "./layout";
 
 type BacktestParameter = {
@@ -146,7 +146,10 @@ export default function StrategyBacktest() {
   const skeletonHighlightColor = animatePlaceholder ? "#1d2a3f" : skeletonBaseColor;
 
   const metrics = useMemo(() => buildMetrics(backtestData?.metrics), [backtestData]);
-  const candles = useMemo(() => buildCandles(backtestData?.equity_curve), [backtestData]);
+  const candles = useMemo(
+    () => buildCandles(backtestData?.ohlc, backtestData?.equity_curve),
+    [backtestData]
+  );
   const orders = useMemo(() => buildOrders(backtestData?.trades), [backtestData]);
   const equityStats = useMemo(
     () => buildEquityStats(backtestData, lastRunParameters),
@@ -478,7 +481,22 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
 }
 
 function toUnixTime(dateString: string): UTCTimestamp {
-  return Math.floor(new Date(dateString).getTime() / 1000) as UTCTimestamp;
+  const input = dateString.trim();
+
+  let normalized = input;
+  // Handle "YYYY-MM-DD HH:mm:ss" (common from pandas) deterministically as UTC.
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(input)) {
+    normalized = `${input.replace(" ", "T")}Z`;
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    normalized = `${input}T00:00:00Z`;
+  }
+
+  const ms = Date.parse(normalized);
+  if (Number.isNaN(ms)) {
+    return Math.floor(new Date(input).getTime() / 1000) as UTCTimestamp;
+  }
+
+  return Math.floor(ms / 1000) as UTCTimestamp;
 }
 
 const DEFAULT_PARAMETERS: BacktestParameter[] = [
@@ -530,12 +548,28 @@ const buildMetrics = (metrics?: Metrics): BacktestMetric[] => {
   ];
 };
 
-const buildCandles = (equityCurve?: EquityCurve): EquityCandle[] => {
+const buildCandlesFromOhlc = (ohlc?: OhlcSeries): EquityCandle[] => {
+  if (!ohlc) return [];
+
+  const entries = Object.entries(ohlc)
+    .map(([date, value]) => ({ date, value }))
+    .sort((a, b) => toUnixTime(a.date) - toUnixTime(b.date));
+
+  return entries.map(({ date, value }) => ({
+    time: toUnixTime(date),
+    open: value.open,
+    high: value.high,
+    low: value.low,
+    close: value.close,
+  }));
+};
+
+const buildCandlesFromEquityCurve = (equityCurve?: EquityCurve): EquityCandle[] => {
   if (!equityCurve) return [];
 
   const entries = Object.entries(equityCurve)
     .map(([date, value]) => ({ date, value }))
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    .sort((a, b) => toUnixTime(a.date) - toUnixTime(b.date));
 
   if (entries.length === 0) return [];
 
@@ -553,8 +587,14 @@ const buildCandles = (equityCurve?: EquityCurve): EquityCandle[] => {
     });
     previous = close;
   }
-  
+
   return candles;
+};
+
+const buildCandles = (ohlc?: OhlcSeries, equityCurve?: EquityCurve): EquityCandle[] => {
+  const fromOhlc = buildCandlesFromOhlc(ohlc);
+  if (fromOhlc.length > 0) return fromOhlc;
+  return buildCandlesFromEquityCurve(equityCurve);
 };
 
 const buildOrders = (trades?: Trade[]): BacktestOrder[] => {
