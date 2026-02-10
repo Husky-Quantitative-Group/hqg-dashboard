@@ -90,8 +90,13 @@ function Section({
 }
 
 export default function Sidebar() {
-  const { user } = useUser();
+  const { user, hasRole } = useUser();
   const displayName = user?.display_name ?? user?.netid ?? "—";
+  const dashboardItems = [
+    { label: "Strategies", to: "/strategies" },
+    ...(hasRole("FUND") ? [{ label: "Portfolio", to: "/portfolio" }] : []),
+    ...(hasRole("ADMIN") ? [{ label: "Admin", to: "/admin" }] : []),
+  ];
   return (
     <aside className="sticky top-0 h-screen w-64 shrink-0 bg-[#081028] text-slate-200 border-r border-slate-800 flex flex-col overflow-y-auto overscroll-contain">
       {/* Logo */}
@@ -117,13 +122,7 @@ export default function Sidebar() {
       <nav className="mt-4 px-2 space-y-4">
         <Section
           title="Dashboard"
-          items={[
-            { label: "Home", to: "/" },
-            { label: "Strategies", to: "/strategies" }, // only real page for now
-            { label: "Projects", to: "/projects" },
-            { label: "Portfolio", to: "/portfolio" },
-            { label: "Admin", to: "/admin" },
-          ]}
+          items={dashboardItems}
         />
       </nav>
 

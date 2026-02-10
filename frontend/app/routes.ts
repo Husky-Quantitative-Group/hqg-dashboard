@@ -3,7 +3,7 @@ import { type RouteConfig, index, route } from "@react-router/dev/routes";
 export default [
   // Pathless layout route – wraps all dashboard pages
   route("", "layouts/DashboardLayout.tsx", [
-    index("routes/home.tsx"),
+    index("routes/index.tsx"),
     route("strategies", "routes/strategies.tsx"),
     route("strategies/:strategyId", "routes/strategy/layout.tsx", [
       index("routes/strategy/overview.tsx"),
@@ -11,7 +11,6 @@ export default [
       route("backtest", "routes/strategy/backtest.tsx"),
       route("results", "routes/strategy/results.tsx"),
     ]),
-    route("projects", "routes/projects.tsx"),
     route("portfolio", "routes/portfolio.tsx"),
     route("create-strategy", "routes/create-strategy.tsx"),
     route("admin", "routes/admin.tsx"),
