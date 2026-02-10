@@ -110,3 +110,26 @@ export const finalizeBacktestRun = async (
   );
   return response.data;
 };
+
+export type BacktestRunItem = FinalizeBacktestRunResponse;
+
+export type ListBacktestRunsResponse = {
+  strategy_id: string;
+  items: BacktestRunItem[];
+  next_cursor?: Record<string, unknown> | null;
+};
+
+export const listBacktestRuns = async (
+  strategyId: string | number,
+  options?: { limit?: number; cursor?: Record<string, unknown> | null }
+): Promise<ListBacktestRunsResponse> => {
+  const params: Record<string, string> = {};
+  if (options?.limit) params.limit = String(options.limit);
+  if (options?.cursor) params.cursor = JSON.stringify(options.cursor);
+
+  const response = await coreApi.get<ListBacktestRunsResponse>(
+    `/strategies/${strategyId}/backtests`,
+    { params }
+  );
+  return response.data;
+};
