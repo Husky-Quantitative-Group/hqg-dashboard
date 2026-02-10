@@ -28,6 +28,7 @@ export default function AdminUsersTable({
           <tbody>
             {users.map((user) => {
               const isSelected = user.netid === selectedNetid;
+              const roles = Array.isArray(user.roles) ? user.roles.join(", ") : "—";
               return (
                 <tr
                   key={user.netid}
@@ -39,9 +40,7 @@ export default function AdminUsersTable({
                 >
                   <td className="px-4 py-2 font-medium text-slate-100">{user.netid}</td>
                   <td className="px-4 py-2 text-slate-300">{user.full_name ?? "—"}</td>
-                  <td className="px-4 py-2 text-slate-400">
-                    {Array.isArray(user.roles) ? user.roles.join(", ") : "—"}
-                  </td>
+                  <td className="px-4 py-2 text-slate-400">{roles}</td>
                 </tr>
               );
             })}
