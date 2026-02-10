@@ -23,15 +23,15 @@ provider "aws" {
 data "aws_caller_identity" "current" {}
 
 locals {
-  name_prefix                      = "${var.project}-${var.env}"
-  artifacts_bucket_name            = coalesce(var.artifacts_bucket_name, "${local.name_prefix}-strategy-artifacts-${data.aws_caller_identity.current.account_id}")
-  backtests_bucket_name            = coalesce(var.backtests_bucket_name, "${local.name_prefix}-backtest-metrics-${data.aws_caller_identity.current.account_id}")
-  strategies_table_name            = coalesce(var.strategies_table_name, "${local.name_prefix}-strategies")
-  strategy_artifacts_table_name    = coalesce(var.strategy_artifacts_table_name, "${local.name_prefix}-strategy-artifacts")
-  strategy_artifact_versions_table = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
-  users_table_name                 = coalesce(var.users_table_name, "${local.name_prefix}-users")
+  name_prefix                         = "${var.project}-${var.env}"
+  artifacts_bucket_name               = coalesce(var.artifacts_bucket_name, "${local.name_prefix}-strategy-artifacts-${data.aws_caller_identity.current.account_id}")
+  backtests_bucket_name               = coalesce(var.backtests_bucket_name, "${local.name_prefix}-backtest-metrics-${data.aws_caller_identity.current.account_id}")
+  strategies_table_name               = coalesce(var.strategies_table_name, "${local.name_prefix}-strategies")
+  strategy_artifacts_table_name       = coalesce(var.strategy_artifacts_table_name, "${local.name_prefix}-strategy-artifacts")
+  strategy_artifact_versions_table    = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
+  users_table_name                    = coalesce(var.users_table_name, "${local.name_prefix}-users")
   user_access_applications_table_name = coalesce(var.user_access_applications_table_name, "${local.name_prefix}-user-access-applications")
-  backtest_metrics_table_name      = coalesce(var.backtest_metrics_table_name, "${local.name_prefix}-backtest-metrics")
+  backtest_metrics_table_name         = coalesce(var.backtest_metrics_table_name, "${local.name_prefix}-backtest-metrics")
 
   tags = merge(
     {
@@ -266,7 +266,7 @@ resource "aws_dynamodb_table" "user_access_applications" {
 }
 
 resource "aws_dynamodb_table" "backtest_metrics" {
-  name         = local.backtest_metrics
+  name         = local.backtest_metrics_table_name
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "strategy_id"
   range_key    = "run_id"
@@ -420,6 +420,54 @@ resource "aws_iam_policy" "admin_dynamodb" {
   tags = local.tags
 }
 
+data "aws_iam_policy_document" "backtest_metrics_storage" {
+  statement {
+    sid    = "S3BacktestMetricsAccess"
+    effect = "Allow"
+
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:AbortMultipartUpload",
+      "s3:ListBucket",
+      "s3:GetObjectVersion",
+    ]
+
+    resources = [
+      aws_s3_bucket.backtest_metrics.arn,
+      "${aws_s3_bucket.backtest_metrics.arn}/*",
+    ]
+  }
+
+  statement {
+    sid    = "DynamoBacktestMetricsAccess"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:BatchWriteItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "dynamodb:DescribeTable",
+    ]
+
+    resources = [
+      aws_dynamodb_table.backtest_metrics.arn,
+    ]
+  }
+}
+
+resource "aws_iam_policy" "backtest_metrics_storage" {
+  name   = "${local.name_prefix}-backtest-metrics-storage"
+  policy = data.aws_iam_policy_document.backtest_metrics_storage.json
+
+  tags = local.tags
+}
+
 # ------------------------------
 # API Gateway (HTTP API) scaffold
 # ------------------------------
@@ -429,11 +477,11 @@ resource "aws_apigatewayv2_api" "api" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_headers = ["content-type"]
-    allow_methods = ["OPTIONS", "GET", "POST", "PATCH"]
-    allow_origins = [var.frontend_base_url]
+    allow_headers     = ["content-type"]
+    allow_methods     = ["OPTIONS", "GET", "POST", "PATCH"]
+    allow_origins     = [var.frontend_base_url]
     allow_credentials = true
-    max_age       = 300
+    max_age           = 300
   }
 
   tags = local.tags
@@ -458,21 +506,21 @@ resource "aws_apigatewayv2_stage" "stage" {
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_access.arn
     format = jsonencode({
-      requestId           = "$context.requestId"
-      routeKey            = "$context.routeKey"
-      status              = "$context.status"
-      responseLatency     = "$context.responseLatency"
-      integrationLatency  = "$context.integrationLatency"
-      authorizerLatency   = "$context.authorizer.latency"
+      requestId          = "$context.requestId"
+      routeKey           = "$context.routeKey"
+      status             = "$context.status"
+      responseLatency    = "$context.responseLatency"
+      integrationLatency = "$context.integrationLatency"
+      authorizerLatency  = "$context.authorizer.latency"
     })
   }
 
   tags = local.tags
 }
 
-# ---------------
+# ------------------------------
 # Lambda packaging
-# ---------------
+# ------------------------------
 
 data "archive_file" "strategies_lambda" {
   type        = "zip"
@@ -502,6 +550,12 @@ data "archive_file" "admin_lambda" {
   type        = "zip"
   source_dir  = "${path.module}/../aws/lambdas/admin"
   output_path = "${path.module}/dist/admin-lambda.zip"
+}
+
+data "archive_file" "backtest_metrics_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/backtest-metrics"
+  output_path = "${path.module}/dist/backtest-metrics-lambda.zip"
 }
 
 # ------------------------------
@@ -549,6 +603,13 @@ resource "aws_iam_role" "auth_checker_lambda" {
 
 resource "aws_iam_role" "admin_lambda" {
   name               = "${local.name_prefix}-admin-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = local.tags
+}
+
+resource "aws_iam_role" "backtest_metrics_lambda" {
+  name               = "${local.name_prefix}-backtest-metrics-lambda"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 
   tags = local.tags
@@ -609,6 +670,16 @@ resource "aws_iam_role_policy_attachment" "admin_lambda_dynamodb" {
   policy_arn = aws_iam_policy.admin_dynamodb.arn
 }
 
+resource "aws_iam_role_policy_attachment" "backtest_metrics_lambda_basic_logs" {
+  role       = aws_iam_role.backtest_metrics_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "backtest_metrics_lambda_storage" {
+  role       = aws_iam_role.backtest_metrics_lambda.name
+  policy_arn = aws_iam_policy.backtest_metrics_storage.arn
+}
+
 # ------------------------------
 # Lambda layers packaging
 # ------------------------------
@@ -657,11 +728,11 @@ resource "aws_lambda_function" "strategy_artifacts" {
 
   environment {
     variables = {
-      STRATEGIES_TABLE                  = aws_dynamodb_table.strategies.name
-      STRATEGY_ARTIFACTS_TABLE          = aws_dynamodb_table.strategy_artifacts.name
-      STRATEGY_ARTIFACT_VERSIONS_TABLE  = aws_dynamodb_table.strategy_artifact_versions.name
-      ARTIFACT_BUCKET                   = aws_s3_bucket.strategy_artifacts.bucket
-      API_TOKEN                         = var.api_token
+      STRATEGIES_TABLE                 = aws_dynamodb_table.strategies.name
+      STRATEGY_ARTIFACTS_TABLE         = aws_dynamodb_table.strategy_artifacts.name
+      STRATEGY_ARTIFACT_VERSIONS_TABLE = aws_dynamodb_table.strategy_artifact_versions.name
+      ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket
+      API_TOKEN                        = var.api_token
     }
   }
 
@@ -681,11 +752,11 @@ resource "aws_lambda_function" "auth_granter" {
 
   environment {
     variables = {
-      CAS_CALLBACK_URL  = "${trimsuffix(aws_apigatewayv2_stage.stage.invoke_url, "/")}/auth/callback"
-      FRONTEND_BASE_URL = var.frontend_base_url
-      JWT_SECRET = var.jwt_secret
-      APP_ENV = var.env
-      USERS_TABLE = aws_dynamodb_table.users.name
+      CAS_CALLBACK_URL               = "${trimsuffix(aws_apigatewayv2_stage.stage.invoke_url, "/")}/auth/callback"
+      FRONTEND_BASE_URL              = var.frontend_base_url
+      JWT_SECRET                     = var.jwt_secret
+      APP_ENV                        = var.env
+      USERS_TABLE                    = aws_dynamodb_table.users.name
       USER_ACCESS_APPLICATIONS_TABLE = aws_dynamodb_table.user_access_applications.name
     }
   }
@@ -725,8 +796,28 @@ resource "aws_lambda_function" "admin" {
 
   environment {
     variables = {
-      USERS_TABLE                   = aws_dynamodb_table.users.name
+      USERS_TABLE                    = aws_dynamodb_table.users.name
       USER_ACCESS_APPLICATIONS_TABLE = aws_dynamodb_table.user_access_applications.name
+    }
+  }
+
+  tags = local.tags
+}
+
+resource "aws_lambda_function" "backtest_metrics" {
+  function_name = "${local.name_prefix}-backtest-metrics"
+  role          = aws_iam_role.backtest_metrics_lambda.arn
+  runtime       = "python3.11"
+  handler       = "main.handler"
+
+  filename         = data.archive_file.backtest_metrics_lambda.output_path
+  source_code_hash = data.archive_file.backtest_metrics_lambda.output_base64sha256
+
+  environment {
+    variables = {
+      BACKTEST_METRICS_TABLE = aws_dynamodb_table.backtest_metrics.name
+      BACKTESTS_BUCKET       = aws_s3_bucket.backtest_metrics.bucket
+      API_TOKEN              = var.api_token
     }
   }
 
@@ -744,7 +835,7 @@ resource "aws_apigatewayv2_authorizer" "auth_checker" {
   authorizer_payload_format_version = "2.0"
   enable_simple_responses           = true
 
-  authorizer_result_ttl_in_seconds = 300 
+  authorizer_result_ttl_in_seconds = 300
 
   identity_sources = [
     "$request.header.Cookie",
@@ -765,25 +856,25 @@ resource "aws_apigatewayv2_integration" "get_strategies" {
 }
 
 resource "aws_apigatewayv2_route" "get_strategies" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "GET /strategies"
-  target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /strategies"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_apigatewayv2_route" "post_strategies" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "POST /strategies"
-  target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "POST /strategies"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_apigatewayv2_route" "get_strategy_by_id" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "GET /strategies/{id}"
-  target    = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /strategies/{id}"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -809,25 +900,25 @@ resource "aws_apigatewayv2_integration" "get_strategy_artifacts" {
 }
 
 resource "aws_apigatewayv2_route" "get_strategy_artifacts" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "GET /strategies/{id}/artifacts"
-  target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /strategies/{id}/artifacts"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_apigatewayv2_route" "post_strategy_artifacts" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "POST /strategies/{id}/artifacts"
-  target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "POST /strategies/{id}/artifacts"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_apigatewayv2_route" "get_strategy_artifact_by_id" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "GET /strategies/{id}/artifacts/{artifactId}"
-  target    = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /strategies/{id}/artifacts/{artifactId}"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -898,7 +989,6 @@ resource "aws_lambda_permission" "allow_apigw_invoke_auth_checker" {
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/authorizers/*"
 }
 
-
 # ------------------------------
 # API Gateway integration/routes for admin lambda
 # ------------------------------
@@ -912,49 +1002,49 @@ resource "aws_apigatewayv2_integration" "admin" {
 }
 
 resource "aws_apigatewayv2_route" "get_admin_users" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "GET /admin/users"
-  target    = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /admin/users"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_apigatewayv2_route" "get_admin_user_by_netid" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "GET /admin/users/{netid}"
-  target    = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /admin/users/{netid}"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_apigatewayv2_route" "patch_admin_user_by_netid" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "PATCH /admin/users/{netid}"
-  target    = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "PATCH /admin/users/{netid}"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_apigatewayv2_route" "get_admin_access_requests" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "GET /admin/access-requests"
-  target    = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /admin/access-requests"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_apigatewayv2_route" "post_admin_access_requests_approve" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "POST /admin/access-requests/{netid}/approve"
-  target    = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "POST /admin/access-requests/{netid}/approve"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
 resource "aws_apigatewayv2_route" "post_admin_access_requests_deny" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "POST /admin/access-requests/{netid}/deny"
-  target    = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "POST /admin/access-requests/{netid}/deny"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -963,6 +1053,58 @@ resource "aws_lambda_permission" "allow_apigw_invoke_admin" {
   statement_id  = "AllowAPIGWInvokeAdmin"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.admin.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+# ------------------------------
+# API Gateway integration/routes for backtest_metrics lambda
+# ------------------------------
+
+resource "aws_apigatewayv2_integration" "backtest_metrics" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.backtest_metrics.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "post_strategy_backtests_presign" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "POST /strategies/{id}/backtests/presign"
+  target             = "integrations/${aws_apigatewayv2_integration.backtest_metrics.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "get_strategy_backtests" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /strategies/{id}/backtests"
+  target             = "integrations/${aws_apigatewayv2_integration.backtest_metrics.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "post_strategy_backtests" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "POST /strategies/{id}/backtests"
+  target             = "integrations/${aws_apigatewayv2_integration.backtest_metrics.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "get_strategy_backtest_by_id" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /strategies/{id}/backtests/{backtestId}"
+  target             = "integrations/${aws_apigatewayv2_integration.backtest_metrics.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_lambda_permission" "allow_apigw_invoke_backtest_metrics" {
+  statement_id  = "AllowAPIGWInvokeBacktestMetrics"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.backtest_metrics.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }
