@@ -94,11 +94,18 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 export default function StrategyBacktest() {
-  const { strategy, entrypoint, addToast } = useStrategyWorkspace();
+  const { strategy, entrypoint, addToast, latestBacktestData, setLatestBacktestData, lastBacktestParamValues, setLastBacktestParamValues } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [isSavingBacktest, setIsSavingBacktest] = useState(false);
-  const [backtestData, setBacktestData] = useState<BacktestResponse | null>(null);
-  const [lastRunParameters, setLastRunParameters] = useState<BacktestParameter[]>(DEFAULT_PARAMETERS);
+  const backtestData = latestBacktestData;
+  const lastRunParameters = useMemo(
+    () =>
+      DEFAULT_PARAMETERS.map((param) => ({
+        ...param,
+        value: lastBacktestParamValues[param.id] ?? param.value,
+      })),
+    [lastBacktestParamValues]
+  );
 
   const handleRunBacktest = async (values: RunParameterState) => {
     if (isRunningBacktest) return;
@@ -114,12 +121,7 @@ export default function StrategyBacktest() {
 
     setIsRunningBacktest(true);
     addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
-    setLastRunParameters(
-      DEFAULT_PARAMETERS.map((param) => ({
-        ...param,
-        value: values[param.id] ?? param.value,
-      }))
-    );
+    setLastBacktestParamValues(values);
 
     try {
       const response = await runBacktest({
@@ -129,7 +131,7 @@ export default function StrategyBacktest() {
         initial_capital: initialCapital,
       });
 
-      setBacktestData(response);
+      setLatestBacktestData(response);
       addToast("Backtest finished", "success");
     } catch {
       addToast("Backtest failed", "warning");
@@ -156,21 +158,16 @@ export default function StrategyBacktest() {
 
       await uploadPresignedPost(presign.s3.upload, gz, "run.json.gz");
 
-      const paramMap = lastRunParameters.reduce<Record<string, string>>((acc, param) => {
-        acc[param.id] = param.value;
-        return acc;
-      }, {});
-
-      const initialCapital = Number.parseFloat((paramMap.startingEquity ?? "0").replace(/,/g, ""));
+      const initialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
 
       await finalizeBacktestRun(strategy.id, {
         run_id: presign.run_id,
         s3_key: presign.s3.key,
         strategy_version: strategy.current_version,
         backtest_params: {
-          name: paramMap.name ?? `Run ${presign.run_id}`,
-          start_date: paramMap.startDate ?? "",
-          end_date: paramMap.endDate ?? "",
+          name: lastBacktestParamValues.name ?? `Run ${presign.run_id}`,
+          start_date: lastBacktestParamValues.startDate ?? "",
+          end_date: lastBacktestParamValues.endDate ?? "",
           initial_capital: Number.isFinite(initialCapital) ? initialCapital : 0,
         },
       });

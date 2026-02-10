@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchStrategyWorkspace, startStrategyRunExecution } from "./workspace";
 import type { BacktestResult } from "./workspace";
 import { fetchStrategyArtifactContent, uploadStrategyArtifacts, type StrategyFile } from "~/api/strategyArtifacts";
+import type { BacktestResponse } from "~/api/backtest";
 import { type Strategy } from "~/api/strategies";
 
 type ToastVariant = "info" | "success" | "warning";
@@ -28,6 +29,10 @@ export type StrategyWorkspaceContext = {
   runs: BacktestResult[];
   selectedRunId: number | null;
   selectRun: (runId: number) => void;
+  latestBacktestData: BacktestResponse | null;
+  setLatestBacktestData: (data: BacktestResponse | null) => void;
+  lastBacktestParamValues: Record<string, string>;
+  setLastBacktestParamValues: (values: Record<string, string>) => void;
   addToast: (message: string, variant?: ToastVariant) => void;
   loadingFilePath: string | null;
   fileLoadError: string | null;
@@ -63,6 +68,8 @@ export default function StrategyLayout() {
   const [loadingFilePath, setLoadingFilePath] = useState<string | null>(null);
   const [fileLoadError, setFileLoadError] = useState<string | null>(null);
   const [loadedFilePaths, setLoadedFilePaths] = useState<string[]>([]);
+  const [latestBacktestData, setLatestBacktestData] = useState<BacktestResponse | null>(null);
+  const [lastBacktestParamValues, setLastBacktestParamValues] = useState<Record<string, string>>({});
 
   const entrypoint = useMemo(() => files.find((file) => file.isEntrypoint), [files]);
 
@@ -84,6 +91,8 @@ export default function StrategyLayout() {
         if (cancelled) {
           return;
         }
+        setLatestBacktestData(null);
+        setLastBacktestParamValues({});
         const fileSnapshot = cloneFiles(payload.files);
         setStrategy(payload.strategy);
         setFiles(fileSnapshot);
@@ -299,6 +308,10 @@ export default function StrategyLayout() {
     runs,
     selectedRunId,
     selectRun,
+    latestBacktestData,
+    setLatestBacktestData,
+    lastBacktestParamValues,
+    setLastBacktestParamValues,
     addToast,
     loadingFilePath,
     fileLoadError,
