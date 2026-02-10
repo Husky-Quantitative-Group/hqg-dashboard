@@ -132,7 +132,7 @@ resource "aws_s3_bucket_cors_configuration" "backtest_metrics" {
 
   cors_rule {
     allowed_headers = ["*"]
-    allowed_methods = ["GET", "PUT", "HEAD"]
+    allowed_methods = ["GET", "PUT", "POST", "HEAD"]
     allowed_origins = ["*"]
     max_age_seconds = 300
   }
