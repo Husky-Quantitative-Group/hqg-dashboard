@@ -171,10 +171,22 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         if not netid:
             return _json_response(401, {"message": "Unauthorized"})
 
-        if not _user_allowed(netid):
+        user = _load_user(netid)
+        if not user or user.get("is_banned", False):
             return _json_response(403, {"message": "Forbidden"})
 
-        return _json_response(200, {"netid": netid})
+        roles = user.get("roles") or []
+        if not isinstance(roles, list):
+            roles = [roles]
+        display_name = user.get("full_name") or netid
+        return _json_response(
+            200,
+            {
+                "netid": netid,
+                "roles": [str(role) for role in roles],
+                "display_name": display_name,
+            },
+        )
 
     if route_key == "POST /auth/apply":
         token = _extract_token(event)
@@ -320,6 +332,11 @@ def _get_user_roles(netid: str) -> List[str]:
     if not isinstance(roles, list):
         roles = [roles]
     return [str(role) for role in roles]
+
+
+def _load_user(netid: str) -> Optional[Dict[str, Any]]:
+    resp = users_table.get_item(Key={"netid": netid})
+    return resp.get("Item")
 
 
 def _normalize_headers(headers: Dict[str, Any]) -> Dict[str, str]:

@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { useState } from "react";
+import { useUser } from "~/context/UserConext";
 
 type Item = {
   label: string;
@@ -89,6 +90,8 @@ function Section({
 }
 
 export default function Sidebar() {
+  const { user } = useUser();
+  const displayName = user?.display_name ?? user?.netid ?? "—";
   return (
     <aside className="sticky top-0 h-screen w-64 shrink-0 bg-[#081028] text-slate-200 border-r border-slate-800 flex flex-col overflow-y-auto overscroll-contain">
       {/* Logo */}
@@ -134,7 +137,7 @@ export default function Sidebar() {
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg">
           <div className="h-8 w-8 rounded-full bg-gradient-to-br from-fuchsia-500 to-indigo-500" />
           <div className="leading-tight">
-            <div className="text-sm">Jane Doe</div>
+            <div className="text-sm">{displayName}</div>
             <div className="text-xs text-slate-400">Account settings</div>
           </div>
           <span className="ml-auto text-xs text-slate-600">›</span>
