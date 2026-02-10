@@ -10,6 +10,7 @@ import {
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
 import { runBacktest, type BacktestResponse, type EquityCurve, type Metrics, type OhlcSeries, type Trade } from "~/api/backtest";
+import { gzipJson, presignBacktestRunUpload, uploadPresignedPost } from "~/api/backtestMetrics";
 import { useStrategyWorkspace } from "./layout";
 
 type BacktestParameter = {
@@ -65,6 +66,7 @@ type StrategyEquityChartProps = {
   stats: EquityStat[];
   candles: EquityCandle[];
   onSave: () => void;
+  isSaving: boolean;
   showPlaceholder: boolean;
   animatePlaceholder: boolean;
 };
@@ -94,6 +96,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 export default function StrategyBacktest() {
   const { strategy, entrypoint, addToast } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
+  const [isSavingBacktest, setIsSavingBacktest] = useState(false);
   const [backtestData, setBacktestData] = useState<BacktestResponse | null>(null);
   const [lastRunParameters, setLastRunParameters] = useState<BacktestParameter[]>(DEFAULT_PARAMETERS);
 
@@ -136,8 +139,29 @@ export default function StrategyBacktest() {
   };
 
 
-  const handleSaveResults = () => {
-    addToast("Saved backtest snapshot to results", "success");
+  const handleSaveResults = async () => {
+    if (isSavingBacktest) return;
+    if (!backtestData) {
+      addToast("Run a backtest before saving.", "warning");
+      return;
+    }
+
+    setIsSavingBacktest(true);
+    addToast("Preparing upload…", "info");
+
+    try {
+      const presign = await presignBacktestRunUpload(strategy.id);
+
+      const gz = await gzipJson(backtestData);
+
+      await uploadPresignedPost(presign.s3.upload, gz, "run.json.gz");
+      addToast(`Uploaded run ${presign.run_id}`, "success");
+    } catch (error) {
+      console.error("Failed to save backtest run", error);
+      addToast("Save failed", "warning");
+    } finally {
+      setIsSavingBacktest(false);
+    }
   };
 
   const showPlaceholder = !backtestData || isRunningBacktest;
@@ -184,6 +208,7 @@ export default function StrategyBacktest() {
               stats={equityStats}
               candles={candles}
               onSave={handleSaveResults}
+              isSaving={isSavingBacktest}
               showPlaceholder={showPlaceholder}
               animatePlaceholder={animatePlaceholder}
             />
@@ -309,7 +334,7 @@ function BacktestMetrics({ metrics, showPlaceholder, animatePlaceholder }: Backt
   );
 }
 
-function StrategyEquityChart({ strategyName, stats, candles, onSave, showPlaceholder, animatePlaceholder }: StrategyEquityChartProps) {
+function StrategyEquityChart({ strategyName, stats, candles, onSave, isSaving, showPlaceholder, animatePlaceholder }: StrategyEquityChartProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const [benchmarkEnabled, setBenchmarkEnabled] = useState(true);
   const [selectedBenchmark, setSelectedBenchmark] = useState("sp500");
@@ -372,17 +397,17 @@ function StrategyEquityChart({ strategyName, stats, candles, onSave, showPlaceho
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Strategy Equity</p>
           <h2 className="text-xl font-semibold text-white">{strategyName ?? "Active strategy"}</h2>
         </div>
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={showPlaceholder}
-          className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
-            showPlaceholder ? "cursor-not-allowed bg-slate-700/70 text-slate-300" : "bg-fuchsia-500 hover:bg-fuchsia-400"
-          }`}
-        >
-          Save to Results
-        </button>
-      </header>
+	        <button
+	          type="button"
+	          onClick={onSave}
+	          disabled={showPlaceholder || isSaving}
+	          className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
+	            showPlaceholder || isSaving ? "cursor-not-allowed bg-slate-700/70 text-slate-300" : "bg-fuchsia-500 hover:bg-fuchsia-400"
+	          }`}
+	        >
+	          {isSaving ? "Saving…" : "Save to Results"}
+	        </button>
+	      </header>
 
       <dl className="mt-6 grid gap-4 md:grid-cols-3 lg:grid-cols-5">
         {stats.map((stat) => (
