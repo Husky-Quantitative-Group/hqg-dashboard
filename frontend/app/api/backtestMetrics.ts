@@ -111,6 +111,8 @@ export const finalizeBacktestRun = async (
   return response.data;
 };
 
+// API for listing backtests on results tab
+
 export type BacktestRunItem = FinalizeBacktestRunResponse;
 
 export type ListBacktestRunsResponse = {
@@ -132,4 +134,42 @@ export const listBacktestRuns = async (
     { params }
   );
   return response.data;
+};
+
+// API for fetching specific backtest result
+
+export type GetBacktestRunResponse = {
+  strategy_id: string;
+  run_id: string;
+  item: BacktestRunItem;
+  s3: {
+    bucket: string;
+    key: string;
+    expires_in: number;
+    download_url: string;
+  };
+};
+
+export const getBacktestRun = async (
+  strategyId: string | number,
+  runId: string
+): Promise<GetBacktestRunResponse> => {
+  const response = await coreApi.get<GetBacktestRunResponse>(
+    `/strategies/${strategyId}/backtests/${runId}`
+  );
+  return response.data;
+};
+
+// compress json files
+
+export const gunzipJson = async <T = unknown>(compressed: ArrayBuffer): Promise<T> => {
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("DecompressionStream is not supported in this browser.");
+  }
+
+  const decompressed = await new Response(
+    new Blob([compressed]).stream().pipeThrough(new DecompressionStream("gzip"))
+  ).text();
+
+  return JSON.parse(decompressed) as T;
 };

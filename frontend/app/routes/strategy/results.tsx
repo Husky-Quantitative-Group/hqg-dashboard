@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { listBacktestRuns, type BacktestRunItem } from "~/api/backtestMetrics";
+import { getBacktestRun, gunzipJson, listBacktestRuns, type BacktestRunItem } from "~/api/backtestMetrics";
 import { useStrategyWorkspace } from "./layout";
+import { useNavigate } from "react-router-dom";
+import type { BacktestResponse } from "~/api/backtest";
 
 const currencyFormatter = new Intl.NumberFormat("en", {
   style: "currency",
@@ -37,11 +39,13 @@ function formatDuration(seconds?: number | null) {
 }
 
 export default function StrategyResults() {
-  const { strategy, addToast } = useStrategyWorkspace();
+  const navigate = useNavigate();
+  const { strategy, addToast, setLatestBacktestData, setLastBacktestParamValues } = useStrategyWorkspace();
   const surface = "border border-slate-800 bg-slate-950/40";
   const mutedColor = "text-slate-400";
   const [runs, setRuns] = useState<BacktestRunItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingRunId, setLoadingRunId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +73,35 @@ export default function StrategyResults() {
     () => [...runs].sort((a, b) => new Date(b.time_created).getTime() - new Date(a.time_created).getTime()),
     [runs]
   );
+
+  const openRun = async (run: BacktestRunItem) => {
+    if (loadingRunId) return;
+    setLoadingRunId(run.run_id);
+    addToast("Loading run…", "info");
+
+    try {
+      const resp = await getBacktestRun(strategy.id, run.run_id);
+      const raw = await fetch(resp.s3.download_url).then((r) => r.arrayBuffer());
+      const backtest = await gunzipJson<BacktestResponse>(raw);
+
+      setLatestBacktestData(backtest);
+
+      const params = resp.item.backtest_params;
+      setLastBacktestParamValues({
+        name: params?.name ?? "",
+        startingEquity: params?.initial_capital !== undefined ? String(params.initial_capital) : "",
+        startDate: params?.start_date ?? "",
+        endDate: params?.end_date ?? "",
+      });
+
+      navigate("../backtest");
+    } catch (error) {
+      console.error("Failed to open saved run", error);
+      addToast("Failed to open run", "warning");
+    } finally {
+      setLoadingRunId(null);
+    }
+  };
 
   if (!sortedRuns.length && !isLoading) {
     return (
@@ -122,7 +155,12 @@ export default function StrategyResults() {
               const equity = run.backtest_params?.initial_capital ?? 0;
               const drawdown = typeof run.max_drawdown === "number" ? -run.max_drawdown : null;
               return (
-                <tr key={run.run_id}>
+                <tr
+                  key={run.run_id}
+                  className="cursor-pointer transition hover:bg-slate-900/30"
+                  onClick={() => void openRun(run)}
+                  aria-busy={loadingRunId === run.run_id}
+                >
                   <td className="px-4 py-4 align-top font-mono text-slate-300">{run.run_id.slice(0, 10)}</td>
                   <td className="px-4 py-4 align-top font-semibold text-white">{name}</td>
                   <td className="px-4 py-4 align-top text-slate-200">{run.strategy_version ?? "—"}</td>
