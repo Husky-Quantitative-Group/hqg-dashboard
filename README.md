@@ -14,7 +14,7 @@ This project uses a React frontend, AWS serverless backend, and Terraform for Ia
 ### System High-Level Design:
 
 <p align="center">
-  <img height="600" alt="hqg-dash-high-level-design" src="./docs/designs/hld-20260208" />
+  <img alt="hqg-dash-high-level-design" src="./docs/designs/hld-20260208.png" />
 </p>
 
 
