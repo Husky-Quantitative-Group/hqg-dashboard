@@ -8,6 +8,7 @@ from decimal import Decimal
 
 import boto3
 from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Key
 
 s3 = boto3.client("s3")
 dynamo = boto3.resource("dynamodb")
@@ -23,6 +24,9 @@ def handler(event, _context):
 
     if route_key == "POST /strategies/{id}/backtests/presign":
         return presign_backtest_upload(event)
+
+    if route_key == "GET /strategies/{id}/backtests":
+        return list_backtest_runs(event)
 
     if route_key == "POST /strategies/{id}/backtests":
         return finalize_backtest_run(event)
@@ -44,7 +48,7 @@ def presign_backtest_upload(event):
     run_id = _ulid()
     key = f"strategies/{strategy_id}/runs/{run_id}/run.json.gz"
 
-    expires_in = 60  # 1 minute TTL
+    expires_in = 20 # 20 second TTL
     content_type = "application/gzip"
 
     presigned = s3.generate_presigned_post(
@@ -77,6 +81,60 @@ def presign_backtest_upload(event):
                     "fields": presigned["fields"],
                 },
             },
+        },
+    )
+
+def list_backtest_runs(event):
+    if not BACKTEST_METRICS_TABLE:
+        return _json(500, {"message": "BACKTEST_METRICS_TABLE is not configured"})
+
+    strategy_id = (event.get("pathParameters") or {}).get("id")
+    if not strategy_id:
+        return _json(400, {"message": "strategy id is required"})
+
+    netid = _netid_from_authorizer(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        limit = int(query_params.get("limit") or 25)
+    except Exception:
+        limit = 25
+    limit = max(1, min(limit, 200))
+
+    cursor = query_params.get("cursor")
+    exclusive_start_key = None
+    if isinstance(cursor, str) and cursor.strip():
+        try:
+            exclusive_start_key = json.loads(cursor)
+        except Exception:
+            return _json(400, {"message": "invalid cursor"})
+
+    table = dynamo.Table(BACKTEST_METRICS_TABLE)
+    try:
+        query_kwargs = {
+            "KeyConditionExpression": Key("strategy_id").eq(strategy_id),
+            "ScanIndexForward": False,
+            "Limit": limit,
+        }
+        if exclusive_start_key:
+            query_kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+        resp = table.query(**query_kwargs)
+    except ClientError as exc:
+        code = (exc.response.get("Error") or {}).get("Code")
+        return _json(500, {"message": f"Failed to query runs: {code or 'error'}"})
+
+    items = _clean_decimals(resp.get("Items", []))
+    next_cursor = resp.get("LastEvaluatedKey")
+
+    return _json(
+        200,
+        {
+            "strategy_id": strategy_id,
+            "items": items,
+            "next_cursor": next_cursor,
         },
     )
 
