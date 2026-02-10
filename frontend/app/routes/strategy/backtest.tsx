@@ -10,7 +10,7 @@ import {
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
 import { runBacktest, type BacktestResponse, type EquityCurve, type Metrics, type OhlcSeries, type Trade } from "~/api/backtest";
-import { gzipJson, presignBacktestRunUpload, uploadPresignedPost } from "~/api/backtestMetrics";
+import { finalizeBacktestRun, gzipJson, presignBacktestRunUpload, uploadPresignedPost } from "~/api/backtestMetrics";
 import { useStrategyWorkspace } from "./layout";
 
 type BacktestParameter = {
@@ -155,7 +155,27 @@ export default function StrategyBacktest() {
       const gz = await gzipJson(backtestData);
 
       await uploadPresignedPost(presign.s3.upload, gz, "run.json.gz");
-      addToast(`Uploaded run ${presign.run_id}`, "success");
+
+      const paramMap = lastRunParameters.reduce<Record<string, string>>((acc, param) => {
+        acc[param.id] = param.value;
+        return acc;
+      }, {});
+
+      const initialCapital = Number.parseFloat((paramMap.startingEquity ?? "0").replace(/,/g, ""));
+
+      await finalizeBacktestRun(strategy.id, {
+        run_id: presign.run_id,
+        s3_key: presign.s3.key,
+        strategy_version: strategy.current_version,
+        backtest_params: {
+          name: paramMap.name ?? `Run ${presign.run_id}`,
+          start_date: paramMap.startDate ?? "",
+          end_date: paramMap.endDate ?? "",
+          initial_capital: Number.isFinite(initialCapital) ? initialCapital : 0,
+        },
+      });
+
+      addToast(`Saved run ${presign.run_id}`, "success");
     } catch (error) {
       console.error("Failed to save backtest run", error);
       addToast("Save failed", "warning");

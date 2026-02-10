@@ -1,5 +1,7 @@
 import { coreApi } from "./core";
 
+// API for S3 upload
+
 export type PresignedPost = {
   url: string;
   fields: Record<string, string>;
@@ -63,4 +65,48 @@ export const uploadPresignedPost = async (
 
   const text = await res.text();
   throw new Error(`S3 upload failed (${res.status}): ${text || "Unknown error"}`);
+};
+
+// API for DynamoDB upload
+
+export type BacktestParams = {
+  name: string;
+  start_date: string;
+  end_date: string;
+  initial_capital: number;
+};
+
+export type FinalizeBacktestRunRequest = {
+  run_id: string;
+  backtest_params: BacktestParams;
+  strategy_version?: number | string;
+  s3_key?: string;
+};
+
+export type FinalizeBacktestRunResponse = {
+  strategy_id: string;
+  run_id: string;
+  time_created: string;
+  user: string;
+  strategy_version?: number | string;
+  backtest_params: BacktestParams;
+  metrics: Record<string, unknown>;
+  net_pnl?: number;
+  sharpe?: number;
+  win_rate?: number;
+  max_drawdown?: number;
+  trades_count?: number;
+  s3_bucket: string;
+  s3_key: string;
+};
+
+export const finalizeBacktestRun = async (
+  strategyId: string | number,
+  payload: FinalizeBacktestRunRequest
+): Promise<FinalizeBacktestRunResponse> => {
+  const response = await coreApi.post<FinalizeBacktestRunResponse>(
+    `/strategies/${strategyId}/backtests`,
+    payload
+  );
+  return response.data;
 };
