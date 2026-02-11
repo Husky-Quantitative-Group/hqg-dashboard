@@ -1,5 +1,5 @@
-import { Navigate } from "react-router-dom";
+import Strategies from "./strategies";
 
 export default function Index() {
-  return <Navigate to="/strategies" replace />;
+  return <Strategies />;
 }

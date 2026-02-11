@@ -4,7 +4,8 @@ export default [
   // Pathless layout route – wraps all dashboard pages
   route("", "layouts/DashboardLayout.tsx", [
     index("routes/index.tsx"),
-    route("strategies", "routes/strategies.tsx"),
+    route("", "routes/strategies.tsx"),
+    // route("strategies", "routes/strategies.tsx"),
     route("strategies/:strategyId", "routes/strategy/layout.tsx", [
       index("routes/strategy/overview.tsx"),
       route("code", "routes/strategy/code.tsx"),
