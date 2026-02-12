@@ -4,7 +4,7 @@ import { fetchStrategyWorkspace, startStrategyRunExecution } from "./workspace";
 import type { BacktestResult } from "./workspace";
 import { fetchStrategyArtifactContent, uploadStrategyArtifacts, type StrategyFile } from "~/api/strategyArtifacts";
 import type { BacktestResponse } from "~/api/backtest";
-import { listBacktestRuns } from "~/api/backtestMetrics";
+import { listBacktestRuns, type BacktestRunItem } from "~/api/backtestMetrics";
 import { type Strategy } from "~/api/strategies";
 
 type ToastVariant = "info" | "success" | "warning";
@@ -34,6 +34,9 @@ export type StrategyWorkspaceContext = {
   setLatestBacktestData: (data: BacktestResponse | null) => void;
   lastBacktestParamValues: Record<string, string>;
   setLastBacktestParamValues: (values: Record<string, string>) => void;
+  savedBacktestRuns: BacktestRunItem[];
+  isSavedBacktestRunsLoading: boolean;
+  refreshSavedBacktestRuns: () => Promise<void>;
   addToast: (message: string, variant?: ToastVariant) => void;
   loadingFilePath: string | null;
   fileLoadError: string | null;
@@ -71,6 +74,32 @@ export default function StrategyLayout() {
   const [loadedFilePaths, setLoadedFilePaths] = useState<string[]>([]);
   const [latestBacktestData, setLatestBacktestData] = useState<BacktestResponse | null>(null);
   const [lastBacktestParamValues, setLastBacktestParamValues] = useState<Record<string, string>>({});
+  const [savedBacktestRuns, setSavedBacktestRuns] = useState<BacktestRunItem[]>([]);
+  const [isSavedBacktestRunsLoading, setIsSavedBacktestRunsLoading] = useState(false);
+
+  const refreshSavedBacktestRuns = useCallback(async () => {
+    if (!strategy) return;
+    setIsSavedBacktestRunsLoading(true);
+    try {
+      const savedRuns = await listBacktestRuns(strategy.id, { limit: 200 });
+      setSavedBacktestRuns(savedRuns.items ?? []);
+
+      const latest = savedRuns.items?.[0];
+      const params = latest?.backtest_params;
+      if (params) {
+        setLastBacktestParamValues({
+          name: params.name ?? "",
+          startingEquity: params.initial_capital !== undefined ? String(params.initial_capital) : "",
+          startDate: params.start_date ?? "",
+          endDate: params.end_date ?? "",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load saved backtest runs", error);
+    } finally {
+      setIsSavedBacktestRunsLoading(false);
+    }
+  }, [strategy]);
 
   const entrypoint = useMemo(() => files.find((file) => file.isEntrypoint), [files]);
 
@@ -94,6 +123,7 @@ export default function StrategyLayout() {
         }
         setLatestBacktestData(null);
         setLastBacktestParamValues({});
+        setSavedBacktestRuns([]);
         const fileSnapshot = cloneFiles(payload.files);
         setStrategy(payload.strategy);
         setFiles(fileSnapshot);
@@ -107,12 +137,14 @@ export default function StrategyLayout() {
         setAutosaveMessage("All changes saved");
 
         try {
-          const savedRuns = await listBacktestRuns(payload.strategy.id, { limit: 1 });
+          setIsSavedBacktestRunsLoading(true);
+          const savedRuns = await listBacktestRuns(payload.strategy.id, { limit: 200 });
           if (cancelled) {
             return;
           }
           const latest = savedRuns.items?.[0];
           const params = latest?.backtest_params;
+          setSavedBacktestRuns(savedRuns.items ?? []);
           if (params) {
             setLastBacktestParamValues({
               name: params.name ?? "",
@@ -125,6 +157,8 @@ export default function StrategyLayout() {
           if (!cancelled) {
             console.error("Failed to load saved backtest params", error);
           }
+        } finally {
+          if (!cancelled) setIsSavedBacktestRunsLoading(false);
         }
       } catch (error) {
         if (cancelled) {
@@ -334,6 +368,9 @@ export default function StrategyLayout() {
     setLatestBacktestData,
     lastBacktestParamValues,
     setLastBacktestParamValues,
+    savedBacktestRuns,
+    isSavedBacktestRunsLoading,
+    refreshSavedBacktestRuns,
     addToast,
     loadingFilePath,
     fileLoadError,

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { getBacktestRun, gunzipJson, listBacktestRuns, type BacktestRunItem } from "~/api/backtestMetrics";
+import { useMemo, useState } from "react";
+import { getBacktestRun, gunzipJson, type BacktestRunItem } from "~/api/backtestMetrics";
 import { useStrategyWorkspace } from "./layout";
 import { useNavigate } from "react-router-dom";
 import type { BacktestResponse } from "~/api/backtest";
@@ -40,39 +40,21 @@ function formatDuration(seconds?: number | null) {
 
 export default function StrategyResults() {
   const navigate = useNavigate();
-  const { strategy, addToast, setLatestBacktestData, setLastBacktestParamValues } = useStrategyWorkspace();
+  const {
+    strategy,
+    addToast,
+    setLatestBacktestData,
+    setLastBacktestParamValues,
+    savedBacktestRuns,
+    isSavedBacktestRunsLoading,
+  } = useStrategyWorkspace();
   const surface = "border border-slate-800 bg-slate-950/40";
   const mutedColor = "text-slate-400";
-  const [runs, setRuns] = useState<BacktestRunItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [loadingRunId, setLoadingRunId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setIsLoading(true);
-    listBacktestRuns(strategy.id, { limit: 50 })
-      .then((data) => {
-        if (cancelled) return;
-        setRuns(data.items ?? []);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.error("Failed to load backtest runs", error);
-        addToast("Failed to load saved runs", "warning");
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [addToast, strategy.id]);
-
-  const sortedRuns = useMemo(
-    () => [...runs].sort((a, b) => new Date(b.time_created).getTime() - new Date(a.time_created).getTime()),
-    [runs]
-  );
+  const sortedRuns = useMemo(() => {
+    const runs = savedBacktestRuns ?? [];
+    return [...runs].sort((a, b) => new Date(b.time_created).getTime() - new Date(a.time_created).getTime());
+  }, [savedBacktestRuns]);
 
   const openRun = async (run: BacktestRunItem) => {
     if (loadingRunId) return;
@@ -103,7 +85,7 @@ export default function StrategyResults() {
     }
   };
 
-  if (!sortedRuns.length && !isLoading) {
+  if (!sortedRuns.length && !isSavedBacktestRunsLoading) {
     return (
       <div className={`rounded-2xl ${surface} p-12 text-center text-sm ${mutedColor}`}>
         No runs available for this strategy yet. Save a backtest to see it here.
@@ -138,7 +120,7 @@ export default function StrategyResults() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-900 text-slate-200">
-            {isLoading ? (
+            {isSavedBacktestRunsLoading ? (
               <tr>
                 <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
                   Loading…

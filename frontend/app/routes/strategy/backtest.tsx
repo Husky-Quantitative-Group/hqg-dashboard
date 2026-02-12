@@ -94,7 +94,16 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 export default function StrategyBacktest() {
-  const { strategy, entrypoint, addToast, latestBacktestData, setLatestBacktestData, lastBacktestParamValues, setLastBacktestParamValues } = useStrategyWorkspace();
+  const {
+    strategy,
+    entrypoint,
+    addToast,
+    latestBacktestData,
+    setLatestBacktestData,
+    lastBacktestParamValues,
+    setLastBacktestParamValues,
+    refreshSavedBacktestRuns,
+  } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [isSavingBacktest, setIsSavingBacktest] = useState(false);
   const backtestData = latestBacktestData;
@@ -172,6 +181,7 @@ export default function StrategyBacktest() {
         },
       });
 
+      await refreshSavedBacktestRuns();
       addToast(`Saved run ${presign.run_id}`, "success");
     } catch (error) {
       console.error("Failed to save backtest run", error);
