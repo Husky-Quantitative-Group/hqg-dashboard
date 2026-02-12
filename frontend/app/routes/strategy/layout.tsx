@@ -4,6 +4,7 @@ import { fetchStrategyWorkspace, startStrategyRunExecution } from "./workspace";
 import type { BacktestResult } from "./workspace";
 import { fetchStrategyArtifactContent, uploadStrategyArtifacts, type StrategyFile } from "~/api/strategyArtifacts";
 import type { BacktestResponse } from "~/api/backtest";
+import { listBacktestRuns } from "~/api/backtestMetrics";
 import { type Strategy } from "~/api/strategies";
 
 type ToastVariant = "info" | "success" | "warning";
@@ -104,6 +105,27 @@ export default function StrategyLayout() {
         setSelectedRunId(payload.backtestResults[0]?.id ?? null);
         setIsDirty(false);
         setAutosaveMessage("All changes saved");
+
+        try {
+          const savedRuns = await listBacktestRuns(payload.strategy.id, { limit: 1 });
+          if (cancelled) {
+            return;
+          }
+          const latest = savedRuns.items?.[0];
+          const params = latest?.backtest_params;
+          if (params) {
+            setLastBacktestParamValues({
+              name: params.name ?? "",
+              startingEquity: params.initial_capital !== undefined ? String(params.initial_capital) : "",
+              startDate: params.start_date ?? "",
+              endDate: params.end_date ?? "",
+            });
+          }
+        } catch (error) {
+          if (!cancelled) {
+            console.error("Failed to load saved backtest params", error);
+          }
+        }
       } catch (error) {
         if (cancelled) {
           return;
