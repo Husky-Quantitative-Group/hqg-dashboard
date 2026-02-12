@@ -94,7 +94,7 @@ export default function Sidebar() {
   const displayName = user?.display_name ?? user?.netid ?? "—";
   const dashboardItems = [
     { label: "Strategies", to: "/" },
-    ...(hasRole("FUND") ? [{ label: "Portfolio", to: "/portfolio" }] : []),
+    ...(hasRole("FUND") || hasRole("ADMIN") ? [{ label: "Portfolio", to: "/portfolio" }] : []),
     ...(hasRole("ADMIN") ? [{ label: "Admin", to: "/admin" }] : []),
   ];
   return (
