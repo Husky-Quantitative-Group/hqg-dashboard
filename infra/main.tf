@@ -455,11 +455,25 @@ data "aws_iam_policy_document" "jwt_key_rotator" {
     effect = "Allow"
 
     actions = [
+      "s3:GetObject",
       "s3:PutObject",
     ]
 
     resources = [
       "${aws_s3_bucket.jwks.arn}/.well-known/jwks.json",
+    ]
+  }
+
+  statement {
+    sid    = "S3JwksList"
+    effect = "Allow"
+
+    actions = [
+      "s3:ListBucket",
+    ]
+
+    resources = [
+      aws_s3_bucket.jwks.arn,
     ]
   }
 }

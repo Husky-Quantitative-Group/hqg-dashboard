@@ -112,9 +112,12 @@ def _patch_user(netid: str | None, body: Dict[str, Any]) -> Dict[str, Any]:
 
     roles = body.get("roles")
     if roles is not None:
-        allowed_roles = {"MEMBER", "ADMIN"}
-        if not isinstance(roles, list) or any(role not in allowed_roles for role in roles):
-            return _json(400, {"message": "roles must be a list of MEMBER/ADMIN"})
+        if not isinstance(roles, list):
+            return _json(400, {"message": "roles must be a list of PUBLIC/FUND/ADMIN"})
+        allowed_roles = {"PUBLIC", "FUND", "ADMIN"}
+        if any(role not in allowed_roles for role in roles):
+            return _json(400, {"message": "roles must be a list of PUBLIC/FUND/ADMIN"})
+        body["roles"] = roles
 
     update_parts: List[str] = []
     expr_names: Dict[str, str] = {}
@@ -182,6 +185,8 @@ def _approve_access_request(netid: str | None, decision_notes: str, decided_by: 
         ":decided_by": decided_by
     }
 
+    roles = ["PUBLIC"]
+
     user_item = {
         "netid": netid,
         "full_name": request_item.get("full_name"),
@@ -190,7 +195,7 @@ def _approve_access_request(netid: str | None, decision_notes: str, decided_by: 
         "github_url": request_item.get("github_url"),
         "uconn_email": request_item.get("uconn_email"),
         "joined_at": decided_at,
-        "roles": request_item.get("roles") or [],
+        "roles": roles,
         "is_banned": False,
     }
 

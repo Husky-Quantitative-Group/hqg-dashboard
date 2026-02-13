@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { patchAdminUser, type AdminUser } from "~/api/admin";
 
+const ROLE_OPTIONS = ["PUBLIC", "FUND", "ADMIN"] as const;
+
 type AdminUsersDetailProps = {
   user?: AdminUser | null;
   loading?: boolean;
@@ -161,7 +163,7 @@ export default function AdminUsersDetail({
           <div className="text-xs uppercase tracking-wide text-slate-500">
             Roles
             <div className="mt-2 flex flex-wrap gap-2 text-sm">
-              {["MEMBER", "ADMIN"].map((role) => (
+              {ROLE_OPTIONS.map((role) => (
                 <button
                   key={role}
                   type="button"
