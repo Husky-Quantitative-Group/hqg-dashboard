@@ -326,14 +326,14 @@ export default function Portfolio() {
           setIsLoadingEquity(true);
           setEquityError(null);
           try {
-            const data = await getEquity(selectedPortfolioId, selectedTimeframe || "YTD");
+            const data = await (selectedTimeframe
+              ? getEquity(selectedPortfolioId, selectedTimeframe)
+              : getEquity(selectedPortfolioId));
             setEquityData(data.data);
-          } 
-          catch (error) {
+          } catch (error) {
             setEquityError(error instanceof Error ? error.message : "Failed to load equity data");
             console.error("Error fetching equity:", error);
-          } 
-          finally {
+          } finally {
             setIsLoadingEquity(false);
           }
         },
@@ -342,7 +342,9 @@ export default function Portfolio() {
           setIsLoadingSnapshot(true);
           setSnapshotError(null);
           try {
-            const data = await getSnapshot(selectedPortfolioId, selectedTimeframe || "YTD");
+            const data = await (selectedTimeframe
+              ? getSnapshot(selectedPortfolioId, selectedTimeframe)
+              : getSnapshot(selectedPortfolioId));
             setSnapshotData(data);
           } 
           catch (error) {
@@ -358,7 +360,9 @@ export default function Portfolio() {
           setIsLoadingMetrics(true);
           setMetricsError(null);
           try {
-            const data = await getMetrics(selectedPortfolioId, selectedTimeframe || "YTD");
+            const data = await (selectedTimeframe
+              ? getMetrics(selectedPortfolioId, selectedTimeframe)
+              : getMetrics(selectedPortfolioId));
             setMetricsData(data);
           } 
           catch (error) {
@@ -374,7 +378,9 @@ export default function Portfolio() {
           setIsLoadingExecutionEvents(true);
           setEventsError(null);
           try {
-            const data = await getExecutionEvents(selectedPortfolioId, selectedTimeframe || "YTD");
+            const data = await (selectedTimeframe
+              ? getExecutionEvents(selectedPortfolioId, selectedTimeframe)
+              : getExecutionEvents(selectedPortfolioId));
             setExecutionEvents(data.events);
           } 
           catch (error) {
@@ -390,7 +396,9 @@ export default function Portfolio() {
           setIsLoadingAllocationEvents(true);
           setEventsError(null);
           try {
-            const data = await getAllocationEvents(selectedPortfolioId, selectedTimeframe || "YTD");
+            const data = await (selectedTimeframe
+              ? getAllocationEvents(selectedPortfolioId, selectedTimeframe)
+              : getAllocationEvents(selectedPortfolioId));
             setAllocationEvents(data.events);
           } 
           catch (error) {
