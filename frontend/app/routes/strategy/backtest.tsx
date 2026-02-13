@@ -52,6 +52,8 @@ type BacktestParametersProps = {
   strategyName?: string;
   parameters: BacktestParameter[];
   isRunning: boolean;
+  isDisabled: boolean;
+  disabledReason?: string;
   onRun: (values: RunParameterState) => void;
 };
 
@@ -99,6 +101,8 @@ export default function StrategyBacktest() {
     strategy,
     entrypoint,
     addToast,
+    isDirty,
+    isSaving: isWorkspaceSaving,
     latestBacktestData,
     setLatestBacktestData,
     lastBacktestParamValues,
@@ -122,6 +126,14 @@ export default function StrategyBacktest() {
 
   const handleRunBacktest = async (values: RunParameterState) => {
     if (isRunningBacktest) return;
+    if (isWorkspaceSaving) {
+      addToast("Please wait for your strategy changes to finish saving before running a backtest.", "info");
+      return;
+    }
+    if (isDirty) {
+      addToast("Save a new version of your strategy before running a backtest.", "warning");
+      return;
+    }
 
     const strategyCode = entrypoint?.content ?? "";
     if (!strategyCode.trim()) {
@@ -236,6 +248,10 @@ export default function StrategyBacktest() {
               strategyName={strategy.name}
               parameters={lastRunParameters}
               isRunning={isRunningBacktest}
+              isDisabled={isRunningBacktest || isDirty || isWorkspaceSaving}
+              disabledReason={
+                isDirty ? "Save a new version before running." : isWorkspaceSaving ? "Saving changes…" : undefined
+              }
               onRun={handleRunBacktest}
             />
             <BacktestMetrics metrics={metrics} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
@@ -260,7 +276,7 @@ export default function StrategyBacktest() {
   );
 }
 
-function BacktestParameters({ strategyName, parameters, isRunning, onRun }: BacktestParametersProps) {
+function BacktestParameters({ strategyName, parameters, isRunning, isDisabled, disabledReason, onRun }: BacktestParametersProps) {
   const [formState, setFormState] = useState<RunParameterState>(() =>
     parameters.reduce<RunParameterState>((acc, param) => {
       acc[param.id] = param.value;
@@ -322,9 +338,11 @@ function BacktestParameters({ strategyName, parameters, isRunning, onRun }: Back
           <button
             type="submit"
             className={`w-full rounded-xl px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
-              isRunning ? "cursor-not-allowed bg-slate-700" : "bg-gradient-to-r from-indigo-500 to-fuchsia-500 hover:opacity-90"
+              isDisabled
+                ? "cursor-not-allowed bg-slate-700"
+                : "bg-gradient-to-r from-indigo-500 to-fuchsia-500 hover:opacity-90"
             }`}
-            disabled={isRunning}
+            disabled={isDisabled}
           >
             {isRunning ? (
               <span className="flex items-center justify-center gap-2">
@@ -335,6 +353,9 @@ function BacktestParameters({ strategyName, parameters, isRunning, onRun }: Back
               "Run Backtest"
             )}
           </button>
+          {isDisabled && !isRunning && disabledReason ? (
+            <p className="mt-2 text-xs text-slate-400">{disabledReason}</p>
+          ) : null}
         </div>
       </form>
     </article>
