@@ -147,6 +147,7 @@ export default function StrategyBacktest() {
     setIsRunningBacktest(true);
     setActiveBacktestSource("live");
     setActiveSavedRunId(null);
+    setLatestBacktestData(null);
     addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
     setLastBacktestParamValues(values);
 
@@ -161,6 +162,7 @@ export default function StrategyBacktest() {
       setLatestBacktestData(response);
       addToast("Backtest finished", "success");
     } catch {
+      setLatestBacktestData(null);
       addToast("Backtest failed", "warning");
     } finally {
       setIsRunningBacktest(false);
