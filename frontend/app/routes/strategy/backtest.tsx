@@ -67,6 +67,7 @@ type StrategyEquityChartProps = {
   candles: EquityCandle[];
   onSave: () => void;
   isSaving: boolean;
+  isViewingSaved: boolean;
   showPlaceholder: boolean;
   animatePlaceholder: boolean;
 };
@@ -103,6 +104,9 @@ export default function StrategyBacktest() {
     lastBacktestParamValues,
     setLastBacktestParamValues,
     refreshSavedBacktestRuns,
+    activeBacktestSource,
+    setActiveBacktestSource,
+    setActiveSavedRunId,
   } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [isSavingBacktest, setIsSavingBacktest] = useState(false);
@@ -129,6 +133,8 @@ export default function StrategyBacktest() {
     const initialCapital = Number.isFinite(parsedStartingEquity) ? parsedStartingEquity : 0;
 
     setIsRunningBacktest(true);
+    setActiveBacktestSource("live");
+    setActiveSavedRunId(null);
     addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
     setLastBacktestParamValues(values);
 
@@ -154,6 +160,10 @@ export default function StrategyBacktest() {
     if (isSavingBacktest) return;
     if (!backtestData) {
       addToast("Run a backtest before saving.", "warning");
+      return;
+    }
+    if (activeBacktestSource === "saved") {
+      addToast("This is an existing saved run. Run a new backtest to save again.", "info");
       return;
     }
 
@@ -182,6 +192,8 @@ export default function StrategyBacktest() {
       });
 
       await refreshSavedBacktestRuns();
+      setActiveBacktestSource("saved");
+      setActiveSavedRunId(presign.run_id);
       addToast(`Saved run ${presign.run_id}`, "success");
     } catch (error) {
       console.error("Failed to save backtest run", error);
@@ -236,6 +248,7 @@ export default function StrategyBacktest() {
               candles={candles}
               onSave={handleSaveResults}
               isSaving={isSavingBacktest}
+              isViewingSaved={activeBacktestSource === "saved"}
               showPlaceholder={showPlaceholder}
               animatePlaceholder={animatePlaceholder}
             />
@@ -361,7 +374,7 @@ function BacktestMetrics({ metrics, showPlaceholder, animatePlaceholder }: Backt
   );
 }
 
-function StrategyEquityChart({ strategyName, stats, candles, onSave, isSaving, showPlaceholder, animatePlaceholder }: StrategyEquityChartProps) {
+function StrategyEquityChart({ strategyName, stats, candles, onSave, isSaving, isViewingSaved, showPlaceholder, animatePlaceholder }: StrategyEquityChartProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const [benchmarkEnabled, setBenchmarkEnabled] = useState(true);
   const [selectedBenchmark, setSelectedBenchmark] = useState("sp500");
@@ -424,16 +437,18 @@ function StrategyEquityChart({ strategyName, stats, candles, onSave, isSaving, s
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Strategy Equity</p>
           <h2 className="text-xl font-semibold text-white">{strategyName ?? "Active strategy"}</h2>
         </div>
-	        <button
-	          type="button"
-	          onClick={onSave}
-	          disabled={showPlaceholder || isSaving}
-	          className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
-	            showPlaceholder || isSaving ? "cursor-not-allowed bg-slate-700/70 text-slate-300" : "bg-fuchsia-500 hover:bg-fuchsia-400"
-	          }`}
-	        >
-	          {isSaving ? "Saving…" : "Save to Results"}
-	        </button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={showPlaceholder || isSaving || isViewingSaved}
+          className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
+            showPlaceholder || isSaving || isViewingSaved
+              ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
+              : "bg-fuchsia-500 hover:bg-fuchsia-400"
+          }`}
+        >
+          {isViewingSaved ? "Saved Run" : isSaving ? "Saving…" : "Save to Results"}
+        </button>
 	      </header>
 
       <dl className="mt-6 grid gap-4 md:grid-cols-3 lg:grid-cols-5">

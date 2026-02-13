@@ -34,6 +34,10 @@ export type StrategyWorkspaceContext = {
   setLatestBacktestData: (data: BacktestResponse | null) => void;
   lastBacktestParamValues: Record<string, string>;
   setLastBacktestParamValues: (values: Record<string, string>) => void;
+  activeBacktestSource: "live" | "saved" | null;
+  activeSavedRunId: string | null;
+  setActiveBacktestSource: (source: "live" | "saved" | null) => void;
+  setActiveSavedRunId: (runId: string | null) => void;
   savedBacktestRuns: BacktestRunItem[];
   isSavedBacktestRunsLoading: boolean;
   refreshSavedBacktestRuns: () => Promise<void>;
@@ -74,6 +78,8 @@ export default function StrategyLayout() {
   const [loadedFilePaths, setLoadedFilePaths] = useState<string[]>([]);
   const [latestBacktestData, setLatestBacktestData] = useState<BacktestResponse | null>(null);
   const [lastBacktestParamValues, setLastBacktestParamValues] = useState<Record<string, string>>({});
+  const [activeBacktestSource, setActiveBacktestSource] = useState<"live" | "saved" | null>(null);
+  const [activeSavedRunId, setActiveSavedRunId] = useState<string | null>(null);
   const [savedBacktestRuns, setSavedBacktestRuns] = useState<BacktestRunItem[]>([]);
   const [isSavedBacktestRunsLoading, setIsSavedBacktestRunsLoading] = useState(false);
 
@@ -123,6 +129,8 @@ export default function StrategyLayout() {
         }
         setLatestBacktestData(null);
         setLastBacktestParamValues({});
+        setActiveBacktestSource(null);
+        setActiveSavedRunId(null);
         setSavedBacktestRuns([]);
         const fileSnapshot = cloneFiles(payload.files);
         setStrategy(payload.strategy);
@@ -368,6 +376,10 @@ export default function StrategyLayout() {
     setLatestBacktestData,
     lastBacktestParamValues,
     setLastBacktestParamValues,
+    activeBacktestSource,
+    activeSavedRunId,
+    setActiveBacktestSource,
+    setActiveSavedRunId,
     savedBacktestRuns,
     isSavedBacktestRunsLoading,
     refreshSavedBacktestRuns,
