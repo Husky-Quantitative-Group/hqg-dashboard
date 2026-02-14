@@ -266,12 +266,20 @@ export default function StrategyLayout() {
     setAutosaveMessage("Saving...");
     addToast("Saving workspace", "info");
     try {
-      await uploadStrategyArtifacts(strategy.id, changedFiles);
+      const result = await uploadStrategyArtifacts(strategy.id, changedFiles);
       initialFilesRef.current = cloneFiles(files);
       setIsDirty(false);
       setAutosaveMessage("All changes saved");
-      setStrategy((prev) => (prev ? { ...prev, updatedAt: new Date().toISOString() } : prev));
-      addToast("Workspace saved", "success");
+      setStrategy((prev) =>
+        prev
+          ? {
+              ...prev,
+              current_version: result.version ?? prev.current_version,
+              updated_at: new Date().toISOString(),
+            }
+          : prev
+      );
+      addToast(result.version ? `Workspace saved (v${result.version})` : "Workspace saved", "success");
     } catch (error) {
       console.error("Failed to save workspace", error);
       setAutosaveMessage("Save failed");
