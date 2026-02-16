@@ -19,9 +19,6 @@ terraform {
       version = "~> 3.0"
     }
   }
-
-  # TODO: switch to remote state (S3 + DynamoDB lock table) before multi-user use.
-  # backend "s3" {}
 }
 
 provider "aws" {
