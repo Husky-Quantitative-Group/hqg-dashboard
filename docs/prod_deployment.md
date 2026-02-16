@@ -1,49 +1,48 @@
-# Terraform Remote State Setup (hqg-prod)
+# Prod Deployment (This Repo)
 
-This guide explains the minimal setup for using an S3 backend for `hqg-prod`, while keeping backend config optional and local-only.
+Use this to deploy the `prod` environment from a fresh clone.
 
-## Core model
-
-- `AWS_PROFILE` selects credentials/account.
-- Terraform backend selects where state is stored.
-- Terraform workspace selects logical state within that backend.
-- `-var-file` selects environment values (`prod.tfvars`, `dev.tfvars`).
+RECOMMENDED: Create a new local repository for deployment.
 
 ## Prerequisites
 
+- AWS profile configured: `hqg-prod`
 - Terraform `>= 1.5`
-- AWS CLI configured with a prod profile (example: `hqg-prod`)
-- IAM permissions to create/read/write:
-  - S3 backend bucket
-  - DynamoDB lock table
+- IAM permissions for:
+  - Terraform backend resources (S3 + DynamoDB)
   - Infra resources in `infra/main.tf`
 
-## 1) Create backend resources (once, in prod account)
-
-Use your prod profile:
+## 1) Verify AWS profile
 
 ```bash
-AWS_PROFILE=hqg-prod aws s3api create-bucket \
-  --bucket hqg-prod-terraform-state \
-  --region us-east-1
+AWS_PROFILE=hqg-prod aws sts get-caller-identity
+```
 
-AWS_PROFILE=hqg-prod aws s3api put-bucket-versioning \
-  --bucket hqg-prod-terraform-state \
+## 2) Create backend resources (one time, prod account)
+
+```bash
+export AWS_PROFILE=hqg-prod
+export AWS_REGION=us-east-1
+export ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+export STATE_BUCKET="hqg-prod-terraform-state-${ACCOUNT_ID}"
+export LOCK_TABLE="hqg-prod-terraform-locks"
+
+aws s3api create-bucket --bucket "${STATE_BUCKET}" --region "${AWS_REGION}"
+aws s3api put-bucket-versioning \
+  --bucket "${STATE_BUCKET}" \
   --versioning-configuration Status=Enabled
 
-AWS_PROFILE=hqg-prod aws dynamodb create-table \
-  --table-name hqg-prod-terraform-locks \
+aws dynamodb create-table \
+  --table-name "${LOCK_TABLE}" \
   --attribute-definitions AttributeName=LockID,AttributeType=S \
   --key-schema AttributeName=LockID,KeyType=HASH \
   --billing-mode PAY_PER_REQUEST \
-  --region us-east-1
+  --region "${AWS_REGION}"
 ```
 
-## 2) Local-only backend files
+## 3) Create local backend files in `infra/`
 
-In this repo, `infra/backend.tf` and `infra/backend.hcl` are gitignored. That keeps backend setup optional for each developer.
-
-Create `infra/backend.tf` locally:
+`infra/backend.tf`:
 
 ```
 terraform {
@@ -51,7 +50,7 @@ terraform {
 }
 ```
 
-Create `infra/backend.hcl` locally for prod:
+`infra/backend.hcl`:
 
 ```
 bucket         = "hqg-prod-terraform-state"
@@ -61,77 +60,39 @@ dynamodb_table = "hqg-prod-terraform-locks"
 encrypt        = true
 ```
 
-## 3) Initialize Terraform to prod backend
+Note: `backend.tf` and `backend.hcl` are gitignored in this repo.
+
+## 4) Initialize Terraform backend and workspace
 
 ```bash
 AWS_PROFILE=hqg-prod terraform -chdir=infra init -reconfigure -backend-config=backend.hcl
 ```
 
-If prod has never been deployed before, no state migration is needed.
+## 5) Deploy prod infra
 
-## 4) Create/select workspace and deploy prod
+Check `infra/prod.tfvars`:
+- `env = "prod"`
+- `aws_region = "us-east-1"`
+- `frontend_base_url` set for prod
+
+Deploy:
 
 ```bash
-AWS_PROFILE=hqg-prod terraform -chdir=infra workspace new prod
-# if it already exists:
-# AWS_PROFILE=hqg-prod terraform -chdir=infra workspace select prod
-
 AWS_PROFILE=hqg-prod terraform -chdir=infra plan -var-file=prod.tfvars
 AWS_PROFILE=hqg-prod terraform -chdir=infra apply -var-file=prod.tfvars
 ```
 
-## 5) Switching environments safely
-
-For dev in the same backend, use a different key or workspace.
-
-Minimal approach:
-- same `backend.hcl`
-- workspace `dev`
-- `-var-file=dev.tfvars`
-
-Commands:
+## 6) Seed initial data (first deploy only)
 
 ```bash
-AWS_PROFILE=hqg-prod terraform -chdir=infra workspace select dev
-AWS_PROFILE=hqg-prod terraform -chdir=infra plan -var-file=dev.tfvars
-```
+python3 -m pip install --user boto3
 
-## 6) Different AWS accounts
-
-If team members deploy to different AWS accounts, each account must have separate state location.
-
-Recommended:
-- one backend config file per target account/env
-- one profile per account
-
-Example:
-- `infra/backend-prod-accountA.hcl`
-- `infra/backend-prod-accountB.hcl`
-
-Switch target:
-
-```bash
-AWS_PROFILE=<profile> terraform -chdir=infra init -reconfigure -backend-config=<backend-file>.hcl
-```
-
-Then select workspace and run plan/apply.
-
-## Common checks
-
-List profiles:
-
-```bash
-aws configure list-profiles
-```
-
-Check active identity:
-
-```bash
-AWS_PROFILE=hqg-prod aws sts get-caller-identity
-```
-
-List workspaces:
-
-```bash
-terraform -chdir=infra workspace list
+AWS_PROFILE=hqg-prod python3 infra/seed/main.py \
+  --bucket "$(terraform -chdir=infra output -raw artifacts_bucket_name)" \
+  --strategies-table "$(terraform -chdir=infra output -raw strategies_table_name)" \
+  --artifacts-table "$(terraform -chdir=infra output -raw strategy_artifacts_table_name)" \
+  --artifact-versions-table "$(terraform -chdir=infra output -raw strategy_artifact_versions_table_name)" \
+  --users-table "$(terraform -chdir=infra output -raw users_table_name)" \
+  --admin-netid "<your-netid>" \
+  --region us-east-1
 ```
