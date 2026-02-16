@@ -1,7 +1,13 @@
 import axios from "axios";
+import { backtesterApiOrigin, isProd } from "./runtime";
+
+const BACKTESTER_ENDPOINT = "/api/v1/backtest";
+const backtesterApiBaseUrl = isProd
+  ? `${backtesterApiOrigin}${BACKTESTER_ENDPOINT}`
+  : backtesterApiOrigin;
 
 export const backtesterApi = axios.create({
-  baseURL: "/backtester-api",
+  baseURL: backtesterApiBaseUrl,
   withCredentials: true,
 });
 

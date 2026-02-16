@@ -151,7 +151,7 @@ AWS_PROFILE=hqg-prod terraform -chdir=infra apply -var-file=prod.tfvars
 Get API Gateway domain target:
 
 ```bash
-terraform -chdir=infra output -raw api_custom_domain_target
+AWS_PROFILE=hqg-prod terraform -chdir=infra output -raw api_custom_domain_target
 ```
 
 Create final API DNS record in Squarespace:
@@ -193,8 +193,9 @@ AWS_PROFILE=hqg-prod python3 infra/seed/main.py \
 
 ## 13) Frontend wiring (if needed)
 
-If your frontend should call this prod API, set:
+If your frontend should call this prod API directly (without local Vite proxy), set:
 
 ```ini
-VITE_CORE_API=https://api.uconnquant.com
+CORE_API_URL=https://api.uconnquant.com
+IS_PROD=1
 ```

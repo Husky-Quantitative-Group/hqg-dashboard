@@ -29,12 +29,33 @@ export const links: Route.LinksFunction = () => [
   },
 ];
 
+const githubPagesPathFixScript = `
+  (function(location) {
+    if (location.search.startsWith('?/')) {
+      var decoded = location.search
+        .slice(2)
+        .split('&')
+        .map(function(part) {
+          return part.replace(/~and~/g, '&');
+        })
+        .join('?');
+
+      window.history.replaceState(
+        null,
+        '',
+        location.pathname + decoded + location.hash
+      );
+    }
+  })(window.location);
+`;
+
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <script dangerouslySetInnerHTML={{ __html: githubPagesPathFixScript }} />
         <Meta />
         <Links />
       </head>
