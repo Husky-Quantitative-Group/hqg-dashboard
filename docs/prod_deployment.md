@@ -169,6 +169,7 @@ AWS_PROFILE=hqg-prod terraform -chdir=infra plan -var-file=prod.tfvars
 AWS_PROFILE=hqg-prod terraform -chdir=infra apply -var-file=prod.tfvars
 ```
 
+
 ## 11) Verify endpoint
 
 ```bash
