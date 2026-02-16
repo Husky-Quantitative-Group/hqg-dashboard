@@ -20,11 +20,7 @@ cp infra/example.tfvars infra/dev.tfvars
 
 Edit `infra/dev.tfvars` with your values:
 - `project`, `env`, `aws_region`
-- `api_token` (shared secret required by the API)
 - `frontend_base_url` (CORS / allowed origin)
-- `jwt_secret` (used for JWT signing)
-
-You can use https://jwtsecretkeygenerator.com/ to generate a JWT secret.
 
 ### Build Lambda Layers
 This repository uses AWS Lambda Layers to manage Python dependencies that are shared across Lambdas (for example, JWT libraries).
@@ -98,3 +94,47 @@ npm run dev
 ```
 
 Open `http://localhost:5173`.
+
+## 4) Backtester
+
+### Docker
+In order to have the backtester working, make sure you have [Docker Desktop](https://www.docker.com/get-started/) installed onto your device. The hqg-backtester repo is required for setup. It is recommonded to follow a similar file structure if you don't have the backtester repo cloned already:
+
+```text
+hqg/
+├── hqg-dashboard/
+└── hqg-backtester/
+```
+
+Clone the backtester:
+
+```bash
+git clone https://github.com/Husky-Quantitative-Group/hqg-backtester.git
+cd hqg-backtester
+```
+
+Set the backtester environment variable `HQG_JWKS_URL` to the JWKS endpoint from Terraform:
+
+```bash
+terraform output -raw jwks_object_url
+```
+
+If you're running this from the `hqg-backtester` directory, point Terraform at the dashboard infra folder:
+
+```bash
+terraform -chdir=../hqg-dashboard/infra output -raw jwks_object_url
+```
+
+Run the backtester:
+
+```bash
+docker compose up --build
+```
+
+The API should be available at http://localhost:8005
+
+If you're running the dashboard locally, set the backtester URL in `frontend/.env` so the Vite proxy can reach it:
+
+```ini
+BACKTESTER_URL=http://localhost:8005
+```

@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchStrategyWorkspace, startStrategyRunExecution } from "./workspace";
 import type { BacktestResult } from "./workspace";
 import { fetchStrategyArtifactContent, uploadStrategyArtifacts, type StrategyFile } from "~/api/strategyArtifacts";
+import type { BacktestResponse } from "~/api/backtest";
+import { listBacktestRuns, type BacktestRunItem } from "~/api/backtestMetrics";
 import { type Strategy } from "~/api/strategies";
 
 type ToastVariant = "info" | "success" | "warning";
@@ -28,6 +30,17 @@ export type StrategyWorkspaceContext = {
   runs: BacktestResult[];
   selectedRunId: number | null;
   selectRun: (runId: number) => void;
+  latestBacktestData: BacktestResponse | null;
+  setLatestBacktestData: (data: BacktestResponse | null) => void;
+  lastBacktestParamValues: Record<string, string>;
+  setLastBacktestParamValues: (values: Record<string, string>) => void;
+  activeBacktestSource: "live" | "saved" | null;
+  activeSavedRunId: string | null;
+  setActiveBacktestSource: (source: "live" | "saved" | null) => void;
+  setActiveSavedRunId: (runId: string | null) => void;
+  savedBacktestRuns: BacktestRunItem[];
+  isSavedBacktestRunsLoading: boolean;
+  refreshSavedBacktestRuns: () => Promise<void>;
   addToast: (message: string, variant?: ToastVariant) => void;
   loadingFilePath: string | null;
   fileLoadError: string | null;
@@ -63,6 +76,36 @@ export default function StrategyLayout() {
   const [loadingFilePath, setLoadingFilePath] = useState<string | null>(null);
   const [fileLoadError, setFileLoadError] = useState<string | null>(null);
   const [loadedFilePaths, setLoadedFilePaths] = useState<string[]>([]);
+  const [latestBacktestData, setLatestBacktestData] = useState<BacktestResponse | null>(null);
+  const [lastBacktestParamValues, setLastBacktestParamValues] = useState<Record<string, string>>({});
+  const [activeBacktestSource, setActiveBacktestSource] = useState<"live" | "saved" | null>(null);
+  const [activeSavedRunId, setActiveSavedRunId] = useState<string | null>(null);
+  const [savedBacktestRuns, setSavedBacktestRuns] = useState<BacktestRunItem[]>([]);
+  const [isSavedBacktestRunsLoading, setIsSavedBacktestRunsLoading] = useState(false);
+
+  const refreshSavedBacktestRuns = useCallback(async () => {
+    if (!strategy) return;
+    setIsSavedBacktestRunsLoading(true);
+    try {
+      const savedRuns = await listBacktestRuns(strategy.id, { limit: 200 });
+      setSavedBacktestRuns(savedRuns.items ?? []);
+
+      const latest = savedRuns.items?.[0];
+      const params = latest?.backtest_params;
+      if (params) {
+        setLastBacktestParamValues({
+          name: params.name ?? "",
+          startingEquity: params.initial_capital !== undefined ? String(params.initial_capital) : "",
+          startDate: params.start_date ?? "",
+          endDate: params.end_date ?? "",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load saved backtest runs", error);
+    } finally {
+      setIsSavedBacktestRunsLoading(false);
+    }
+  }, [strategy]);
 
   const entrypoint = useMemo(() => files.find((file) => file.isEntrypoint), [files]);
 
@@ -84,6 +127,11 @@ export default function StrategyLayout() {
         if (cancelled) {
           return;
         }
+        setLatestBacktestData(null);
+        setLastBacktestParamValues({});
+        setActiveBacktestSource(null);
+        setActiveSavedRunId(null);
+        setSavedBacktestRuns([]);
         const fileSnapshot = cloneFiles(payload.files);
         setStrategy(payload.strategy);
         setFiles(fileSnapshot);
@@ -95,6 +143,31 @@ export default function StrategyLayout() {
         setSelectedRunId(payload.backtestResults[0]?.id ?? null);
         setIsDirty(false);
         setAutosaveMessage("All changes saved");
+
+        try {
+          setIsSavedBacktestRunsLoading(true);
+          const savedRuns = await listBacktestRuns(payload.strategy.id, { limit: 200 });
+          if (cancelled) {
+            return;
+          }
+          const latest = savedRuns.items?.[0];
+          const params = latest?.backtest_params;
+          setSavedBacktestRuns(savedRuns.items ?? []);
+          if (params) {
+            setLastBacktestParamValues({
+              name: params.name ?? "",
+              startingEquity: params.initial_capital !== undefined ? String(params.initial_capital) : "",
+              startDate: params.start_date ?? "",
+              endDate: params.end_date ?? "",
+            });
+          }
+        } catch (error) {
+          if (!cancelled) {
+            console.error("Failed to load saved backtest params", error);
+          }
+        } finally {
+          if (!cancelled) setIsSavedBacktestRunsLoading(false);
+        }
       } catch (error) {
         if (cancelled) {
           return;
@@ -193,12 +266,20 @@ export default function StrategyLayout() {
     setAutosaveMessage("Saving...");
     addToast("Saving workspace", "info");
     try {
-      await uploadStrategyArtifacts(strategy.id, changedFiles);
+      const result = await uploadStrategyArtifacts(strategy.id, changedFiles);
       initialFilesRef.current = cloneFiles(files);
       setIsDirty(false);
       setAutosaveMessage("All changes saved");
-      setStrategy((prev) => (prev ? { ...prev, updatedAt: new Date().toISOString() } : prev));
-      addToast("Workspace saved", "success");
+      setStrategy((prev) =>
+        prev
+          ? {
+              ...prev,
+              current_version: result.version ?? prev.current_version,
+              updated_at: new Date().toISOString(),
+            }
+          : prev
+      );
+      addToast(result.version ? `Workspace saved (v${result.version})` : "Workspace saved", "success");
     } catch (error) {
       console.error("Failed to save workspace", error);
       setAutosaveMessage("Save failed");
@@ -299,6 +380,17 @@ export default function StrategyLayout() {
     runs,
     selectedRunId,
     selectRun,
+    latestBacktestData,
+    setLatestBacktestData,
+    lastBacktestParamValues,
+    setLastBacktestParamValues,
+    activeBacktestSource,
+    activeSavedRunId,
+    setActiveBacktestSource,
+    setActiveSavedRunId,
+    savedBacktestRuns,
+    isSavedBacktestRunsLoading,
+    refreshSavedBacktestRuns,
     addToast,
     loadingFilePath,
     fileLoadError,
