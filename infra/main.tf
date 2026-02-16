@@ -1105,7 +1105,6 @@ resource "aws_lambda_function" "backtest_metrics" {
     variables = {
       BACKTEST_METRICS_TABLE = aws_dynamodb_table.backtest_metrics.name
       BACKTESTS_BUCKET       = aws_s3_bucket.backtest_metrics.bucket
-      API_TOKEN              = var.api_token
     }
   }
 
