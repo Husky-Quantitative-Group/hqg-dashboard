@@ -145,6 +145,7 @@ resource "aws_s3_bucket_cors_configuration" "backtest_metrics" {
     allowed_origins = ["*"]
     max_age_seconds = 300
   }
+}
   
 # ------------------------------  
 # S3 bucket for JWKS
