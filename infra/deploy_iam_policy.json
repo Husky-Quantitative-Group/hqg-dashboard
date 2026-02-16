@@ -153,6 +153,20 @@
       ]
     },
     {
+      "Sid": "IamCreateServiceLinkedRoleForApiGateway",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "iam:AWSServiceName": [
+            "ops.apigateway.amazonaws.com",
+            "apigateway.amazonaws.com"
+          ]
+        }
+      }
+    },
+    {
       "Sid": "PassOnlyHqgProdRolesToLambdaScheduler",
       "Effect": "Allow",
       "Action": "iam:PassRole",
