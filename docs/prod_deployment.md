@@ -1,24 +1,37 @@
-# Prod Deployment (This Repo)
+# Prod Deployment — HQG Dashboard
 
-Use this to deploy the `prod` environment from a fresh clone.
+Use this runbook to deploy `prod` from a fresh clone.
 
-RECOMMENDED: Create a new local repository for deployment.
+## 1) Clone the repo
 
-## Prerequisites
+```bash
+git clone https://github.com/Husky-Quantitative-Group/hqg-dashboard.git
+cd hqg-dashboard
+```
 
-- AWS profile configured: `hqg-prod`
+## 2) Install required tools
+
+- AWS CLI
 - Terraform `>= 1.5`
-- IAM permissions for:
-  - Terraform backend resources (S3 + DynamoDB)
-  - Infra resources in `infra/main.tf`
+- Python 3 + pip (for seed script)
+- IAM principal used by `hqg-prod` must include permissions in `infra/deploy_iam_policy.json`
 
-## 1) Verify AWS profile
+## 3) Create and verify AWS profile
+
+Create profile:
+
+```bash
+aws configure --profile hqg-prod
+aws configure set region us-east-1 --profile hqg-prod
+```
+
+Verify credentials:
 
 ```bash
 AWS_PROFILE=hqg-prod aws sts get-caller-identity
 ```
 
-## 2) Create backend resources (one time, prod account)
+## 4) Create Terraform backend resources (one-time in prod account)
 
 ```bash
 export AWS_PROFILE=hqg-prod
@@ -40,7 +53,9 @@ aws dynamodb create-table \
   --region "${AWS_REGION}"
 ```
 
-## 3) Create local backend files in `infra/`
+If these already exist, AWS will return `BucketAlreadyOwnedByYou` / `ResourceInUseException`; that is fine, continue.
+
+## 5) Create local backend config in `infra/`
 
 `infra/backend.tf`:
 
@@ -53,59 +68,115 @@ terraform {
 `infra/backend.hcl`:
 
 ```
-bucket         = "hqg-prod-terraform-state"
+bucket         = "hqg-prod-terraform-state-<your-account-id>"
 key            = "hqg-prod-dashboard/prod/terraform.tfstate"
 region         = "us-east-1"
 dynamodb_table = "hqg-prod-terraform-locks"
 encrypt        = true
 ```
 
-Note: `backend.tf` and `backend.hcl` are gitignored in this repo.
+Replace `<your-account-id>` with the account from step 4.
 
-## 4) Initialize Terraform backend and workspace
+In the original prod version, we dropped the account id.
+
+## 6) Build Lambda layer artifacts
+
+From repo root:
+
+```bash
+bash infra/scripts/build_layers.sh
+```
+
+## 7) Configure prod tfvars
+
+Create/edit `infra/prod.tfvars`:
+
+```hcl
+project                    = "hqg"
+env                        = "prod"
+aws_region                 = "us-east-1"
+frontend_base_url          = "https://dashboard.uconnquant.com"
+api_custom_domain_name     = "api.uconnquant.com"
+api_custom_domain_activate = false
+```
+
+## 8) Initialize Terraform
 
 ```bash
 AWS_PROFILE=hqg-prod terraform -chdir=infra init -reconfigure -backend-config=backend.hcl
 ```
 
-## 5) Deploy prod infra
+## 9) One-time custom domain + CNAME setup (do once)
 
-Check `infra/prod.tfvars`:
-- `env = "prod"`
-- `aws_region = "us-east-1"`
-- `frontend_base_url` set for prod
-- `api_custom_domain_name = "api.uconnquant.com"`
-- `api_custom_domain_activate = false` for first apply
+This section is only for initial setup of `api.uconnquant.com`. After this is done, use step 10 for normal deploys.
 
-First apply (requests ACM cert and prints validation records):
+Run first apply with `api_custom_domain_activate = false` to request the ACM cert:
 
 ```bash
 AWS_PROFILE=hqg-prod terraform -chdir=infra plan -var-file=prod.tfvars
 AWS_PROFILE=hqg-prod terraform -chdir=infra apply -var-file=prod.tfvars
 ```
 
-## 6) Validate cert in Squarespace and activate custom domain
-
-Get the ACM DNS validation records:
+Get ACM validation records:
 
 ```bash
-terraform -chdir=infra output api_custom_domain_validation_records
+terraform -chdir=infra output -json api_custom_domain_validation_records
 ```
 
-In Squarespace DNS, create each CNAME from that output.
+In Squarespace DNS, add one CNAME per record:
 
-After ACM shows the certificate as `ISSUED`, set `api_custom_domain_activate = true` in `infra/prod.tfvars`, then apply again:
+- Type: `CNAME`
+- Host: `record_name` (if Squarespace expects relative host, drop `.uconnquant.com` and trailing `.`)
+- Data: `record_value` (trailing `.` is optional)
+
+Wait for cert status `ISSUED` in ACM (`us-east-1`):
+
+```bash
+AWS_PROFILE=hqg-prod aws acm list-certificates --region us-east-1
+AWS_PROFILE=hqg-prod aws acm describe-certificate --region us-east-1 --certificate-arn <arn>
+```
+
+Then set in `infra/prod.tfvars`:
+
+```hcl
+api_custom_domain_activate = true
+```
+
+Apply again:
 
 ```bash
 AWS_PROFILE=hqg-prod terraform -chdir=infra apply -var-file=prod.tfvars
 ```
 
-Get the API Gateway target and add your production CNAME:
+Get API Gateway domain target:
+
+```bash
+terraform -chdir=infra output -raw api_custom_domain_target
+```
+
+Create final API DNS record in Squarespace:
+
 - Type: `CNAME`
 - Host: `api`
-- Target: `terraform -chdir=infra output -raw api_custom_domain_target`
+- Data: `<value from api_custom_domain_target>`
 
-## 7) Seed initial data (first deploy only)
+## 10) Normal prod deploy (recurring)
+
+After one-time domain setup is complete, use this for normal deploys:
+
+```bash
+AWS_PROFILE=hqg-prod terraform -chdir=infra plan -var-file=prod.tfvars
+AWS_PROFILE=hqg-prod terraform -chdir=infra apply -var-file=prod.tfvars
+```
+
+## 11) Verify endpoint
+
+```bash
+dig +short api.uconnquant.com CNAME
+curl -i https://api.uconnquant.com
+```
+
+## 12) Seed initial data (first deploy only)
 
 ```bash
 python3 -m pip install --user boto3
@@ -118,4 +189,12 @@ AWS_PROFILE=hqg-prod python3 infra/seed/main.py \
   --users-table "$(terraform -chdir=infra output -raw users_table_name)" \
   --admin-netid "<your-netid>" \
   --region us-east-1
+```
+
+## 13) Frontend wiring (if needed)
+
+If your frontend should call this prod API, set:
+
+```ini
+VITE_CORE_API=https://api.uconnquant.com
 ```
