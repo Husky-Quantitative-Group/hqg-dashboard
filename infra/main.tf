@@ -57,6 +57,7 @@ locals {
 
 resource "aws_s3_bucket" "strategy_artifacts" {
   bucket = local.artifacts_bucket_name
+  force_destroy = lower(var.env) != "prod"
 
   tags = local.tags
 }
@@ -105,6 +106,7 @@ resource "aws_s3_bucket_cors_configuration" "strategy_artifacts" {
 
 resource "aws_s3_bucket" "backtest_metrics" {
   bucket = local.backtests_bucket_name
+  force_destroy = lower(var.env) != "prod"
 
   tags = local.tags
 }
@@ -157,6 +159,7 @@ resource "random_id" "jwks_bucket_suffix" {
 
 resource "aws_s3_bucket" "jwks" {
   bucket = local.jwks_bucket_name
+  force_destroy = lower(var.env) != "prod"
 
   tags = local.tags
 }
