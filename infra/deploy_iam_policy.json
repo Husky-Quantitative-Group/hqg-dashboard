@@ -71,29 +71,7 @@
     {
       "Sid": "S3HqgProdBuckets",
       "Effect": "Allow",
-      "Action": [
-        "s3:CreateBucket",
-        "s3:DeleteBucket",
-        "s3:GetBucketAcl",
-        "s3:GetBucketLocation",
-        "s3:GetBucketTagging",
-        "s3:PutBucketTagging",
-        "s3:GetBucketVersioning",
-        "s3:PutBucketVersioning",
-        "s3:GetBucketPublicAccessBlock",
-        "s3:PutBucketPublicAccessBlock",
-        "s3:GetEncryptionConfiguration",
-        "s3:PutEncryptionConfiguration",
-        "s3:GetBucketCors",
-        "s3:PutBucketCors",
-        "s3:GetBucketPolicy",
-        "s3:PutBucketPolicy",
-        "s3:DeleteBucketPolicy",
-        "s3:ListBucket",
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject"
-      ],
+      "Action": "s3:*",
       "Resource": [
         "arn:aws:s3:::hqg-prod-*",
         "arn:aws:s3:::hqg-prod-*/*"
@@ -106,6 +84,7 @@
         "dynamodb:CreateTable",
         "dynamodb:DescribeTable",
         "dynamodb:DescribeContinuousBackups",
+        "dynamodb:DescribeTimeToLive",
         "dynamodb:UpdateTable",
         "dynamodb:UpdateContinuousBackups",
         "dynamodb:TagResource",
@@ -118,20 +97,17 @@
     {
       "Sid": "LambdaHqgProdFunctions",
       "Effect": "Allow",
-      "Action": [
-        "lambda:CreateFunction",
-        "lambda:GetFunction",
-        "lambda:GetFunctionConfiguration",
-        "lambda:UpdateFunctionCode",
-        "lambda:UpdateFunctionConfiguration",
-        "lambda:DeleteFunction",
-        "lambda:AddPermission",
-        "lambda:RemovePermission",
-        "lambda:TagResource",
-        "lambda:UntagResource",
-        "lambda:InvokeFunction"
-      ],
-      "Resource": "arn:aws:lambda:us-east-1:016299216645:function:hqg-prod-*"
+      "Action": "lambda:*",
+      "Resource": [
+        "arn:aws:lambda:us-east-1:016299216645:function:hqg-prod-*",
+        "arn:aws:lambda:us-east-1:016299216645:function:hqg-prod-*:*"
+      ]
+    },
+    {
+      "Sid": "LambdaListVersionsWildcard",
+      "Effect": "Allow",
+      "Action": "lambda:ListVersionsByFunction",
+      "Resource": "*"
     },
     {
       "Sid": "LambdaHqgProdLayers",
@@ -166,7 +142,8 @@
         "iam:TagPolicy",
         "iam:UntagPolicy",
         "iam:ListRolePolicies",
-        "iam:GetRolePolicy"
+        "iam:GetRolePolicy",
+        "iam:ListInstanceProfilesForRole"
       ],
       "Resource": [
         "arn:aws:iam::016299216645:role/hqg-prod-*",
@@ -190,12 +167,7 @@
     {
       "Sid": "ApiGatewayV2CreateReadUpdateDelete",
       "Effect": "Allow",
-      "Action": [
-        "apigateway:GET",
-        "apigateway:POST",
-        "apigateway:PATCH",
-        "apigateway:DELETE"
-      ],
+      "Action": "apigateway:*",
       "Resource": "arn:aws:apigateway:us-east-1::/*"
     },
     {
@@ -227,11 +199,27 @@
       "Resource": "arn:aws:logs:us-east-1:016299216645:log-group:/aws/apigateway/hqg-prod-*"
     },
     {
+      "Sid": "LogsDeliveryForApiGateway",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogDelivery",
+        "logs:GetLogDelivery",
+        "logs:UpdateLogDelivery",
+        "logs:DeleteLogDelivery",
+        "logs:ListLogDeliveries",
+        "logs:PutResourcePolicy",
+        "logs:DescribeResourcePolicies",
+        "logs:DescribeLogGroups"
+      ],
+      "Resource": "*"
+    },
+    {
       "Sid": "SsmHqgProdParams",
       "Effect": "Allow",
       "Action": [
         "ssm:PutParameter",
         "ssm:GetParameter",
+        "ssm:GetParameters",
         "ssm:DeleteParameter",
         "ssm:AddTagsToResource",
         "ssm:RemoveTagsFromResource",
