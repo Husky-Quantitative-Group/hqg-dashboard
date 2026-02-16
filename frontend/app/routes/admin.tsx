@@ -10,6 +10,7 @@ import AdminUsersTable from "~/components/admin/AdminUsersTable";
 import AdminUsersDetail from "~/components/admin/AdminUsersDetail";
 import AdminAccessRequestsTable from "~/components/admin/AdminAccessRequestsTable";
 import AdminAccessRequestDetail from "~/components/admin/AdminAccessRequestDetail";
+import { useUser } from "~/context/UserConext";
 
 const TABS = [
   { id: "users", label: "Users" },
@@ -19,6 +20,8 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 export default function AdminPage() {
+  const { hasRole } = useUser();
+  const isAdmin = hasRole("ADMIN");
   const [tab, setTab] = useState<TabId>("users");
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [requests, setRequests] = useState<AccessRequest[]>([]);
@@ -31,6 +34,7 @@ export default function AdminPage() {
   const [userDetailLoading, setUserDetailLoading] = useState(false);
 
   useEffect(() => {
+    if (!isAdmin) return;
     let cancelled = false;
     const load = async () => {
       setLoading(true);
@@ -55,9 +59,10 @@ export default function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAdmin]);
 
   const refreshUsers = async () => {
+    if (!isAdmin) return;
     if (refreshingUsers) return;
     setRefreshingUsers(true);
     try {
@@ -75,6 +80,7 @@ export default function AdminPage() {
   };
 
   const handleUserSelect = async (user: AdminUser) => {
+    if (!isAdmin) return;
     setSelectedUser(user);
     setUserDetailLoading(true);
     setError(null);
@@ -89,6 +95,7 @@ export default function AdminPage() {
   };
 
   const refreshRequests = async () => {
+    if (!isAdmin) return;
     if (refreshingRequests) return;
     setRefreshingRequests(true);
     try {
@@ -108,6 +115,14 @@ export default function AdminPage() {
       setRefreshingRequests(false);
     }
   };
+
+  if (!isAdmin) {
+    return (
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 text-slate-200">
+        You do not have access to the admin console.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -1,3 +1,6 @@
+import base64
+import hashlib
+from datetime import datetime
 import json
 import os
 import re
@@ -5,8 +8,9 @@ import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from functools import lru_cache
 from http.cookies import SimpleCookie
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -20,13 +24,93 @@ CAS_NS = {"cas": "http://www.yale.edu/tp/cas"}
 FRONTEND_BASE_URL = os.environ["FRONTEND_BASE_URL"] # eg. http://localhost:3000 OR https://hqg-dash.com
 CAS_CALLBACK_URL = FRONTEND_BASE_URL + "/api/auth/callback"
 
-JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_PRIVATE_KEY_PARAMETER = os.environ["JWT_PRIVATE_KEY_PARAMETER"]
+JWKS_BUCKET = os.environ["JWKS_BUCKET"]
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 USERS_TABLE = os.environ["USERS_TABLE"]
 USER_ACCESS_APPLICATIONS_TABLE = os.environ["USER_ACCESS_APPLICATIONS_TABLE"]
 
 dynamo = boto3.resource("dynamodb")
+ssm = boto3.client("ssm")
 users_table = dynamo.Table(USERS_TABLE)
 user_access_applications_table = dynamo.Table(USER_ACCESS_APPLICATIONS_TABLE)
+
+@lru_cache(maxsize=1)
+def _get_private_key() -> str:
+    resp = ssm.get_parameter(Name=JWT_PRIVATE_KEY_PARAMETER, WithDecryption=True)
+    return resp["Parameter"]["Value"]
+
+
+@lru_cache(maxsize=1)
+def _get_jwks() -> Dict[str, Any]:
+    url = f"https://{JWKS_BUCKET}.s3.{AWS_REGION}.amazonaws.com/.well-known/jwks.json"
+    with urllib.request.urlopen(url, timeout=5) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _get_public_key(token: str):
+    try:
+        header = jwt.get_unverified_header(token)
+    except jwt.PyJWTError:
+        return None
+
+    kid = header.get("kid")
+    jwks = _get_jwks()
+    keys = jwks.get("keys") or []
+    jwk = None
+
+    if kid:
+        jwk = next((key for key in keys if key.get("kid") == kid), None)
+    elif len(keys) == 1:
+        jwk = keys[0]
+
+    if not jwk:
+        return None
+
+    try:
+        return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk))
+    except Exception:
+        return None
+
+
+def _get_current_kid() -> Optional[str]:
+    jwks = _get_jwks()
+    keys = jwks.get("keys") or []
+    if not keys:
+        return None
+
+    newest_key = None
+    newest_time: Optional[float] = None
+
+    for key in keys:
+        created_at = key.get("created_at")
+        if isinstance(created_at, str):
+            try:
+                parsed = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            except ValueError:
+                parsed = None
+            if parsed and parsed.tzinfo is not None:
+                ts = parsed.timestamp()
+                if newest_time is None or ts > newest_time:
+                    newest_time = ts
+                    newest_key = key
+
+    jwk = newest_key or keys[0]
+    kid = jwk.get("kid")
+    if kid:
+        return kid
+
+    try:
+        canonical = json.dumps(
+            {"e": jwk["e"], "kty": jwk["kty"], "n": jwk["n"]},
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    except KeyError:
+        return None
+
+    digest = hashlib.sha256(canonical).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 def _build_auth_cookie(token: str) -> str:
     is_dev = APP_ENV == "dev"
@@ -67,7 +151,8 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         if not netid:
             return {"statusCode": 401, "body": "CAS validation failed"}
 
-        token = mint_jwt(netid)
+        roles = _get_user_roles(netid)
+        token = mint_jwt(netid, roles)
         cookie = _build_auth_cookie(token)
         return {
             "statusCode": 302,
@@ -86,10 +171,22 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         if not netid:
             return _json_response(401, {"message": "Unauthorized"})
 
-        if not _user_allowed(netid):
+        user = _load_user(netid)
+        if not user or user.get("is_banned", False):
             return _json_response(403, {"message": "Forbidden"})
 
-        return _json_response(200, {"netid": netid})
+        roles = user.get("roles") or []
+        if not isinstance(roles, list):
+            roles = [roles]
+        display_name = user.get("full_name") or netid
+        return _json_response(
+            200,
+            {
+                "netid": netid,
+                "roles": [str(role) for role in roles],
+                "display_name": display_name,
+            },
+        )
 
     if route_key == "POST /auth/apply":
         token = _extract_token(event)
@@ -171,15 +268,21 @@ def validate_cas_ticket(ticket) -> str | None:
 
     return success.findtext("cas:user", default="", namespaces=CAS_NS) or None
 
-def mint_jwt(netid: str):
+def mint_jwt(netid: str, roles: Optional[List[str]] = None):
     """Returns a JSON web token with the user's encoded netid and expiry"""
     now = int(time.time())
+    roles = roles or []
     payload = {
         "sub": netid, # subject
         "iat": now,
         "exp": now + 60 * 60 * 24,  # 24 hours
+        "roles": roles,
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    headers: Optional[Dict[str, str]] = None
+    kid = _get_current_kid()
+    if kid:
+        headers = {"kid": kid}
+    return jwt.encode(payload, _get_private_key(), algorithm="RS256", headers=headers)
 
 # ----------------------------
 # Cookie/JWT helpers
@@ -191,11 +294,15 @@ def _extract_token(event: Dict[str, Any]) -> Optional[str]:
 
 
 def _decode_netid(token: str) -> Optional[str]:
+    public_key = _get_public_key(token)
+    if not public_key:
+        return None
+
     try:
         payload = jwt.decode(
             token,
-            JWT_SECRET,
-            algorithms=["HS256"],
+            public_key,
+            algorithms=["RS256"],
             options={"require": ["exp", "sub"]},
         )
     except jwt.PyJWTError:
@@ -216,6 +323,20 @@ def _user_allowed(netid: str) -> bool:
         return False
 
     return not user.get("is_banned", False)
+
+
+def _get_user_roles(netid: str) -> List[str]:
+    resp = users_table.get_item(Key={"netid": netid})
+    user = resp.get("Item") or {}
+    roles = user.get("roles") or []
+    if not isinstance(roles, list):
+        roles = [roles]
+    return [str(role) for role in roles]
+
+
+def _load_user(netid: str) -> Optional[Dict[str, Any]]:
+    resp = users_table.get_item(Key={"netid": netid})
+    return resp.get("Item")
 
 
 def _normalize_headers(headers: Dict[str, Any]) -> Dict[str, str]:

@@ -13,6 +13,7 @@ import type { Route } from "./+types/root";
 import "./app.css";
 import { coreApi } from "./api/core";
 import axios from "axios";
+import { UserProvider, useUser } from "./context/UserConext";
 
 export const links: Route.LinksFunction = () => [
   { rel: "icon", href: "/hqg-logo.png", type: "image/png" },
@@ -46,9 +47,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function App() {
+function AppContent() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const { setUser } = useUser();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -56,10 +58,23 @@ export default function App() {
     let isCancelled = false;
     const run = async () => {
       try {
-        await coreApi.get("/auth/me");
-        if (!isCancelled) setLoading(false);
+        const response = await coreApi.get("/auth/me");
+        const data = response.data as { netid?: string; roles?: string[]; display_name?: string };
+        if (!isCancelled) {
+          setUser(
+            data?.netid
+              ? {
+                  netid: data.netid,
+                  roles: Array.isArray(data.roles) ? data.roles : [],
+                  display_name: data.display_name,
+                }
+              : null
+          );
+          setLoading(false);
+        }
       } catch (error) {
         if (isCancelled) return;
+        setUser(null);
         const status = axios.isAxiosError(error) ? error.response?.status : undefined;
         if (status === 403) {
           navigate("/apply", { replace: true });
@@ -74,7 +89,7 @@ export default function App() {
     return () => {
       isCancelled = true;
     };
-  }, [navigate]);
+  }, [navigate, setUser]);
 
   if (loading) {
     return (
@@ -84,6 +99,14 @@ export default function App() {
     );
   }
   return <Outlet />;
+}
+
+export default function App() {
+  return (
+    <UserProvider>
+      <AppContent />
+    </UserProvider>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

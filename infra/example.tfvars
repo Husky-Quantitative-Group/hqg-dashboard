@@ -1,13 +1,11 @@
-project           = "hqg"
-env               = "dev"
-aws_region        = "us-east-1"
-api_token         = "changeme"
+project   = "hqg"
+env       = "dev"
+aws_region = "us-east-1"
 frontend_base_url = "http://localhost:5173"
-jwt_secret        = "changeme"
 
 # Optional overrides (uncomment to set explicit names)
 # artifacts_bucket_name                 = "strategy-artifacts"
-# backtests_bucket_name                 = "backtest-metrics"
+# jwks_bucket_name                      = "hqg-dev-jwks-abcdef12"
 # strategies_table_name                 = "hqg-dev-strategies"
 # strategy_artifacts_table_name         = "hqg-dev-strategy-artifacts"
 # strategy_artifact_versions_table_name = "hqg-dev-strategy-artifact-versions"

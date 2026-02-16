@@ -18,6 +18,11 @@ output "backtests_bucket_arn" {
   description = "ARN of the backtests bucket."
 }
 
+output "jwks_object_url" {
+  value       = "https://${aws_s3_bucket.jwks.bucket}.s3.${var.aws_region}.amazonaws.com/.well-known/jwks.json"
+  description = "Public URL for the JWKS JSON object."
+}
+
 output "strategies_table_name" {
   value       = aws_dynamodb_table.strategies.name
   description = "Name of the Strategies table."

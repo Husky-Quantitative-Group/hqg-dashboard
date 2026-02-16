@@ -20,11 +20,7 @@ cp infra/example.tfvars infra/dev.tfvars
 
 Edit `infra/dev.tfvars` with your values:
 - `project`, `env`, `aws_region`
-- `api_token` (shared secret required by the API)
 - `frontend_base_url` (CORS / allowed origin)
-- `jwt_secret` (used for JWT signing)
-
-You can use https://jwtsecretkeygenerator.com/ to generate a JWT secret.
 
 ### Build Lambda Layers
 This repository uses AWS Lambda Layers to manage Python dependencies that are shared across Lambdas (for example, JWT libraries).
@@ -110,11 +106,28 @@ hqg/
 └── hqg-backtester/
 ```
 
-Clone and start the backtester:
+Clone the backtester:
 
 ```bash
 git clone https://github.com/Husky-Quantitative-Group/hqg-backtester.git
 cd hqg-backtester
+```
+
+Set the backtester environment variable `HQG_JWKS_URL` to the JWKS endpoint from Terraform:
+
+```bash
+terraform output -raw jwks_object_url
+```
+
+If you're running this from the `hqg-backtester` directory, point Terraform at the dashboard infra folder:
+
+```bash
+terraform -chdir=../hqg-dashboard/infra output -raw jwks_object_url
+```
+
+Run the backtester:
+
+```bash
 docker compose up --build
 ```
 

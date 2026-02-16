@@ -18,7 +18,17 @@ for layer_dir in "$LAYERS_ROOT"/*; do
   rm -rf "$build_dir"
   mkdir -p "$py_dir"
 
-  python3 -m pip install -r "$layer_dir/requirements.txt" -t "$py_dir"
+  if [[ "$layer_name" == "cryptography" ]]; then
+    python3 -m pip install \
+      --platform manylinux2014_x86_64 \
+      --implementation cp \
+      --python-version 312 \
+      --only-binary=:all: \
+      -r "$layer_dir/requirements.txt" \
+      -t "$py_dir"
+  else
+    python3 -m pip install -r "$layer_dir/requirements.txt" -t "$py_dir"
+  fi
   (cd "$build_dir" && zip -r "${layer_name}-layer.zip" python >/dev/null)
 
   echo "  -> $zip_path"
