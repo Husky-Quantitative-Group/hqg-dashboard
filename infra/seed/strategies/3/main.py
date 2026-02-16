@@ -5,12 +5,17 @@ Ranks stocks by past 6-month returns and allocates equally to top 5 performers.
 Demonstrates cross-sectional momentum: winners tend to keep winning.
 """
 from datetime import timedelta
+from collections import deque
 from hqg_algorithms import Strategy, Cadence, Slice, PortfolioView
 
 
 class SimpleMomentum(Strategy):
     MOMENTUM_DAYS = 126  # 6-month lookback
     TOP_N = 5
+
+    def __init__(self):
+        # Store historical prices for each symbol
+        self.price_history = {}
 
     def universe(self) -> list[str]:
         return [
@@ -22,7 +27,7 @@ class SimpleMomentum(Strategy):
         ]
 
     def cadence(self) -> Cadence:
-        return Cadence(bar_size=timedelta(days=21))  # Monthly rebalance
+        return Cadence(bar_size=timedelta(days=30))  # Monthly rebalance
 
     def on_data(self, data: Slice, portfolio: PortfolioView) -> dict[str, float] | None:
         momentum_scores = {}
@@ -33,7 +38,19 @@ class SimpleMomentum(Strategy):
                 if current_price is None:
                     continue
 
-                past_price = data.close(symbol, bars_ago=self.MOMENTUM_DAYS)
+                # Initialize price history for this symbol if needed
+                if symbol not in self.price_history:
+                    self.price_history[symbol] = deque(maxlen=self.MOMENTUM_DAYS + 1)
+
+                # Store current price
+                self.price_history[symbol].append(current_price)
+
+                # Need at least MOMENTUM_DAYS of data
+                if len(self.price_history[symbol]) < self.MOMENTUM_DAYS + 1:
+                    continue
+
+                # Get the oldest price (MOMENTUM_DAYS ago)
+                past_price = self.price_history[symbol][0]
                 if past_price is None or past_price <= 0:
                     continue
 

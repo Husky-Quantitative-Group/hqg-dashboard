@@ -5,6 +5,7 @@ Dynamically adjusts position size to maintain constant portfolio volatility.
 When realized vol is high, reduce exposure. When vol is low, increase exposure.
 """
 from datetime import timedelta
+from collections import deque
 from hqg_algorithms import Strategy, Cadence, Slice, PortfolioView
 
 
@@ -12,6 +13,10 @@ class VolatilityTargeting(Strategy):
     TARGET_VOL = 0.10  # Target 10% annualized volatility
     LOOKBACK_DAYS = 60
     TRADING_DAYS_PER_YEAR = 252
+
+    def __init__(self):
+        # Store price history for SPY
+        self.prices = deque(maxlen=self.LOOKBACK_DAYS)
 
     def universe(self) -> list[str]:
         return ["SPY"]
@@ -21,14 +26,23 @@ class VolatilityTargeting(Strategy):
 
     def on_data(self, data: Slice, portfolio: PortfolioView) -> dict[str, float] | None:
         try:
-            # Calculate daily returns over lookback period
-            returns = []
-            for i in range(self.LOOKBACK_DAYS - 1):
-                price_today = data.close("SPY", bars_ago=i)
-                price_yesterday = data.close("SPY", bars_ago=i + 1)
+            price = data.close("SPY")
+            if price is None:
+                return None
 
-                if price_today is None or price_yesterday is None:
-                    continue
+            self.prices.append(price)
+
+            # Need at least LOOKBACK_DAYS to calculate returns
+            if len(self.prices) < self.LOOKBACK_DAYS:
+                return None
+
+            # Calculate daily returns
+            returns = []
+            prices_list = list(self.prices)
+            for i in range(len(prices_list) - 1):
+                price_yesterday = prices_list[i]
+                price_today = prices_list[i + 1]
+
                 if price_yesterday <= 0:
                     continue
 

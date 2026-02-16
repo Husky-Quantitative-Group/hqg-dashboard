@@ -5,6 +5,7 @@ Combines momentum, value (P/E ratio), and quality (ROE) factors to rank stocks.
 Each factor is z-scored and combined into a composite score. Select top 10 stocks.
 """
 from datetime import timedelta
+from collections import deque
 from hqg_algorithms import Strategy, Cadence, Slice, PortfolioView
 
 
@@ -16,6 +17,10 @@ class MultiFactorRanking(Strategy):
     QUALITY_WEIGHT = 0.3
     TOP_N = 10
 
+    def __init__(self):
+        # Store price history for each symbol
+        self.price_history = {}
+
     def universe(self) -> list[str]:
         return [
             "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B",
@@ -26,7 +31,7 @@ class MultiFactorRanking(Strategy):
         ]
 
     def cadence(self) -> Cadence:
-        return Cadence(bar_size=timedelta(days=21))
+        return Cadence(bar_size=timedelta(days=30))
 
     def on_data(self, data: Slice, portfolio: PortfolioView) -> dict[str, float] | None:
         try:
@@ -38,11 +43,18 @@ class MultiFactorRanking(Strategy):
                 if not current_price:
                     continue
 
+                # Initialize price history for this symbol if needed
+                if symbol not in self.price_history:
+                    self.price_history[symbol] = deque(maxlen=self.MOMENTUM_DAYS + 1)
+
+                self.price_history[symbol].append(current_price)
+
                 # Momentum: 6-month return (higher is better)
-                past_price = data.close(symbol, bars_ago=self.MOMENTUM_DAYS)
-                if past_price and past_price > 0:
-                    momentum = (current_price / past_price) - 1.0
-                    factor_scores["momentum"][symbol] = momentum
+                if len(self.price_history[symbol]) >= self.MOMENTUM_DAYS + 1:
+                    past_price = self.price_history[symbol][0]
+                    if past_price and past_price > 0:
+                        momentum = (current_price / past_price) - 1.0
+                        factor_scores["momentum"][symbol] = momentum
 
                 # Value: inverse P/E ratio (lower P/E = higher score)
                 pe_ratio = data.pe_ratio(symbol)

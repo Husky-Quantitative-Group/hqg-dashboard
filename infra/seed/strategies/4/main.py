@@ -5,6 +5,7 @@ Trades mean reversion between two correlated stocks (KO and PEP).
 When the price spread deviates significantly from its mean, bet on convergence.
 """
 from datetime import timedelta
+from collections import deque
 from hqg_algorithms import Strategy, Cadence, Slice, PortfolioView
 import math
 
@@ -18,6 +19,8 @@ class PairsTrading(Strategy):
     def __init__(self):
         self._in_position = False
         self._position_direction = 0
+        # Store historical spreads
+        self.spreads = deque(maxlen=self.LOOKBACK_DAYS)
 
     def universe(self) -> list[str]:
         return ["KO", "PEP"]  # Coca-Cola and PepsiCo
@@ -27,33 +30,30 @@ class PairsTrading(Strategy):
 
     def on_data(self, data: Slice, portfolio: PortfolioView) -> dict[str, float] | None:
         try:
-            # Calculate log price spread over lookback period
-            spreads = []
-            for i in range(self.LOOKBACK_DAYS):
-                ko_price = data.close("KO", bars_ago=i)
-                pep_price = data.close("PEP", bars_ago=i)
+            ko_price = data.close("KO")
+            pep_price = data.close("PEP")
 
-                if ko_price is None or pep_price is None:
-                    continue
-                if ko_price <= 0 or pep_price <= 0:
-                    continue
+            if ko_price is None or pep_price is None:
+                return None
+            if ko_price <= 0 or pep_price <= 0:
+                return None
 
-                # Log spread reduces heteroskedasticity
-                spread = math.log(ko_price) - math.log(pep_price)
-                spreads.append(spread)
+            # Log spread reduces heteroskedasticity
+            current_spread = math.log(ko_price) - math.log(pep_price)
+            self.spreads.append(current_spread)
 
-            if len(spreads) < self.LOOKBACK_DAYS * 0.8:
+            # Need enough historical data
+            if len(self.spreads) < self.LOOKBACK_DAYS * 0.8:
                 return None
 
             # Calculate z-score: (current_spread - mean) / std_dev
-            mean_spread = sum(spreads) / len(spreads)
-            variance = sum((s - mean_spread) ** 2 for s in spreads) / len(spreads)
+            mean_spread = sum(self.spreads) / len(self.spreads)
+            variance = sum((s - mean_spread) ** 2 for s in self.spreads) / len(self.spreads)
             std_spread = variance ** 0.5
 
             if std_spread < 1e-6:
                 return {}
 
-            current_spread = spreads[0]
             z_score = (current_spread - mean_spread) / std_spread
 
             # Trading logic

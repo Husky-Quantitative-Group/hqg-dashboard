@@ -5,6 +5,7 @@ Rotates between sector ETFs based on multi-timeframe momentum.
 Identifies which economic sectors are outperforming and allocates to the top 3.
 """
 from datetime import timedelta
+from collections import deque
 from hqg_algorithms import Strategy, Cadence, Slice, PortfolioView
 
 
@@ -16,6 +17,10 @@ class SectorRotation(Strategy):
     MEDIUM_WEIGHT = 0.4
     LONG_WEIGHT = 0.3
     TOP_N_SECTORS = 3
+
+    def __init__(self):
+        # Store price history for each sector
+        self.price_history = {}
 
     def universe(self) -> list[str]:
         return [
@@ -33,7 +38,7 @@ class SectorRotation(Strategy):
         ]
 
     def cadence(self) -> Cadence:
-        return Cadence(bar_size=timedelta(days=21))
+        return Cadence(bar_size=timedelta(days=30))
 
     def on_data(self, data: Slice, portfolio: PortfolioView) -> dict[str, float] | None:
         try:
@@ -44,10 +49,21 @@ class SectorRotation(Strategy):
                 if current_price is None or current_price <= 0:
                     continue
 
+                # Initialize price history for this sector if needed
+                if sector not in self.price_history:
+                    self.price_history[sector] = deque(maxlen=self.LONG_MOMENTUM_DAYS + 1)
+
+                self.price_history[sector].append(current_price)
+
+                # Need at least LONG_MOMENTUM_DAYS to calculate all momentum measures
+                if len(self.price_history[sector]) < self.LONG_MOMENTUM_DAYS + 1:
+                    continue
+
                 # Calculate returns over 3 different timeframes
-                short_past = data.close(sector, bars_ago=self.SHORT_MOMENTUM_DAYS)
-                medium_past = data.close(sector, bars_ago=self.MEDIUM_MOMENTUM_DAYS)
-                long_past = data.close(sector, bars_ago=self.LONG_MOMENTUM_DAYS)
+                prices_list = list(self.price_history[sector])
+                short_past = prices_list[-(self.SHORT_MOMENTUM_DAYS + 1)]
+                medium_past = prices_list[-(self.MEDIUM_MOMENTUM_DAYS + 1)]
+                long_past = prices_list[0]
 
                 if not all([short_past, medium_past, long_past]):
                     continue

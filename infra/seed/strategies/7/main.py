@@ -5,12 +5,17 @@ Allocates capital so each asset contributes equally to portfolio risk.
 Achieved by weighting assets inversely to their volatility: low vol assets get higher weights.
 """
 from datetime import timedelta
+from collections import deque
 from hqg_algorithms import Strategy, Cadence, Slice, PortfolioView
 
 
 class EqualRiskContribution(Strategy):
     LOOKBACK_DAYS = 60
     TRADING_DAYS_PER_YEAR = 252
+
+    def __init__(self):
+        # Store price history for each symbol
+        self.price_history = {}
 
     def universe(self) -> list[str]:
         return ["SPY", "EFA", "TLT", "IEF", "GLD"]
@@ -24,13 +29,27 @@ class EqualRiskContribution(Strategy):
             volatilities = {}
 
             for symbol in self.universe():
-                returns = []
-                for i in range(self.LOOKBACK_DAYS - 1):
-                    price_today = data.close(symbol, bars_ago=i)
-                    price_yesterday = data.close(symbol, bars_ago=i + 1)
+                price = data.close(symbol)
+                if price is None:
+                    continue
 
-                    if price_today is None or price_yesterday is None:
-                        continue
+                # Initialize price history for this symbol if needed
+                if symbol not in self.price_history:
+                    self.price_history[symbol] = deque(maxlen=self.LOOKBACK_DAYS)
+
+                self.price_history[symbol].append(price)
+
+                # Need at least LOOKBACK_DAYS to calculate returns
+                if len(self.price_history[symbol]) < self.LOOKBACK_DAYS:
+                    continue
+
+                # Calculate daily returns
+                returns = []
+                prices_list = list(self.price_history[symbol])
+                for i in range(len(prices_list) - 1):
+                    price_yesterday = prices_list[i]
+                    price_today = prices_list[i + 1]
+
                     if price_yesterday <= 0:
                         continue
 

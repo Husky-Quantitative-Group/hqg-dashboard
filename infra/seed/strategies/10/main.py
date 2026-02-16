@@ -6,6 +6,7 @@ Calculates expected returns and covariance matrix from historical data.
 Uses Monte Carlo sampling to approximate the optimal weights.
 """
 from datetime import timedelta
+from collections import deque
 from hqg_algorithms import Strategy, Cadence, Slice, PortfolioView
 
 
@@ -15,11 +16,15 @@ class MeanVarianceOptimization(Strategy):
     TRADING_DAYS_PER_YEAR = 252
     REGULARIZATION = 0.01  # Added to covariance diagonal for numerical stability
 
+    def __init__(self):
+        # Store price history for each symbol
+        self.price_history = {}
+
     def universe(self) -> list[str]:
         return ["SPY", "EFA", "EEM", "TLT", "IEF", "GLD"]
 
     def cadence(self) -> Cadence:
-        return Cadence(bar_size=timedelta(days=21))
+        return Cadence(bar_size=timedelta(days=30))
 
     def on_data(self, data: Slice, portfolio: PortfolioView) -> dict[str, float] | None:
         try:
@@ -28,12 +33,32 @@ class MeanVarianceOptimization(Strategy):
 
             returns_matrix = {symbol: [] for symbol in symbols}
 
-            for i in range(1, self.LOOKBACK_DAYS):
-                for symbol in symbols:
-                    price_today = data.close(symbol, bars_ago=i - 1)
-                    price_yesterday = data.close(symbol, bars_ago=i)
+            # Update price history for all symbols
+            for symbol in symbols:
+                price = data.close(symbol)
+                if price is None:
+                    continue
 
-                    if price_today and price_yesterday and price_yesterday > 0:
+                # Initialize price history for this symbol if needed
+                if symbol not in self.price_history:
+                    self.price_history[symbol] = deque(maxlen=self.LOOKBACK_DAYS)
+
+                self.price_history[symbol].append(price)
+
+            # Calculate returns from stored price history
+            for symbol in symbols:
+                if symbol not in self.price_history:
+                    continue
+
+                if len(self.price_history[symbol]) < self.LOOKBACK_DAYS * 0.8:
+                    continue
+
+                prices_list = list(self.price_history[symbol])
+                for i in range(len(prices_list) - 1):
+                    price_yesterday = prices_list[i]
+                    price_today = prices_list[i + 1]
+
+                    if price_yesterday > 0:
                         ret = (price_today / price_yesterday) - 1.0
                         returns_matrix[symbol].append(ret)
 
