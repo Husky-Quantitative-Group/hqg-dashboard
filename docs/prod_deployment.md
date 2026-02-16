@@ -74,15 +74,38 @@ Check `infra/prod.tfvars`:
 - `env = "prod"`
 - `aws_region = "us-east-1"`
 - `frontend_base_url` set for prod
+- `api_custom_domain_name = "api.uconnquant.com"`
+- `api_custom_domain_activate = false` for first apply
 
-Deploy:
+First apply (requests ACM cert and prints validation records):
 
 ```bash
 AWS_PROFILE=hqg-prod terraform -chdir=infra plan -var-file=prod.tfvars
 AWS_PROFILE=hqg-prod terraform -chdir=infra apply -var-file=prod.tfvars
 ```
 
-## 6) Seed initial data (first deploy only)
+## 6) Validate cert in Squarespace and activate custom domain
+
+Get the ACM DNS validation records:
+
+```bash
+terraform -chdir=infra output api_custom_domain_validation_records
+```
+
+In Squarespace DNS, create each CNAME from that output.
+
+After ACM shows the certificate as `ISSUED`, set `api_custom_domain_activate = true` in `infra/prod.tfvars`, then apply again:
+
+```bash
+AWS_PROFILE=hqg-prod terraform -chdir=infra apply -var-file=prod.tfvars
+```
+
+Get the API Gateway target and add your production CNAME:
+- Type: `CNAME`
+- Host: `api`
+- Target: `terraform -chdir=infra output -raw api_custom_domain_target`
+
+## 7) Seed initial data (first deploy only)
 
 ```bash
 python3 -m pip install --user boto3

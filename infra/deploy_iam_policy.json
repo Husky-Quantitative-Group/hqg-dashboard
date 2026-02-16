@@ -18,6 +18,8 @@
         "iam:GetPolicyVersion",
         "iam:ListAttachedRolePolicies",
         "iam:ListPolicyVersions",
+        "acm:ListCertificates",
+        "acm:DescribeCertificate",
         "logs:DescribeLogGroups",
         "ssm:DescribeParameters",
         "scheduler:ListSchedules",
@@ -169,6 +171,20 @@
       "Effect": "Allow",
       "Action": "apigateway:*",
       "Resource": "arn:aws:apigateway:us-east-1::/*"
+    },
+    {
+      "Sid": "AcmApiCustomDomain",
+      "Effect": "Allow",
+      "Action": [
+        "acm:RequestCertificate",
+        "acm:DeleteCertificate",
+        "acm:GetCertificate",
+        "acm:DescribeCertificate",
+        "acm:AddTagsToCertificate",
+        "acm:RemoveTagsFromCertificate",
+        "acm:ListTagsForCertificate"
+      ],
+      "Resource": "arn:aws:acm:us-east-1:016299216645:certificate/*"
     },
     {
       "Sid": "SchedulerHqgProd",
