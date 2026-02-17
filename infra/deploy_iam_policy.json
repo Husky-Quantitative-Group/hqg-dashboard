@@ -46,7 +46,7 @@
         "s3:PutBucketVersioning",
         "s3:ListBucket"
       ],
-      "Resource": "arn:aws:s3:::hqg-prod-terraform-state-*"
+      "Resource": "arn:aws:s3:::hqg-prod-terraform-state*"
     },
     {
       "Sid": "BackendStateObjectRW",
@@ -56,7 +56,7 @@
         "s3:PutObject",
         "s3:DeleteObject"
       ],
-      "Resource": "arn:aws:s3:::hqg-prod-terraform-state-*/*"
+      "Resource": "arn:aws:s3:::hqg-prod-terraform-state*/*"
     },
     {
       "Sid": "BackendLockTableRW",
@@ -87,6 +87,7 @@
         "dynamodb:DescribeTable",
         "dynamodb:DescribeContinuousBackups",
         "dynamodb:DescribeTimeToLive",
+        "dynamodb:PutItem",
         "dynamodb:UpdateTable",
         "dynamodb:UpdateContinuousBackups",
         "dynamodb:TagResource",

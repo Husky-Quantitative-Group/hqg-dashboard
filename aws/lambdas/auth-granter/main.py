@@ -21,8 +21,8 @@ APP_ENV = os.environ.get("APP_ENV", "prod").lower()
 CAS_BASE = "https://login.uconn.edu/cas"
 CAS_NS = {"cas": "http://www.yale.edu/tp/cas"}
 
-FRONTEND_BASE_URL = os.environ["FRONTEND_BASE_URL"] # eg. http://localhost:3000 OR https://hqg-dash.com
-CAS_CALLBACK_URL = FRONTEND_BASE_URL + "/api/auth/callback"
+FRONTEND_BASE_URL = os.environ["FRONTEND_BASE_URL"].rstrip("/")  # eg. http://localhost:3000 OR https://hqg-dash.com
+CAS_CALLBACK_URL = os.environ.get("CAS_CALLBACK_URL", FRONTEND_BASE_URL + "/api/auth/callback").rstrip("/")
 
 JWT_PRIVATE_KEY_PARAMETER = os.environ["JWT_PRIVATE_KEY_PARAMETER"]
 JWKS_BUCKET = os.environ["JWKS_BUCKET"]
