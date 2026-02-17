@@ -113,10 +113,11 @@ def _get_current_kid() -> Optional[str]:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 def _build_auth_cookie(token: str) -> str:
-    is_dev = APP_ENV == "dev"
-    same_site = "Lax" if is_dev else "None"
-    secure = "" if is_dev else "; Secure"
-    return f"hqg_auth_token={token}; Path=/; HttpOnly; SameSite={same_site}{secure}"
+    is_prod = APP_ENV == "prod"
+    same_site = "Strict" if is_prod else "Lax"
+    secure = "; Secure" if is_prod else ""
+    domain = "; Domain=.uconnquant.com" if is_prod else ""
+    return f"hqg_auth_token={token}; Path=/; HttpOnly; SameSite={same_site}{domain}{secure}"
 
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     """
