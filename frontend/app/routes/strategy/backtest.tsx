@@ -105,6 +105,8 @@ export default function StrategyBacktest() {
     isSaving: isWorkspaceSaving,
     latestBacktestData,
     setLatestBacktestData,
+    latestBacktestStrategyVersion,
+    setLatestBacktestStrategyVersion,
     lastBacktestParamValues,
     setLastBacktestParamValues,
     refreshSavedBacktestRuns,
@@ -148,6 +150,7 @@ export default function StrategyBacktest() {
     setActiveBacktestSource("live");
     setActiveSavedRunId(null);
     setLatestBacktestData(null);
+    setLatestBacktestStrategyVersion(strategy.current_version ?? null);
     addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
     setLastBacktestParamValues(values);
 
@@ -163,6 +166,7 @@ export default function StrategyBacktest() {
       addToast("Backtest finished", "success");
     } catch {
       setLatestBacktestData(null);
+      setLatestBacktestStrategyVersion(null);
       addToast("Backtest failed", "warning");
     } finally {
       setIsRunningBacktest(false);
@@ -193,17 +197,22 @@ export default function StrategyBacktest() {
 
       const initialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
 
-      await finalizeBacktestRun(strategy.id, {
+      const finalizePayload: Parameters<typeof finalizeBacktestRun>[1] = {
         run_id: presign.run_id,
         s3_key: presign.s3.key,
-        strategy_version: strategy.current_version,
         backtest_params: {
           name: lastBacktestParamValues.name ?? `Run ${presign.run_id}`,
           start_date: lastBacktestParamValues.startDate ?? "",
           end_date: lastBacktestParamValues.endDate ?? "",
           initial_capital: Number.isFinite(initialCapital) ? initialCapital : 0,
         },
-      });
+      };
+
+      if (latestBacktestStrategyVersion !== null && latestBacktestStrategyVersion !== undefined) {
+        finalizePayload.strategy_version = latestBacktestStrategyVersion;
+      }
+
+      await finalizeBacktestRun(strategy.id, finalizePayload);
 
       await refreshSavedBacktestRuns();
       setActiveBacktestSource("saved");
