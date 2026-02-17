@@ -19,6 +19,12 @@ variable "artifacts_bucket_name" {
   default     = null
 }
 
+variable "backtests_bucket_name" {
+  description = "Optional explicit name for the backtests bucket. Defaults to \"<project>-<env>-backtest-metrics\"."
+  type        = string
+  default     = null
+}
+
 variable "jwks_bucket_name" {
   description = "Optional explicit name for the JWKS bucket. Defaults to \"<project>-<env>-jwks-<random>\"."
   type        = string
@@ -51,6 +57,12 @@ variable "users_table_name" {
 
 variable "user_access_applications_table_name" {
   description = "Optional explicit name for the UserAccessApplications table. Defaults to \"<project>-<env>-user-access-applications\"."
+  type        = string
+  default     = null
+}
+
+variable "backtest_metrics_table_name" {
+  description = "Optional explicit name for the BacktestMetrics table. Defaults to \"<project>-<env>-backtest-metrics\"."
   type        = string
   default     = null
 }

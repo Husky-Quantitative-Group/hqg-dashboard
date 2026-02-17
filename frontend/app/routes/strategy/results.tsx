@@ -1,4 +1,8 @@
+import { useMemo, useState } from "react";
+import { getBacktestRun, gunzipJson, type BacktestRunItem } from "~/api/backtestMetrics";
 import { useStrategyWorkspace } from "./layout";
+import { useNavigate } from "react-router-dom";
+import type { BacktestResponse } from "~/api/backtest";
 
 const currencyFormatter = new Intl.NumberFormat("en", {
   style: "currency",
@@ -22,8 +26,8 @@ function formatPercent(value: number, options?: { showSign?: boolean }) {
   return `${percent}%`;
 }
 
-function formatDuration(seconds: number) {
-  if (!seconds && seconds !== 0) {
+function formatDuration(seconds?: number | null) {
+  if (seconds === null || seconds === undefined) {
     return "—";
   }
   const minutes = Math.floor(seconds / 60);
@@ -35,17 +39,62 @@ function formatDuration(seconds: number) {
 }
 
 export default function StrategyResults() {
-  const { runs } = useStrategyWorkspace();
+  const navigate = useNavigate();
+  const {
+    strategy,
+    addToast,
+    setLatestBacktestData,
+    setLatestBacktestStrategyVersion,
+    setLastBacktestParamValues,
+    setActiveBacktestSource,
+    setActiveSavedRunId,
+    savedBacktestRuns,
+    isSavedBacktestRunsLoading,
+  } = useStrategyWorkspace();
   const surface = "border border-slate-800 bg-slate-950/40";
   const mutedColor = "text-slate-400";
-  const sortedRuns = [...runs].sort(
-    (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-  );
+  const [loadingRunId, setLoadingRunId] = useState<string | null>(null);
+  const sortedRuns = useMemo(() => {
+    const runs = savedBacktestRuns ?? [];
+    return [...runs].sort((a, b) => new Date(b.time_created).getTime() - new Date(a.time_created).getTime());
+  }, [savedBacktestRuns]);
 
-  if (!sortedRuns.length) {
+  const openRun = async (run: BacktestRunItem) => {
+    if (loadingRunId) return;
+    setLoadingRunId(run.run_id);
+    addToast("Loading run…", "info");
+
+    try {
+      const resp = await getBacktestRun(strategy.id, run.run_id);
+      const raw = await fetch(resp.s3.download_url).then((r) => r.arrayBuffer());
+      const backtest = await gunzipJson<BacktestResponse>(raw);
+
+      setLatestBacktestData(backtest);
+      setLatestBacktestStrategyVersion(resp.item.strategy_version ?? null);
+      setActiveBacktestSource("saved");
+      setActiveSavedRunId(run.run_id);
+
+      const params = resp.item.backtest_params;
+      setLastBacktestParamValues({
+        name: params?.name ?? "",
+        startingEquity: params?.initial_capital !== undefined ? String(params.initial_capital) : "",
+        startDate: params?.start_date ?? "",
+        endDate: params?.end_date ?? "",
+      });
+
+      navigate("../backtest");
+    } catch (error) {
+      console.error("Failed to open saved run", error);
+      addToast("Failed to open run", "warning");
+    } finally {
+      setLoadingRunId(null);
+    }
+  };
+
+  if (!sortedRuns.length && !isSavedBacktestRunsLoading) {
     return (
       <div className={`rounded-2xl ${surface} p-12 text-center text-sm ${mutedColor}`}>
-        No runs available for this strategy yet. Trigger a run to populate stats.
+        No runs available for this strategy yet. Save a backtest to see it here.
       </div>
     );
   }
@@ -77,42 +126,65 @@ export default function StrategyResults() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-900 text-slate-200">
+            {isSavedBacktestRunsLoading ? (
+              <tr>
+                <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
+                  Loading…
+                </td>
+              </tr>
+            ) : null}
+
             {sortedRuns.map((run) => {
-              const pnlClass = run.metrics.netPnl >= 0 ? "text-emerald-400" : "text-rose-400";
+              const pnl = run.net_pnl ?? 0;
+              const pnlClass = pnl >= 0 ? "text-emerald-400" : "text-rose-400";
+              const name = run.backtest_params?.name ?? "Untitled";
+              const start = run.backtest_params?.start_date ?? "—";
+              const end = run.backtest_params?.end_date ?? "—";
+              const equity = run.backtest_params?.initial_capital ?? 0;
+              const drawdown = typeof run.max_drawdown === "number" ? -run.max_drawdown : null;
               return (
-                <tr key={run.name}>
-                  <td className="px-4 py-4 align-top font-mono text-slate-300">{run.id}</td>
-                  <td className="px-4 py-4 align-top font-semibold text-white">{run.parameterName}</td>
-                  <td className="px-4 py-4 align-top text-slate-200">{run.strategyVersion}</td>
+                <tr
+                  key={run.run_id}
+                  className="cursor-pointer transition hover:bg-slate-900/30"
+                  onClick={() => void openRun(run)}
+                  aria-busy={loadingRunId === run.run_id}
+                >
+                  <td className="px-4 py-4 align-top font-mono text-slate-300">{run.run_id.slice(0, 10)}</td>
+                  <td className="px-4 py-4 align-top font-semibold text-white">{name}</td>
+                  <td className="px-4 py-4 align-top text-slate-200">{run.strategy_version ?? "—"}</td>
                   <td className="px-4 py-4 align-top text-sm text-slate-300">
-                    <div>{dateFormatter.format(new Date(run.startedAt))}</div>
-                    <div className="text-xs text-slate-500">{formatDuration(run.durationSeconds)}</div>
+                    <div>{dateFormatter.format(new Date(run.time_created))}</div>
+                    <div className="text-xs text-slate-500">{formatDuration()}</div>
                   </td>
                   <td className="px-4 py-4 align-top text-xs text-slate-300">
                     <div>
-                      <span className="text-slate-500">Name:</span> {run.parameterName}
+                      <span className="text-slate-500">Name:</span> {name}
                     </div>
                     <div>
-                      <span className="text-slate-500">Start:</span> {run.parameterStartDate}
+                      <span className="text-slate-500">Start:</span> {start}
                     </div>
                     <div>
-                      <span className="text-slate-500">End:</span> {run.parameterEndDate}
+                      <span className="text-slate-500">End:</span> {end}
                     </div>
                     <div>
-                      <span className="text-slate-500">Equity:</span> {currencyFormatter.format(run.startingEquity)}
+                      <span className="text-slate-500">Equity:</span> {currencyFormatter.format(equity)}
                     </div>
                   </td>
                   <td className={`px-4 py-4 align-top font-mono ${pnlClass}`}>
-                    {currencyFormatter.format(run.metrics.netPnl)}
+                    {currencyFormatter.format(pnl)}
                   </td>
-                  <td className="px-4 py-4 align-top font-semibold text-white">{run.metrics.sharpe.toFixed(2)}</td>
+                  <td className="px-4 py-4 align-top font-semibold text-white">
+                    {typeof run.sharpe === "number" ? run.sharpe.toFixed(2) : "—"}
+                  </td>
                   <td className="px-4 py-4 align-top font-semibold text-emerald-300">
-                    {formatPercent(run.metrics.winRate)}
+                    {typeof run.win_rate === "number" ? formatPercent(run.win_rate) : "—"}
                   </td>
                   <td className="px-4 py-4 align-top font-semibold text-rose-300">
-                    {formatPercent(-run.metrics.maxDrawdown)}
+                    {drawdown === null ? "—" : formatPercent(drawdown)}
                   </td>
-                  <td className="px-4 py-4 align-top font-semibold text-slate-200">{run.metrics.trades}</td>
+                  <td className="px-4 py-4 align-top font-semibold text-slate-200">
+                    {typeof run.trades_count === "number" ? run.trades_count : "—"}
+                  </td>
                 </tr>
               );
             })}

@@ -9,7 +9,8 @@ import {
 } from "lightweight-charts";
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
-import { runBacktest, type BacktestResponse, type EquityCurve, type Metrics, type Trade } from "~/api/backtest";
+import { runBacktest, type BacktestResponse, type EquityCurve, type Metrics, type OhlcSeries, type Trade } from "~/api/backtest";
+import { finalizeBacktestRun, gzipJson, presignBacktestRunUpload, uploadPresignedPost } from "~/api/backtestMetrics";
 import { useStrategyWorkspace } from "./layout";
 
 type BacktestParameter = {
@@ -51,6 +52,8 @@ type BacktestParametersProps = {
   strategyName?: string;
   parameters: BacktestParameter[];
   isRunning: boolean;
+  isDisabled: boolean;
+  disabledReason?: string;
   onRun: (values: RunParameterState) => void;
 };
 
@@ -65,6 +68,8 @@ type StrategyEquityChartProps = {
   stats: EquityStat[];
   candles: EquityCandle[];
   onSave: () => void;
+  isSaving: boolean;
+  isViewingSaved: boolean;
   showPlaceholder: boolean;
   animatePlaceholder: boolean;
 };
@@ -92,13 +97,45 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 export default function StrategyBacktest() {
-  const { strategy, entrypoint, addToast } = useStrategyWorkspace();
+  const {
+    strategy,
+    entrypoint,
+    addToast,
+    isDirty,
+    isSaving: isWorkspaceSaving,
+    latestBacktestData,
+    setLatestBacktestData,
+    latestBacktestStrategyVersion,
+    setLatestBacktestStrategyVersion,
+    lastBacktestParamValues,
+    setLastBacktestParamValues,
+    refreshSavedBacktestRuns,
+    activeBacktestSource,
+    setActiveBacktestSource,
+    setActiveSavedRunId,
+  } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
-  const [backtestData, setBacktestData] = useState<BacktestResponse | null>(null);
-  const [lastRunParameters, setLastRunParameters] = useState<BacktestParameter[]>(DEFAULT_PARAMETERS);
+  const [isSavingBacktest, setIsSavingBacktest] = useState(false);
+  const backtestData = latestBacktestData;
+  const lastRunParameters = useMemo(
+    () =>
+      DEFAULT_PARAMETERS.map((param) => ({
+        ...param,
+        value: lastBacktestParamValues[param.id] ?? param.value,
+      })),
+    [lastBacktestParamValues]
+  );
 
   const handleRunBacktest = async (values: RunParameterState) => {
     if (isRunningBacktest) return;
+    if (isWorkspaceSaving) {
+      addToast("Please wait for your strategy changes to finish saving before running a backtest.", "info");
+      return;
+    }
+    if (isDirty) {
+      addToast("Save a new version of your strategy before running a backtest.", "warning");
+      return;
+    }
 
     const strategyCode = entrypoint?.content ?? "";
     if (!strategyCode.trim()) {
@@ -110,13 +147,12 @@ export default function StrategyBacktest() {
     const initialCapital = Number.isFinite(parsedStartingEquity) ? parsedStartingEquity : 0;
 
     setIsRunningBacktest(true);
+    setActiveBacktestSource("live");
+    setActiveSavedRunId(null);
+    setLatestBacktestData(null);
+    setLatestBacktestStrategyVersion(strategy.current_version ?? null);
     addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
-    setLastRunParameters(
-      DEFAULT_PARAMETERS.map((param) => ({
-        ...param,
-        value: values[param.id] ?? param.value,
-      }))
-    );
+    setLastBacktestParamValues(values);
 
     try {
       const response = await runBacktest({
@@ -126,9 +162,11 @@ export default function StrategyBacktest() {
         initial_capital: initialCapital,
       });
 
-      setBacktestData(response);
+      setLatestBacktestData(response);
       addToast("Backtest finished", "success");
     } catch {
+      setLatestBacktestData(null);
+      setLatestBacktestStrategyVersion(null);
       addToast("Backtest failed", "warning");
     } finally {
       setIsRunningBacktest(false);
@@ -136,8 +174,56 @@ export default function StrategyBacktest() {
   };
 
 
-  const handleSaveResults = () => {
-    addToast("Saved backtest snapshot to results", "success");
+  const handleSaveResults = async () => {
+    if (isSavingBacktest) return;
+    if (!backtestData) {
+      addToast("Run a backtest before saving.", "warning");
+      return;
+    }
+    if (activeBacktestSource === "saved") {
+      addToast("This is an existing saved run. Run a new backtest to save again.", "info");
+      return;
+    }
+
+    setIsSavingBacktest(true);
+    addToast("Preparing upload…", "info");
+
+    try {
+      const presign = await presignBacktestRunUpload(strategy.id);
+
+      const gz = await gzipJson(backtestData);
+
+      await uploadPresignedPost(presign.s3.upload, gz, "run.json.gz");
+
+      const initialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
+
+      const finalizePayload: Parameters<typeof finalizeBacktestRun>[1] = {
+        run_id: presign.run_id,
+        s3_key: presign.s3.key,
+        backtest_params: {
+          name: lastBacktestParamValues.name ?? `Run ${presign.run_id}`,
+          start_date: lastBacktestParamValues.startDate ?? "",
+          end_date: lastBacktestParamValues.endDate ?? "",
+          initial_capital: Number.isFinite(initialCapital) ? initialCapital : 0,
+        },
+      };
+
+      if (latestBacktestStrategyVersion !== null && latestBacktestStrategyVersion !== undefined) {
+        finalizePayload.strategy_version = latestBacktestStrategyVersion;
+      }
+
+      await finalizeBacktestRun(strategy.id, finalizePayload);
+
+      await refreshSavedBacktestRuns();
+      setActiveBacktestSource("saved");
+      setActiveSavedRunId(presign.run_id);
+      addToast(`Saved run ${presign.run_id}`, "success");
+    } catch (error) {
+      console.error("Failed to save backtest run", error);
+      addToast("Save failed", "warning");
+    } finally {
+      setIsSavingBacktest(false);
+    }
   };
 
   const showPlaceholder = !backtestData || isRunningBacktest;
@@ -146,7 +232,10 @@ export default function StrategyBacktest() {
   const skeletonHighlightColor = animatePlaceholder ? "#1d2a3f" : skeletonBaseColor;
 
   const metrics = useMemo(() => buildMetrics(backtestData?.metrics), [backtestData]);
-  const candles = useMemo(() => buildCandles(backtestData?.equity_curve), [backtestData]);
+  const candles = useMemo(
+    () => buildCandles(backtestData?.ohlc, backtestData?.equity_curve),
+    [backtestData]
+  );
   const orders = useMemo(() => buildOrders(backtestData?.trades), [backtestData]);
   const equityStats = useMemo(
     () => buildEquityStats(backtestData, lastRunParameters),
@@ -170,6 +259,10 @@ export default function StrategyBacktest() {
               strategyName={strategy.name}
               parameters={lastRunParameters}
               isRunning={isRunningBacktest}
+              isDisabled={isRunningBacktest || isDirty || isWorkspaceSaving}
+              disabledReason={
+                isDirty ? "Save a new version before running." : isWorkspaceSaving ? "Saving changes…" : undefined
+              }
               onRun={handleRunBacktest}
             />
             <BacktestMetrics metrics={metrics} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
@@ -181,6 +274,8 @@ export default function StrategyBacktest() {
               stats={equityStats}
               candles={candles}
               onSave={handleSaveResults}
+              isSaving={isSavingBacktest}
+              isViewingSaved={activeBacktestSource === "saved"}
               showPlaceholder={showPlaceholder}
               animatePlaceholder={animatePlaceholder}
             />
@@ -192,7 +287,7 @@ export default function StrategyBacktest() {
   );
 }
 
-function BacktestParameters({ strategyName, parameters, isRunning, onRun }: BacktestParametersProps) {
+function BacktestParameters({ strategyName, parameters, isRunning, isDisabled, disabledReason, onRun }: BacktestParametersProps) {
   const [formState, setFormState] = useState<RunParameterState>(() =>
     parameters.reduce<RunParameterState>((acc, param) => {
       acc[param.id] = param.value;
@@ -254,9 +349,11 @@ function BacktestParameters({ strategyName, parameters, isRunning, onRun }: Back
           <button
             type="submit"
             className={`w-full rounded-xl px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
-              isRunning ? "cursor-not-allowed bg-slate-700" : "bg-gradient-to-r from-indigo-500 to-fuchsia-500 hover:opacity-90"
+              isDisabled
+                ? "cursor-not-allowed bg-slate-700"
+                : "bg-gradient-to-r from-indigo-500 to-fuchsia-500 hover:opacity-90"
             }`}
-            disabled={isRunning}
+            disabled={isDisabled}
           >
             {isRunning ? (
               <span className="flex items-center justify-center gap-2">
@@ -267,6 +364,9 @@ function BacktestParameters({ strategyName, parameters, isRunning, onRun }: Back
               "Run Backtest"
             )}
           </button>
+          {isDisabled && !isRunning && disabledReason ? (
+            <p className="mt-2 text-xs text-slate-400">{disabledReason}</p>
+          ) : null}
         </div>
       </form>
     </article>
@@ -306,7 +406,7 @@ function BacktestMetrics({ metrics, showPlaceholder, animatePlaceholder }: Backt
   );
 }
 
-function StrategyEquityChart({ strategyName, stats, candles, onSave, showPlaceholder, animatePlaceholder }: StrategyEquityChartProps) {
+function StrategyEquityChart({ strategyName, stats, candles, onSave, isSaving, isViewingSaved, showPlaceholder, animatePlaceholder }: StrategyEquityChartProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const [benchmarkEnabled, setBenchmarkEnabled] = useState(true);
   const [selectedBenchmark, setSelectedBenchmark] = useState("sp500");
@@ -372,14 +472,16 @@ function StrategyEquityChart({ strategyName, stats, candles, onSave, showPlaceho
         <button
           type="button"
           onClick={onSave}
-          disabled={showPlaceholder}
+          disabled={showPlaceholder || isSaving || isViewingSaved}
           className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
-            showPlaceholder ? "cursor-not-allowed bg-slate-700/70 text-slate-300" : "bg-fuchsia-500 hover:bg-fuchsia-400"
+            showPlaceholder || isSaving || isViewingSaved
+              ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
+              : "bg-fuchsia-500 hover:bg-fuchsia-400"
           }`}
         >
-          Save to Results
+          {isViewingSaved ? "Saved Run" : isSaving ? "Saving…" : "Save to Results"}
         </button>
-      </header>
+	      </header>
 
       <dl className="mt-6 grid gap-4 md:grid-cols-3 lg:grid-cols-5">
         {stats.map((stat) => (
@@ -478,7 +580,22 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
 }
 
 function toUnixTime(dateString: string): UTCTimestamp {
-  return Math.floor(new Date(dateString).getTime() / 1000) as UTCTimestamp;
+  const input = dateString.trim();
+
+  let normalized = input;
+  // Handle "YYYY-MM-DD HH:mm:ss" (common from pandas) deterministically as UTC.
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(input)) {
+    normalized = `${input.replace(" ", "T")}Z`;
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    normalized = `${input}T00:00:00Z`;
+  }
+
+  const ms = Date.parse(normalized);
+  if (Number.isNaN(ms)) {
+    return Math.floor(new Date(input).getTime() / 1000) as UTCTimestamp;
+  }
+
+  return Math.floor(ms / 1000) as UTCTimestamp;
 }
 
 const DEFAULT_PARAMETERS: BacktestParameter[] = [
@@ -530,12 +647,28 @@ const buildMetrics = (metrics?: Metrics): BacktestMetric[] => {
   ];
 };
 
-const buildCandles = (equityCurve?: EquityCurve): EquityCandle[] => {
+const buildCandlesFromOhlc = (ohlc?: OhlcSeries): EquityCandle[] => {
+  if (!ohlc) return [];
+
+  const entries = Object.entries(ohlc)
+    .map(([date, value]) => ({ date, value }))
+    .sort((a, b) => toUnixTime(a.date) - toUnixTime(b.date));
+
+  return entries.map(({ date, value }) => ({
+    time: toUnixTime(date),
+    open: value.open,
+    high: value.high,
+    low: value.low,
+    close: value.close,
+  }));
+};
+
+const buildCandlesFromEquityCurve = (equityCurve?: EquityCurve): EquityCandle[] => {
   if (!equityCurve) return [];
 
   const entries = Object.entries(equityCurve)
     .map(([date, value]) => ({ date, value }))
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    .sort((a, b) => toUnixTime(a.date) - toUnixTime(b.date));
 
   if (entries.length === 0) return [];
 
@@ -553,8 +686,14 @@ const buildCandles = (equityCurve?: EquityCurve): EquityCandle[] => {
     });
     previous = close;
   }
-  
+
   return candles;
+};
+
+const buildCandles = (ohlc?: OhlcSeries, equityCurve?: EquityCurve): EquityCandle[] => {
+  const fromOhlc = buildCandlesFromOhlc(ohlc);
+  if (fromOhlc.length > 0) return fromOhlc;
+  return buildCandlesFromEquityCurve(equityCurve);
 };
 
 const buildOrders = (trades?: Trade[]): BacktestOrder[] => {

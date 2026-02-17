@@ -8,6 +8,16 @@ output "artifacts_bucket_arn" {
   description = "ARN of the artifacts bucket."
 }
 
+output "backtests_bucket_name" {
+  value       = aws_s3_bucket.backtest_metrics.bucket
+  description = "Name of the S3 bucket storing backtest metrics."
+}
+
+output "backtests_bucket_arn" {
+  value       = aws_s3_bucket.backtest_metrics.arn
+  description = "ARN of the backtests bucket."
+}
+
 output "jwks_object_url" {
   value       = "https://${aws_s3_bucket.jwks.bucket}.s3.${var.aws_region}.amazonaws.com/.well-known/jwks.json"
   description = "Public URL for the JWKS JSON object."
@@ -61,6 +71,16 @@ output "user_access_applications_table_name" {
 output "user_access_applications_table_arn" {
   value       = aws_dynamodb_table.user_access_applications.arn
   description = "ARN of the UserAccessApplications table."
+}
+
+output "backtest_metrics_table_name" {
+  value       = aws_dynamodb_table.backtest_metrics.name
+  description = "Name of the BacktestMetrics table."
+}
+
+output "backtest_metrics_table_arn" {
+  value       = aws_dynamodb_table.backtest_metrics.arn
+  description = "ARN of the BacktestMetrics table."
 }
 
 output "http_api_id" {

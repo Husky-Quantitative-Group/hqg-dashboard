@@ -33,10 +33,20 @@ export type Metrics = {
 
 export type EquityCurve = Record<string, number>;
 
+export type OhlcPoint = {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
+export type OhlcSeries = Record<string, OhlcPoint>;
+
 export type BacktestResponse = {
   trades: Trade[];
   metrics: Metrics;
   equity_curve: EquityCurve;
+  ohlc?: OhlcSeries;
   final_value: number;
   final_positions: Record<string, number>;
   final_cash: number;
