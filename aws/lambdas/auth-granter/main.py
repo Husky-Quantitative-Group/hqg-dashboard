@@ -17,6 +17,7 @@ from boto3.dynamodb.conditions import Key
 import jwt
 
 APP_ENV = os.environ.get("APP_ENV", "prod").lower()
+AUTH_COOKIE_MAX_AGE_SECONDS = int(os.environ.get("AUTH_COOKIE_MAX_AGE_SECONDS", "86400"))
 
 CAS_BASE = "https://login.uconn.edu/cas"
 CAS_NS = {"cas": "http://www.yale.edu/tp/cas"}
@@ -117,7 +118,7 @@ def _build_auth_cookie(token: str) -> str:
     same_site = "Strict" if is_prod else "Lax"
     secure = "; Secure" if is_prod else ""
     domain = "; Domain=.uconnquant.com" if is_prod else ""
-    return f"hqg_auth_token={token}; Path=/; HttpOnly; SameSite={same_site}{domain}{secure}"
+    return f"hqg_auth_token={token}; Path=/; HttpOnly; SameSite={same_site}; Max-Age={AUTH_COOKIE_MAX_AGE_SECONDS}{domain}{secure}"
 
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     """
@@ -276,7 +277,7 @@ def mint_jwt(netid: str, roles: Optional[List[str]] = None):
     payload = {
         "sub": netid, # subject
         "iat": now,
-        "exp": now + 60 * 60 * 24,  # 24 hours
+        "exp": now + AUTH_COOKIE_MAX_AGE_SECONDS,
         "roles": roles,
     }
     headers: Optional[Dict[str, str]] = None
