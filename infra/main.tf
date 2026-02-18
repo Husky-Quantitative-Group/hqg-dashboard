@@ -1019,7 +1019,7 @@ resource "aws_lambda_function" "auth_granter" {
 
   environment {
     variables = {
-      CAS_CALLBACK_URL               = local.api_custom_domain_activated ? "https://${var.api_custom_domain_name}/auth/callback" : "${trimsuffix(aws_apigatewayv2_stage.stage.invoke_url, "/")}/auth/callback"
+      CAS_CALLBACK_URL               = local.is_prod ? (local.api_custom_domain_activated ? "https://${var.api_custom_domain_name}/auth/callback" : "${trimsuffix(aws_apigatewayv2_stage.stage.invoke_url, "/")}/auth/callback") : "${trimsuffix(var.frontend_base_url, "/")}/api/auth/callback"
       FRONTEND_BASE_URL              = var.frontend_base_url
       JWT_PRIVATE_KEY_PARAMETER      = aws_ssm_parameter.jwt_private_key.name
       JWKS_BUCKET                    = aws_s3_bucket.jwks.bucket
