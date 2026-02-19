@@ -2,7 +2,7 @@ name: Terraform Validation
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "prod"]
     paths:
       - "infra/**"
       - ".github/workflows/terraform-validate.yml"
