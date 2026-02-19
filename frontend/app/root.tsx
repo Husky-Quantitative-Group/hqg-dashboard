@@ -31,6 +31,22 @@ export const links: Route.LinksFunction = () => [
 
 const githubPagesPathFixScript = `
   (function(location) {
+    if (location.search.startsWith('?p=')) {
+      var encoded = location.search.slice(3);
+      var decodedPath = '';
+      try {
+        decodedPath = decodeURIComponent(encoded);
+      } catch (_err) {
+        decodedPath = '/';
+      }
+
+      if (decodedPath && decodedPath.charAt(0) === '/') {
+        window.history.replaceState(null, '', decodedPath);
+      }
+      return;
+    }
+
+    // Legacy fallback format kept for backward compatibility.
     if (location.search.startsWith('?/')) {
       var decoded = location.search
         .slice(2)
