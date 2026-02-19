@@ -1,0 +1,82 @@
+name: Terraform Apply
+
+on:
+  push:
+    branches: ["prod"]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform-apply.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-apply-prod
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply Terraform (prod)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: infra
+
+    env:
+      TF_IN_AUTOMATION: "true"
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Verify AWS role variable is configured
+        run: |
+          test -n "${{ vars.AWS_APPLY_ROLE_TO_ASSUME }}" || (echo "Missing repository variable AWS_APPLY_ROLE_TO_ASSUME" && exit 1)
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform init (S3 backend)
+        run: terraform init -input=false -backend-config=backend.hcl
+
+      - name: Terraform plan
+        id: plan
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          terraform plan -input=false -no-color -detailed-exitcode -var-file=prod.tfvars -out=tfplan 2>&1 | tee plan.txt
+          ec=${PIPESTATUS[0]}
+
+          if [ "$ec" -eq 0 ]; then
+            echo "status=no_changes" >> "$GITHUB_OUTPUT"
+          elif [ "$ec" -eq 2 ]; then
+            echo "status=changes" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=error" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload plan output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-apply-plan-${{ github.run_id }}
+          path: infra/plan.txt
+
+      - name: Terraform apply
+        if: steps.plan.outputs.status == 'changes'
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Fail when terraform plan errors
+        if: steps.plan.outputs.status == 'error'
+        run: |
+          echo "terraform plan failed"
+          exit 1
