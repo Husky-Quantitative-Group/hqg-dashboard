@@ -1,7 +1,7 @@
 import Editor from "@monaco-editor/react";
 import { useEffect, useMemo, useState } from "react";
 import { useStrategyWorkspace } from "./layout";
-import { deleteStrategyArtifact, renameStrategyArtifact, fetchFileRestrictions, DEFAULT_FILE_RESTRICTIONS, type FileRestrictions } from "~/api/strategyArtifacts";
+import { fetchFileRestrictions, DEFAULT_FILE_RESTRICTIONS, type FileRestrictions } from "~/api/strategyArtifacts";
 
 export default function StrategyCodeWorkspace() {
   const {
@@ -26,8 +26,6 @@ export default function StrategyCodeWorkspace() {
   const [editorReady, setEditorReady] = useState(false);
   const [newFileName, setNewFileName] = useState("");
   const [showCreateInput, setShowCreateInput] = useState(false);
-  const [isCreatingFile, setIsCreatingFile] = useState(false);
-  const [isDeletingFile, setIsDeletingFile] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<string | null>(null);
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -48,6 +46,19 @@ export default function StrategyCodeWorkspace() {
     loadRestrictions();
   }, []);
 
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = "";
+        return "";
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
+
   const handleCreateFile = async () => {
     if (!newFileName.trim() || !strategy) {
       addToast("Please enter a filename", "warning");
@@ -55,6 +66,13 @@ export default function StrategyCodeWorkspace() {
     }
 
     let fileName = newFileName.trim();
+    
+    const invalidChars = /[<>:"|\\?*]/;
+    if (invalidChars.test(fileName)) {
+      addToast('Filename has invalid characters: < > : " / \\ | ? *', "warning");
+      return;
+    }
+
     // Default to .txt if no extension provided
     if (!fileName.includes(".")) {
       fileName = `${fileName}.txt`;
@@ -71,53 +89,34 @@ export default function StrategyCodeWorkspace() {
       return;
     }
 
-    setIsCreatingFile(true);
-    try {
-      const { uploadStrategyArtifacts } = await import("~/api/strategyArtifacts");
-      const newFile = {
-        path: fileName,
-        language: fileName.endsWith(".py") ? "python" : fileName.endsWith(".txt") ? "plaintext" : "plaintext",
-        content: "",
-      };
-      await uploadStrategyArtifacts(strategy.id, [newFile]);
-      addFile(newFile);
-      setNewFileName("");
-      setShowCreateInput(false);
-      selectFile(fileName);
-      addToast(`Created file: ${fileName}`, "success");
-    } catch (error) {
-      console.error("Failed to create file", error);
-      addToast("Failed to create file", "warning");
-    } finally {
-      setIsCreatingFile(false);
-    }
+    const newFile = {
+      path: fileName,
+      language: fileName.endsWith(".py") ? "python" : fileName.endsWith(".txt") ? "plaintext" : "plaintext",
+      content: "",
+    };
+    addFile(newFile);
+    setNewFileName("");
+    setShowCreateInput(false);
+    selectFile(fileName);
+    addToast(`Created file: ${fileName} (pending save)`, "success");
   };
 
-  const handleDeleteFile = async (filePath: string) => {
+  const handleDeleteFile = (filePath: string) => {
     if (fileRestrictions.lockedFiles.includes(filePath)) {
       addToast(`Cannot delete locked file: ${filePath}`, "warning");
       return;
     }
 
-    if (!strategy || !confirm(`Delete ${filePath}?`)) {
+    if (!confirm(`Delete ${filePath}?`)) {
       return;
     }
 
     setContextMenu(null);
-    setIsDeletingFile(filePath);
-    try {
-      await deleteStrategyArtifact(strategy.id, filePath);
-      deleteFile(filePath);
-      addToast(`Deleted file: ${filePath}`, "success");
-    } catch (error) {
-      console.error("Failed to delete file", error);
-      addToast("Failed to delete file", "warning");
-    } finally {
-      setIsDeletingFile(null);
-    }
+    deleteFile(filePath);
+    addToast(`Marked for deletion: ${filePath} (click Save to confirm)`, "info");
   };
 
-  const handleRenameFile = async (oldPath: string) => {
+  const handleRenameFile = (oldPath: string) => {
     if (fileRestrictions.lockedFiles.includes(oldPath)) {
       addToast(`Cannot rename locked file: ${oldPath}`, "warning");
       setRenamingFile(null);
@@ -126,10 +125,16 @@ export default function StrategyCodeWorkspace() {
     }
 
     let newPath = renameValue.trim();
-    if (!newPath || !strategy) {
+    if (!newPath) {
       addToast("Please enter a filename", "warning");
       setRenamingFile(null);
       setRenameValue("");
+      return;
+    }
+
+    const invalidChars = /[<>:"|\\?*]/;
+    if (invalidChars.test(newPath)) {
+      addToast('Filename cannot contain: < > : " / \\ | ? *', "warning");
       return;
     }
 
@@ -155,16 +160,9 @@ export default function StrategyCodeWorkspace() {
     }
 
     setRenamingFile(null);
-    try {
-      await renameStrategyArtifact(strategy.id, oldPath, newPath);
-      renameFile(oldPath, newPath);
-      addToast(`Renamed file: ${oldPath} → ${newPath}`, "success");
-    } catch (error) {
-      console.error("Failed to rename file", error);
-      addToast("Failed to rename file", "warning");
-    } finally {
-      setRenameValue("");
-    }
+    renameFile(oldPath, newPath);
+    addToast(`Renamed file: ${oldPath} → ${newPath} (click Save to confirm)`, "info");
+    setRenameValue("");
   };
 
   const editorTheme = "vs-dark";
@@ -228,10 +226,10 @@ export default function StrategyCodeWorkspace() {
                 <button
                   type="button"
                   onClick={handleCreateFile}
-                  disabled={isCreatingFile || !newFileName.trim()}
+                  disabled={!newFileName.trim()}
                   className="flex-1 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-2 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50 hover:from-emerald-500 hover:to-teal-500"
                 >
-                  {isCreatingFile ? "Creating..." : "Create"}
+                  Create
                 </button>
                 <button
                   type="button"
@@ -254,7 +252,6 @@ export default function StrategyCodeWorkspace() {
           ) : (
             codeFiles.map((file) => {
               const isActive = file.path === selectedFilePath;
-              const isDeleting = isDeletingFile === file.path;
               const isRenaming = renamingFile === file.path;
               return (
                 <div key={file.path} className="relative group">
@@ -298,8 +295,7 @@ export default function StrategyCodeWorkspace() {
                           }
                         }}
                         onClick={() => selectFile(file.path)}
-                        disabled={isDeleting}
-                        className={`w-full flex items-center gap-2 rounded-xl border ${fileRowClass} px-3 py-2 text-sm text-left transition ${isActive ? "bg-slate-800/80" : ""} ${isDeleting ? "opacity-50" : ""} disabled:opacity-50 hover:bg-slate-800/40`}
+                        className={`w-full flex items-center gap-2 rounded-xl border ${fileRowClass} px-3 py-2 text-sm text-left transition ${isActive ? "bg-slate-800/80" : ""} hover:bg-slate-800/40`}
                         aria-current={isActive}
                       >
                         <span className={`flex-1 font-mono text-xs ${isActive ? fileActiveColor : fileIdleColor}`}>

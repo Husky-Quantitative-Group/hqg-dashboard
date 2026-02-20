@@ -38,41 +38,17 @@ export const uploadStrategyArtifacts = async (
   return response.data;
 };
 
-export const deleteStrategyArtifact = async (
-  strategyId: string | number,
-  artifactId: string
-): Promise<{ ok?: boolean }> => {
-  try {
-    const response = await coreApi.delete(`/strategies/${strategyId}/artifacts/${artifactId}`);
-    return response.data;
-  } catch (error) {
-    console.error("Delete artifact error details:", {
-      status: (error as any)?.response?.status,
-      data: (error as any)?.response?.data,
-      message: (error as any)?.message,
-    });
-    throw error;
-  }
-};
+export type FileOperation =
+  | { op: "put"; artifactId: string; content: string }
+  | { op: "delete"; artifactId: string };
 
-export const renameStrategyArtifact = async (
+export const commitStrategyChanges = async (
   strategyId: string | number,
-  artifactId: string,
-  newArtifactId: string
-): Promise<{ ok?: boolean; newName?: string }> => {
-  try {
-    const response = await coreApi.patch(`/strategies/${strategyId}/artifacts/${artifactId}`, {
-      newArtifactId,
-    });
-    return response.data;
-  } catch (error) {
-    console.error("Rename artifact error details:", {
-      status: (error as any)?.response?.status,
-      data: (error as any)?.response?.data,
-      message: (error as any)?.message,
-    });
-    throw error;
-  }
+  changes: FileOperation[]
+): Promise<{ ok?: boolean; version?: number; artifacts?: string[] }> => {
+  const payload = { changes };
+  const response = await coreApi.post(`/strategies/${strategyId}/artifacts`, payload);
+  return response.data;
 };
 
 export type FileRestrictions = {

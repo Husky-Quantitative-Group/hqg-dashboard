@@ -1,8 +1,8 @@
-import { NavLink, Outlet, useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, useOutletContext, useParams, useLocation, useBlocker } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchStrategyWorkspace, startStrategyRunExecution } from "./workspace";
 import type { BacktestResult } from "./workspace";
-import { fetchStrategyArtifactContent, uploadStrategyArtifacts, type StrategyFile } from "~/api/strategyArtifacts";
+import { fetchStrategyArtifactContent, uploadStrategyArtifacts, commitStrategyChanges, type StrategyFile, type FileOperation } from "~/api/strategyArtifacts";
 import { type Strategy } from "~/api/strategies";
 
 type ToastVariant = "info" | "success" | "warning";
@@ -50,6 +50,7 @@ function cloneFiles(items: StrategyFile[]): StrategyFile[] {
 export default function StrategyLayout() {
   const { strategyId = "1" } = useParams<{ strategyId?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [strategy, setStrategy] = useState<Strategy | null>(null);
   const [files, setFiles] = useState<StrategyFile[]>([]);
   const initialFilesRef = useRef<StrategyFile[]>([]);
@@ -66,6 +67,8 @@ export default function StrategyLayout() {
   const [loadingFilePath, setLoadingFilePath] = useState<string | null>(null);
   const [fileLoadError, setFileLoadError] = useState<string | null>(null);
   const [loadedFilePaths, setLoadedFilePaths] = useState<string[]>([]);
+  const [pendingDeletions, setPendingDeletions] = useState<Set<string>>(new Set());
+  const [renames, setRenames] = useState<Map<string, string>>(new Map()); 
 
   const entrypoint = useMemo(() => files.find((file) => file.isEntrypoint), [files]);
 
@@ -137,14 +140,17 @@ export default function StrategyLayout() {
 
   const addFile = useCallback((file: StrategyFile) => {
     setFiles((prev) => [...prev, file]);
-  }, []);
+    markDirty();
+  }, [markDirty]);
 
   const deleteFile = useCallback((path: string) => {
     setFiles((prev) => prev.filter((file) => file.path !== path));
     if (selectedFilePath === path) {
       setSelectedFilePath(null);
     }
-  }, [selectedFilePath]);
+    setPendingDeletions((prev) => new Set([...prev, path]));
+    markDirty();
+  }, [selectedFilePath, markDirty]);
 
   const renameFile = useCallback((oldPath: string, newPath: string) => {
     setFiles((prev) =>
@@ -153,7 +159,9 @@ export default function StrategyLayout() {
     if (selectedFilePath === oldPath) {
       setSelectedFilePath(newPath);
     }
-  }, [selectedFilePath]);
+    setRenames((prev) => new Map([...prev, [oldPath, newPath]]));
+    markDirty();
+  }, [selectedFilePath, markDirty]);
 
   // Lazy-load file content when a file is selected and not yet loaded.
   useEffect(() => {
@@ -199,13 +207,48 @@ export default function StrategyLayout() {
       return;
     }
 
-    const changedFiles = files.filter((file) => {
-      if (typeof file.content !== "string") return false;
-      const baseline = initialFilesRef.current.find((f) => f.path === file.path);
-      return !baseline || baseline.content !== file.content;
-    });
+    const changes: FileOperation[] = [];
+    const processedInitialFiles = new Set<string>();
 
-    if (changedFiles.length === 0) {
+    for (const file of files) {
+      const renameEntry = Array.from(renames.entries()).find(([_, newName]) => newName === file.path);
+      let initialFile: StrategyFile | undefined;
+
+      if (renameEntry) {
+        initialFile = initialFilesRef.current.find((f) => f.path === renameEntry[0]);
+        processedInitialFiles.add(renameEntry[0]);
+      } else {
+        initialFile = initialFilesRef.current.find((f) => f.path === file.path);
+        processedInitialFiles.add(file.path);
+      }
+
+      const contentChanged = !initialFile || file.content !== initialFile.content;
+      const wasRenamed = !!renameEntry;
+
+      if (contentChanged || wasRenamed) {
+        changes.push({
+          op: "put",
+          artifactId: file.path,
+          content: file.content,
+        });
+
+        if (renameEntry) {
+          changes.push({
+            op: "delete",
+            artifactId: renameEntry[0],
+          });
+        }
+      }
+    }
+
+    for (const path of pendingDeletions) {
+      changes.push({
+        op: "delete",
+        artifactId: path,
+      });
+    }
+
+    if (changes.length === 0) {
       setIsDirty(false);
       setAutosaveMessage("No changes to save");
       addToast("No changes to save", "info");
@@ -216,10 +259,12 @@ export default function StrategyLayout() {
     setAutosaveMessage("Saving...");
     addToast("Saving workspace", "info");
     try {
-      await uploadStrategyArtifacts(strategy.id, changedFiles);
+      await commitStrategyChanges(strategy.id, changes);
       initialFilesRef.current = cloneFiles(files);
       setIsDirty(false);
       setAutosaveMessage("All changes saved");
+      setPendingDeletions(new Set());
+      setRenames(new Map());
       setStrategy((prev) => (prev ? { ...prev, updatedAt: new Date().toISOString() } : prev));
       addToast("Workspace saved", "success");
     } catch (error) {
@@ -229,7 +274,7 @@ export default function StrategyLayout() {
     } finally {
       setIsSaving(false);
     }
-  }, [addToast, files, isSaving, strategy]);
+  }, [addToast, files, isSaving, strategy, renames, pendingDeletions]);
 
   const handleRun = useCallback(() => {
     if (isRunning || !strategy) {
@@ -259,13 +304,33 @@ export default function StrategyLayout() {
       });
   }, [addToast, isRunning, runs.length, strategy]);
 
+  const handleNavigation = useCallback((path: string) => {
+    navigate(path);
+  }, [navigate]);
+
   const handleClose = useCallback(() => {
-    if (isDirty) {
-      const confirmLeave = window.confirm("You have unsaved changes. Leave without saving?");
-      if (!confirmLeave) return;
-    }
     navigate("/strategies");
-  }, [isDirty, navigate]);
+  }, [navigate]);
+
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      isDirty && currentLocation.pathname !== nextLocation.pathname
+  );
+
+  useEffect(() => {
+    if (blocker.state === "blocked") {
+      const confirmLeave = window.confirm("You have unsaved changes in the code workspace. Leave without saving?");
+      if (confirmLeave) {
+        setFiles(cloneFiles(initialFilesRef.current));
+        setPendingDeletions(new Set());
+        setRenames(new Map());
+        setIsDirty(false);
+        blocker.proceed?.();
+      } else {
+        blocker.reset?.();
+      }
+    }
+  }, [blocker]);
 
   const surface = "border border-slate-800/70 bg-slate-950/60";
   const navSurface = "bg-slate-900/60";
@@ -383,29 +448,25 @@ export default function StrategyLayout() {
       <section className={`${surface} rounded-3xl shadow-xl`}> 
         <div className={`${navSurface} rounded-t-3xl border-b ${navBorder} px-4`}> 
           <nav className="flex items-center gap-3">
-            {TABS.map((tab) => (
-              <NavLink
-                key={tab.label}
-                to={tab.to}
-                end={tab.end}
-                className={({ isActive }) =>
-                  `relative px-4 py-4 text-sm font-semibold transition ${
+            {TABS.map((tab) => {
+              const isActive = location.pathname === `/strategies/${strategyId}${tab.to === "." ? "" : "/" + tab.to}`;
+              return (
+                <button
+                  key={tab.label}
+                  onClick={() => handleNavigation(tab.to === "." ? `.` : `./${tab.to}`)}
+                  className={`relative px-4 py-4 text-sm font-semibold transition ${
                     isActive ? "text-white" : "text-slate-400 hover:text-slate-200"
-                  }`
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    {tab.label}
-                    <span
-                      className={`absolute inset-x-3 -bottom-1 h-1 rounded-full transition ${
-                        isActive ? "bg-gradient-to-r from-fuchsia-500 to-indigo-500" : "bg-transparent"
-                      }`}
-                    />
-                  </>
-                )}
-              </NavLink>
-            ))}
+                  }`}
+                >
+                  {tab.label}
+                  <span
+                    className={`absolute inset-x-3 -bottom-1 h-1 rounded-full transition ${
+                      isActive ? "bg-gradient-to-r from-fuchsia-500 to-indigo-500" : "bg-transparent"
+                    }`}
+                  />
+                </button>
+              );
+            })}
           </nav>
         </div>
         <div className="px-6 py-6">

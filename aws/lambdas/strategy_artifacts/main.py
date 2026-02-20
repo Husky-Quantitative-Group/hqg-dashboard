@@ -19,6 +19,15 @@ LOCKED_FILES = {"README.md", "main.py", "requirements.txt"}
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {".py", ".md", ".txt"}
 
+# Invalid filename characters
+INVALID_FILENAME_CHARS = {"<", ">", ":", '"', "/", "\\", "|", "?", "*"}
+
+def _validate_filename(filename):
+    for char in INVALID_FILENAME_CHARS:
+        if char in filename:
+            return f'Filename cannot contain: < > : " / \\ | ? *'
+    return None
+
 def handler(event, context):
     route = event["requestContext"]["routeKey"]
 
@@ -32,7 +41,10 @@ def handler(event, context):
     if route == "POST /strategies/{id}/artifacts":
         strategy_id = event["pathParameters"]["id"]
         body = json.loads(event.get("body") or "{}")
-        return upload_artifacts(strategy_id, body)
+        if "changes" in body:
+            return commit_changes(strategy_id, body)
+        else:
+            return upload_artifacts(strategy_id, body)
 
     if route == "GET /strategies/{id}/artifacts/{artifactId}":
         strategy_id = event["pathParameters"]["id"]
@@ -43,12 +55,6 @@ def handler(event, context):
         strategy_id = event["pathParameters"]["id"]
         artifact_id = event["pathParameters"]["artifactId"]
         return delete_artifact(strategy_id, artifact_id)
-
-    if route == "PATCH /strategies/{id}/artifacts/{artifactId}":
-        strategy_id = event["pathParameters"]["id"]
-        artifact_id = event["pathParameters"]["artifactId"]
-        body = json.loads(event.get("body") or "{}")
-        return rename_artifact(strategy_id, artifact_id, body)
 
     return {"statusCode": 404, "body": "Not found"}
 
@@ -77,12 +83,15 @@ def list_artifacts(strategy_id):
         ExpressionAttributeValues={":s": strategy_id}
     )
     items = resp.get("Items", [])
-    artifact_ids = [item.get("artifact_id") for item in items if "artifact_id" in item]
+    artifact_ids = [item.get("artifact_id") for item in items if "artifact_id" in item and not item.get("deleted_at")]
     return _json(200, {"artifacts": artifact_ids})
 
 def download_artifact(strategy_id, artifact_id, max_bytes=1_000_000):
     artifact = ARTIFACTS_TABLE.get_item(Key={"strategy_id": strategy_id, "artifact_id": artifact_id}).get("Item")
     if not artifact:
+        return _json(404, {"message": "Artifact not found"})
+    
+    if artifact.get("deleted_at"):
         return _json(404, {"message": "Artifact not found"})
 
     latest_version = artifact.get("latest_version")
@@ -121,7 +130,8 @@ def download_artifact(strategy_id, artifact_id, max_bytes=1_000_000):
 
 def delete_artifact(strategy_id, artifact_id):
     """
-    Delete an artifact and all its versions from S3 and DynamoDB.
+    Soft delete an artifact by marking it with a deleted_at timestamp.
+    Preserve version history and S3 objects.
     """
     if artifact_id in LOCKED_FILES:
         return _json(403, {"message": f"Cannot delete locked file: {artifact_id}"})
@@ -131,117 +141,164 @@ def delete_artifact(strategy_id, artifact_id):
         return _json(404, {"message": "Artifact not found"})
 
     try:
-        pk = f"{strategy_id}#{artifact_id}"
-        versions_resp = VERSIONS_TABLE.query(
-            KeyConditionExpression="strategy_artifact_id = :pk",
-            ExpressionAttributeValues={":pk": pk}
-        )
-        versions = versions_resp.get("Items", [])
-
-        for version in versions:
-            s3_key = version.get("s3_key")
-            if s3_key:
-                try:
-                    s3.delete_object(Bucket=BUCKET, Key=s3_key)
-                except Exception as e:
-                    print(f"Warning: Failed to delete S3 object {s3_key}: {e}")
-            VERSIONS_TABLE.delete_item(
-                Key={
-                    "strategy_artifact_id": pk,
-                    "strategy_version": version.get("strategy_version")
-                }
-            )
-
-        ARTIFACTS_TABLE.delete_item(
-            Key={"strategy_id": strategy_id, "artifact_id": artifact_id}
+        now = datetime.now(timezone.utc).isoformat()
+        ARTIFACTS_TABLE.update_item(
+            Key={"strategy_id": strategy_id, "artifact_id": artifact_id},
+            UpdateExpression="SET deleted_at = :now",
+            ExpressionAttributeValues={":now": now}
         )
 
         return _json(200, {"ok": True, "message": f"Artifact {artifact_id} deleted"})
     except Exception as exc:
         return _json(500, {"message": f"Failed to delete artifact: {exc}"})
 
-def rename_artifact(strategy_id, artifact_id, body):
+def commit_changes(strategy_id, body):
     """
-    Rename an artifact by creating a new artifact record with the new name
-    and transferring all versions from the old artifact.
-    Prevents changing the file extension.
-    """
-    if artifact_id in LOCKED_FILES:
-        return _json(403, {"message": f"Cannot rename locked file: {artifact_id}"})
-
-    new_artifact_id = body.get("newArtifactId")
-    if not new_artifact_id:
-        return _json(400, {"message": "newArtifactId is required"})
-
-    old_artifact = ARTIFACTS_TABLE.get_item(
-        Key={"strategy_id": strategy_id, "artifact_id": artifact_id}
-    ).get("Item")
-    if not old_artifact:
-        return _json(404, {"message": "Artifact not found"})
-
-    old_ext = artifact_id[artifact_id.rfind("."):] if "." in artifact_id else ""
-    new_ext = new_artifact_id[new_artifact_id.rfind("."):] if "." in new_artifact_id else ""
+    Commit multiple file changes in a single version.
+    Expected body:
+    {
+      "changes": [
+        { "op": "put", "artifactId": "main.py", "content": "..." },
+        { "op": "delete", "artifactId": "old.py" }
+      ]
+    }
     
-    if old_ext != new_ext:
-        return _json(400, {"message": f"Cannot change file extension from {old_ext} to {new_ext}"})
+    For rename operations, send:
+    { "op": "put", "artifactId": "new.py", "content": "..." }  <- new file
+    { "op": "delete", "artifactId": "old.py" }  <- old file
+    """
+    changes = body.get("changes") or []
+    
+    if not isinstance(changes, list) or not changes:
+        return _json(400, {"message": "changes must be a non-empty list"})
 
-    new_artifact = ARTIFACTS_TABLE.get_item(
-        Key={"strategy_id": strategy_id, "artifact_id": new_artifact_id}
-    ).get("Item")
-    if new_artifact:
-        return _json(409, {"message": "Artifact with new name already exists"})
-
+    strategy = STRATEGIES_TABLE.get_item(Key={"id": strategy_id}).get("Item")
+    if not strategy:
+        return _json(404, {"message": "Strategy not found"})
+    
+    puts = []  
+    deletes = [] 
+    
+    for change in changes:
+        op = change.get("op")
+        artifact_id = change.get("artifactId")
+        
+        if not op or not artifact_id:
+            return _json(400, {"message": "Each change must include op and artifactId"})
+        
+        if op not in ["put", "delete"]:
+            return _json(400, {"message": f"Invalid operation: {op}. Must be 'put' or 'delete'"})
+        
+        filename_error = _validate_filename(artifact_id)
+        if filename_error:
+            return _json(400, {"message": filename_error})
+        
+        if artifact_id in LOCKED_FILES:
+            return _json(403, {"message": f"Cannot modify locked file: {artifact_id}"})
+        
+        if op == "put":
+            content = change.get("content")
+            if content is None:
+                return _json(400, {"message": f"Content required for put operation on {artifact_id}"})
+            if not isinstance(content, str):
+                return _json(400, {"message": f"Invalid content for {artifact_id}"})
+            
+            file_ext = artifact_id[artifact_id.rfind("."):] if "." in artifact_id else ""
+            if file_ext.lower() not in ALLOWED_EXTENSIONS:
+                return _json(400, {"message": f"File type {file_ext} not allowed. Allowed types: {', '.join(sorted(ALLOWED_EXTENSIONS))}"})
+            
+            max_file_bytes = 1_000_000
+            content_bytes = content.encode("utf-8")
+            if len(content_bytes) > max_file_bytes:
+                return _json(413, {"message": f"{artifact_id} exceeds max size of 1MB"})
+            
+            puts.append({"artifact_id": artifact_id, "content_bytes": content_bytes})
+        
+        elif op == "delete":
+            deletes.append(artifact_id)
+    
+    put_ids = {p["artifact_id"] for p in puts}
+    delete_ids = set(deletes)
+    conflicts = put_ids & delete_ids
+    if conflicts:
+        return _json(400, {"message": f"Conflicting operations on: {', '.join(conflicts)}"})
+    
+    current_version = int(strategy.get("current_version") or 0)
+    new_version = current_version + 1
+    now = datetime.now(timezone.utc).isoformat()
+    
     try:
-        old_pk = f"{strategy_id}#{artifact_id}"
-        versions_resp = VERSIONS_TABLE.query(
-            KeyConditionExpression="strategy_artifact_id = :pk",
-            ExpressionAttributeValues={":pk": old_pk}
-        )
-        versions = versions_resp.get("Items", [])
-
-        new_pk = f"{strategy_id}#{new_artifact_id}"
-        for version in versions:
-            old_s3_key = version.get("s3_key")
-            new_s3_key = old_s3_key.rsplit("/", 1)[0] + "/" + new_artifact_id
+        for item in puts:
+            artifact_id = item["artifact_id"]
+            content_bytes = item["content_bytes"]
             
-            try:
-                copy_source = {"Bucket": BUCKET, "Key": old_s3_key}
-                s3.copy_object(CopySource=copy_source, Bucket=BUCKET, Key=new_s3_key)                
-                s3.delete_object(Bucket=BUCKET, Key=old_s3_key)
-            except Exception as e:
-                print(f"Warning: Failed to rename S3 object {old_s3_key}: {e}")
+            key = f"{strategy_id}/v{new_version}/{artifact_id}"
+            s3.put_object(Bucket=BUCKET, Key=key, Body=content_bytes)
             
-            new_version_item = {
-                "strategy_artifact_id": new_pk,
-                "strategy_version": version.get("strategy_version"),
-                "s3_key": new_s3_key,
-                "created_at": version.get("created_at"),
-            }
-            VERSIONS_TABLE.put_item(Item=new_version_item)
-
-        latest_version = old_artifact.get("latest_version")
-        new_artifact_item = {
-            "strategy_id": strategy_id,
-            "artifact_id": new_artifact_id,
-            "latest_version": latest_version,
-        }
-        ARTIFACTS_TABLE.put_item(Item=new_artifact_item)
-
-        for version in versions:
-            VERSIONS_TABLE.delete_item(
-                Key={
-                    "strategy_artifact_id": old_pk,
-                    "strategy_version": version.get("strategy_version")
+            VERSIONS_TABLE.put_item(
+                Item={
+                    "strategy_artifact_id": f"{strategy_id}#{artifact_id}",
+                    "strategy_version": new_version,
+                    "s3_key": key,
+                    "created_at": now,
                 }
             )
-
-        ARTIFACTS_TABLE.delete_item(
-            Key={"strategy_id": strategy_id, "artifact_id": artifact_id}
+            
+            existing_artifact = ARTIFACTS_TABLE.get_item(
+                Key={"strategy_id": strategy_id, "artifact_id": artifact_id}
+            ).get("Item")
+            
+            if existing_artifact and existing_artifact.get("deleted_at"):
+                # Restore deleted artifact
+                ARTIFACTS_TABLE.update_item(
+                    Key={"strategy_id": strategy_id, "artifact_id": artifact_id},
+                    UpdateExpression="SET latest_version = :v REMOVE deleted_at",
+                    ExpressionAttributeValues={":v": new_version}
+                )
+            else:
+                ARTIFACTS_TABLE.put_item(
+                    Item={
+                        "strategy_id": strategy_id,
+                        "artifact_id": artifact_id,
+                        "latest_version": new_version,
+                    }
+                )
+        
+        for artifact_id in deletes:
+            artifact = ARTIFACTS_TABLE.get_item(
+                Key={"strategy_id": strategy_id, "artifact_id": artifact_id}
+            ).get("Item")
+            
+            if not artifact:
+                return _json(404, {"message": f"Artifact not found: {artifact_id}"})
+            
+            ARTIFACTS_TABLE.update_item(
+                Key={"strategy_id": strategy_id, "artifact_id": artifact_id},
+                UpdateExpression="SET deleted_at = :now",
+                ExpressionAttributeValues={":now": now}
+            )
+        
+        STRATEGIES_TABLE.update_item(
+            Key={"id": strategy_id},
+            UpdateExpression="SET current_version = :v, updated_at = :u",
+            ExpressionAttributeValues={
+                ":v": new_version,
+                ":u": now,
+            },
         )
-
-        return _json(200, {"ok": True, "newName": new_artifact_id})
+        
+        # Return the new artifact list
+        resp = ARTIFACTS_TABLE.query(
+            KeyConditionExpression="strategy_id = :s",
+            ExpressionAttributeValues={":s": strategy_id}
+        )
+        items = resp.get("Items", [])
+        artifact_ids = [item.get("artifact_id") for item in items if "artifact_id" in item and not item.get("deleted_at")]
+        
+        return _json(200, {"ok": True, "version": new_version, "artifacts": artifact_ids})
+    
     except Exception as exc:
-        return _json(500, {"message": f"Failed to rename artifact: {exc}"})
+        return _json(500, {"message": f"Failed to commit changes: {exc}"})
 
 def upload_artifacts(strategy_id, body):
     """
@@ -279,6 +336,11 @@ def upload_artifacts(strategy_id, body):
         if not isinstance(content, str):
             return _json(400, {"message": f"Invalid content for {artifact_id}"})
 
+        # Validate filename characters
+        filename_error = _validate_filename(artifact_id)
+        if filename_error:
+            return _json(400, {"message": filename_error})
+
         # Validate file extension
         file_ext = artifact_id[artifact_id.rfind("."):] if "." in artifact_id else ""
         if file_ext.lower() not in ALLOWED_EXTENSIONS:
@@ -310,13 +372,24 @@ def upload_artifacts(strategy_id, body):
                 }
             )
 
-            ARTIFACTS_TABLE.put_item(
-                Item={
-                    "strategy_id": strategy_id,
-                    "artifact_id": artifact_id,
-                    "latest_version": new_version,
-                }
-            )
+            existing_artifact = ARTIFACTS_TABLE.get_item(
+                Key={"strategy_id": strategy_id, "artifact_id": artifact_id}
+            ).get("Item")
+            
+            if existing_artifact and existing_artifact.get("deleted_at"):
+                ARTIFACTS_TABLE.update_item(
+                    Key={"strategy_id": strategy_id, "artifact_id": artifact_id},
+                    UpdateExpression="SET latest_version = :v REMOVE deleted_at",
+                    ExpressionAttributeValues={":v": new_version}
+                )
+            else:
+                ARTIFACTS_TABLE.put_item(
+                    Item={
+                        "strategy_id": strategy_id,
+                        "artifact_id": artifact_id,
+                        "latest_version": new_version,
+                    }
+                )
 
         STRATEGIES_TABLE.update_item(
             Key={"id": strategy_id},
