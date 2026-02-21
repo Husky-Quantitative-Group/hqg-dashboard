@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Redirecting...</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="refresh" content="0; url=/" />
+    <script>
+      (function () {
+        // GitHub Pages SPA fallback:
+        // redirect unknown route -> index with encoded target path.
+        var loc = window.location;
+        var target = loc.pathname + loc.search + loc.hash;
+        var base = loc.protocol + "//" + loc.host + "/";
+        var newUrl = base + "?p=" + encodeURIComponent(target);
+        loc.replace(newUrl);
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

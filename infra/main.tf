@@ -19,9 +19,6 @@ terraform {
       version = "~> 3.0"
     }
   }
-
-  # TODO: switch to remote state (S3 + DynamoDB lock table) before multi-user use.
-  # backend "s3" {}
 }
 
 provider "aws" {
@@ -32,6 +29,9 @@ data "aws_caller_identity" "current" {}
 
 locals {
   name_prefix                         = "${var.project}-${var.env}"
+  is_prod                             = lower(var.env) == "prod"
+  api_custom_domain_requested         = local.is_prod && var.api_custom_domain_name != null
+  api_custom_domain_activated         = local.api_custom_domain_requested && var.api_custom_domain_activate
   artifacts_bucket_name               = coalesce(var.artifacts_bucket_name, "${local.name_prefix}-strategy-artifacts-${data.aws_caller_identity.current.account_id}")
   backtests_bucket_name               = coalesce(var.backtests_bucket_name, "${local.name_prefix}-backtest-metrics-${data.aws_caller_identity.current.account_id}")
   jwks_bucket_name                    = coalesce(var.jwks_bucket_name, "${local.name_prefix}-jwks-${random_id.jwks_bucket_suffix.hex}")
@@ -56,7 +56,8 @@ locals {
 # ------------------------------
 
 resource "aws_s3_bucket" "strategy_artifacts" {
-  bucket = local.artifacts_bucket_name
+  bucket        = local.artifacts_bucket_name
+  force_destroy = lower(var.env) != "prod"
 
   tags = local.tags
 }
@@ -104,7 +105,8 @@ resource "aws_s3_bucket_cors_configuration" "strategy_artifacts" {
 # ------------------------------
 
 resource "aws_s3_bucket" "backtest_metrics" {
-  bucket = local.backtests_bucket_name
+  bucket        = local.backtests_bucket_name
+  force_destroy = lower(var.env) != "prod"
 
   tags = local.tags
 }
@@ -146,7 +148,7 @@ resource "aws_s3_bucket_cors_configuration" "backtest_metrics" {
     max_age_seconds = 300
   }
 }
-  
+
 # ------------------------------  
 # S3 bucket for JWKS
 # ------------------------------
@@ -156,7 +158,8 @@ resource "random_id" "jwks_bucket_suffix" {
 }
 
 resource "aws_s3_bucket" "jwks" {
-  bucket = local.jwks_bucket_name
+  bucket        = local.jwks_bucket_name
+  force_destroy = lower(var.env) != "prod"
 
   tags = local.tags
 }
@@ -700,6 +703,47 @@ resource "aws_apigatewayv2_stage" "stage" {
   tags = local.tags
 }
 
+resource "aws_acm_certificate" "api_custom_domain" {
+  count = local.api_custom_domain_requested ? 1 : 0
+
+  domain_name       = var.api_custom_domain_name
+  validation_method = "DNS"
+
+  tags = local.tags
+}
+
+resource "aws_acm_certificate_validation" "api_custom_domain" {
+  count = local.api_custom_domain_activated ? 1 : 0
+
+  certificate_arn = aws_acm_certificate.api_custom_domain[0].arn
+  validation_record_fqdns = [
+    for dvo in aws_acm_certificate.api_custom_domain[0].domain_validation_options :
+    dvo.resource_record_name
+  ]
+}
+
+resource "aws_apigatewayv2_domain_name" "api_custom_domain" {
+  count = local.api_custom_domain_activated ? 1 : 0
+
+  domain_name = var.api_custom_domain_name
+
+  domain_name_configuration {
+    certificate_arn = aws_acm_certificate_validation.api_custom_domain[0].certificate_arn
+    endpoint_type   = "REGIONAL"
+    security_policy = "TLS_1_2"
+  }
+
+  tags = local.tags
+}
+
+resource "aws_apigatewayv2_api_mapping" "api_custom_domain" {
+  count = local.api_custom_domain_activated ? 1 : 0
+
+  api_id      = aws_apigatewayv2_api.api.id
+  domain_name = aws_apigatewayv2_domain_name.api_custom_domain[0].id
+  stage       = aws_apigatewayv2_stage.stage.id
+}
+
 # ------------------------------
 # Lambda packaging
 # ------------------------------
@@ -931,7 +975,8 @@ resource "aws_lambda_function" "strategies" {
       STRATEGIES_TABLE                 = aws_dynamodb_table.strategies.name
       STRATEGY_ARTIFACTS_TABLE         = aws_dynamodb_table.strategy_artifacts.name
       STRATEGY_ARTIFACT_VERSIONS_TABLE = aws_dynamodb_table.strategy_artifact_versions.name
-      ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket    }
+      ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket
+    }
   }
 
   tags = local.tags
@@ -948,10 +993,10 @@ resource "aws_lambda_function" "strategy_artifacts" {
 
   environment {
     variables = {
-      STRATEGIES_TABLE                  = aws_dynamodb_table.strategies.name
-      STRATEGY_ARTIFACTS_TABLE          = aws_dynamodb_table.strategy_artifacts.name
-      STRATEGY_ARTIFACT_VERSIONS_TABLE  = aws_dynamodb_table.strategy_artifact_versions.name
-      ARTIFACT_BUCKET                   = aws_s3_bucket.strategy_artifacts.bucket
+      STRATEGIES_TABLE                 = aws_dynamodb_table.strategies.name
+      STRATEGY_ARTIFACTS_TABLE         = aws_dynamodb_table.strategy_artifacts.name
+      STRATEGY_ARTIFACT_VERSIONS_TABLE = aws_dynamodb_table.strategy_artifact_versions.name
+      ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket
     }
   }
 
@@ -974,12 +1019,12 @@ resource "aws_lambda_function" "auth_granter" {
 
   environment {
     variables = {
-      CAS_CALLBACK_URL  = "${trimsuffix(aws_apigatewayv2_stage.stage.invoke_url, "/")}/auth/callback"
-      FRONTEND_BASE_URL = var.frontend_base_url
-      JWT_PRIVATE_KEY_PARAMETER = aws_ssm_parameter.jwt_private_key.name
-      JWKS_BUCKET = aws_s3_bucket.jwks.bucket
-      APP_ENV = var.env
-      USERS_TABLE = aws_dynamodb_table.users.name
+      CAS_CALLBACK_URL               = local.is_prod ? (local.api_custom_domain_activated ? "https://${var.api_custom_domain_name}/auth/callback" : "${trimsuffix(aws_apigatewayv2_stage.stage.invoke_url, "/")}/auth/callback") : "${trimsuffix(var.frontend_base_url, "/")}/api/auth/callback"
+      FRONTEND_BASE_URL              = var.frontend_base_url
+      JWT_PRIVATE_KEY_PARAMETER      = aws_ssm_parameter.jwt_private_key.name
+      JWKS_BUCKET                    = aws_s3_bucket.jwks.bucket
+      APP_ENV                        = var.env
+      USERS_TABLE                    = aws_dynamodb_table.users.name
       USER_ACCESS_APPLICATIONS_TABLE = aws_dynamodb_table.user_access_applications.name
     }
   }
@@ -1033,8 +1078,8 @@ resource "aws_lambda_function" "jwt_key_rotator" {
 }
 
 resource "aws_scheduler_schedule" "jwt_key_rotator_monthly" {
-  name                = "${local.name_prefix}-jwt-key-rotator-monthly"
-  schedule_expression = "cron(0 0 1 * ? *)"
+  name                         = "${local.name_prefix}-jwt-key-rotator-monthly"
+  schedule_expression          = "cron(0 0 1 * ? *)"
   schedule_expression_timezone = "UTC"
 
   flexible_time_window {

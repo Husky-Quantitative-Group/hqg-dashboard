@@ -77,3 +77,15 @@ variable "frontend_base_url" {
   description = "Base URL for the frontend app (used for auth redirects)."
   type        = string
 }
+
+variable "api_custom_domain_name" {
+  description = "Optional custom domain for the HTTP API (for example: api.uconnquant.com)."
+  type        = string
+  default     = null
+}
+
+variable "api_custom_domain_activate" {
+  description = "Set true after ACM DNS validation records are in DNS and the certificate is issued."
+  type        = bool
+  default     = false
+}

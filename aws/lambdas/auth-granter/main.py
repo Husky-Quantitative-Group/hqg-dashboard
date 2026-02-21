@@ -17,12 +17,13 @@ from boto3.dynamodb.conditions import Key
 import jwt
 
 APP_ENV = os.environ.get("APP_ENV", "prod").lower()
+AUTH_COOKIE_MAX_AGE_SECONDS = int(os.environ.get("AUTH_COOKIE_MAX_AGE_SECONDS", "86400"))
 
 CAS_BASE = "https://login.uconn.edu/cas"
 CAS_NS = {"cas": "http://www.yale.edu/tp/cas"}
 
-FRONTEND_BASE_URL = os.environ["FRONTEND_BASE_URL"] # eg. http://localhost:3000 OR https://hqg-dash.com
-CAS_CALLBACK_URL = FRONTEND_BASE_URL + "/api/auth/callback"
+FRONTEND_BASE_URL = os.environ["FRONTEND_BASE_URL"].rstrip("/")  # eg. http://localhost:3000 OR https://hqg-dash.com
+CAS_CALLBACK_URL = os.environ.get("CAS_CALLBACK_URL", FRONTEND_BASE_URL + "/api/auth/callback").rstrip("/")
 
 JWT_PRIVATE_KEY_PARAMETER = os.environ["JWT_PRIVATE_KEY_PARAMETER"]
 JWKS_BUCKET = os.environ["JWKS_BUCKET"]
@@ -113,10 +114,11 @@ def _get_current_kid() -> Optional[str]:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 def _build_auth_cookie(token: str) -> str:
-    is_dev = APP_ENV == "dev"
-    same_site = "Lax" if is_dev else "None"
-    secure = "" if is_dev else "; Secure"
-    return f"hqg_auth_token={token}; Path=/; HttpOnly; SameSite={same_site}{secure}"
+    is_prod = APP_ENV == "prod"
+    same_site = "Strict" if is_prod else "Lax"
+    secure = "; Secure" if is_prod else ""
+    domain = "; Domain=.uconnquant.com" if is_prod else ""
+    return f"hqg_auth_token={token}; Path=/; HttpOnly; SameSite={same_site}; Max-Age={AUTH_COOKIE_MAX_AGE_SECONDS}{domain}{secure}"
 
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     """
@@ -275,7 +277,7 @@ def mint_jwt(netid: str, roles: Optional[List[str]] = None):
     payload = {
         "sub": netid, # subject
         "iat": now,
-        "exp": now + 60 * 60 * 24,  # 24 hours
+        "exp": now + AUTH_COOKIE_MAX_AGE_SECONDS,
         "roles": roles,
     }
     headers: Optional[Dict[str, str]] = None

@@ -7,6 +7,8 @@ terraform.tfstate.*
 *.tfvars
 !example.tfvars
 *.tfvars.json
+backend.tf
+backend.hcl
 override.tf
 override.tf.json
 *_override.tf
