@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const coreApiBaseUrl = env.VITE_CORE_API ?? "http://localhost:5000";
   const backtesterTarget = env.BACKTESTER_URL;
-  const engineTarget = env.ENGINE_URL;
+  const engineTarget = env.VITE_ENGINE_API;
   const backtesterEndpoint = "/api/v1/backtest";
 
   return {
