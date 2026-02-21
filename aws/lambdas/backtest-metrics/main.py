@@ -238,14 +238,16 @@ def dynamo_backtest_write(event):
     if not isinstance(metrics, dict):
         return _json(400, {"message": "Saved payload is missing metrics"})
 
-    trades = payload.get("trades") if isinstance(payload, dict) else None
-    trades_count = len(trades) if isinstance(trades, list) else 0
+    orders = payload.get("orders") if isinstance(payload, dict) else None
+    total_orders_metric = _finite_number_or_none(metrics.get("total_orders"))
+    trades_count = total_orders_metric if total_orders_metric is not None else (len(orders) if isinstance(orders, list) else 0)
 
-    final_value = payload.get("final_value") if isinstance(payload, dict) else None
-    if not isinstance(final_value, (int, float)) or not (final_value == final_value):
-        final_value = None
-
-    net_pnl = (final_value - float(initial_capital)) if final_value is not None else None
+    equity_stats = payload.get("equity_stats") if isinstance(payload, dict) else None
+    net_pnl = _finite_number_or_none(equity_stats.get("net_profit")) if isinstance(equity_stats, dict) else None
+    if net_pnl is None and isinstance(equity_stats, dict):
+        equity_value = _finite_number_or_none(equity_stats.get("equity"))
+        if equity_value is not None:
+            net_pnl = equity_value - float(initial_capital)
 
     sharpe = metrics.get("sharpe_ratio")
     win_rate = metrics.get("win_rate")
@@ -347,6 +349,13 @@ def _to_decimal(value):
         if not (value == value):
             return None
         return Decimal(str(value))
+    return None
+
+def _finite_number_or_none(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and value == value:
+        return float(value)
     return None
 
 def _clean_numbers(data):
