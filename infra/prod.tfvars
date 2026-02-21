@@ -7,5 +7,5 @@ api_custom_domain_activate = true
 
 tags = {
   Project = "hqg-dashboard"
-  Env = "prod"
+  Env     = "prod"
 }
