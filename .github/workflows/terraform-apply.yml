@@ -32,8 +32,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+
+      - name: Build Lambda layers
+        run: bash scripts/build_layers.sh
 
       - name: Verify AWS role variable is configured
         run: |
