@@ -5,6 +5,7 @@ on:
     branches: ["main"]
     paths:
       - "infra/**"
+      - "aws/**"
       - ".github/workflows/terraform-plan.yml"
 
 permissions:

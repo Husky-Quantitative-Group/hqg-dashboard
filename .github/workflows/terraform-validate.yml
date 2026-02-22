@@ -5,6 +5,7 @@ on:
     branches: ["main", "prod"]
     paths:
       - "infra/**"
+      - "aws/**"
       - ".github/workflows/terraform-validate.yml"
 
 permissions:
