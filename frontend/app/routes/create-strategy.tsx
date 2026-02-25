@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createStrategy, fetchStrategies, type Strategy } from "../api/strategies";
+import { useUser } from "../context/UserConext";
 
 type TemplateOption = {
   id: string;
@@ -9,6 +10,7 @@ type TemplateOption = {
 
 export default function CreateStrategy() {
   const navigate = useNavigate();
+  const { user } = useUser();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,6 +82,10 @@ export default function CreateStrategy() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!isFormValid || isSubmitting) return;
+    if (!user?.netid) {
+      setErrorMessage("Unable to determine your NetID for owner.");
+      return;
+    }
     setIsSubmitting(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -90,6 +96,7 @@ export default function CreateStrategy() {
         name: strategyName.trim(),
         description,
         tags,
+        owner: user.netid,
       });
       setSuccessMessage(`Created strategy ${newStrategy.name} (ID ${newStrategy.id})`);
       navigate(`/strategies/${newStrategy.id}`);
