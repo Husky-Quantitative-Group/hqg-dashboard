@@ -1,0 +1,39 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CallerIdentityRead",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "BackendBucketRead",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::hqg-prod-terraform-state"
+    },
+    {
+      "Sid": "BackendStateObjectRead",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::hqg-prod-terraform-state/hqg-prod-dashboard/prod/terraform.tfstate"
+    },
+    {
+      "Sid": "BackendLockTableDescribe",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:DescribeTable"
+      ],
+      "Resource": "arn:aws:dynamodb:us-east-1:016299216645:table/hqg-prod-terraform-locks"
+    }
+  ]
+}
