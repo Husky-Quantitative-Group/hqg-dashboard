@@ -35,7 +35,6 @@ export type CreateStrategyRequest = {
   name: string;
   description?: string;
   tags?: string[];
-  owner?: string;
 };
 
 export const createStrategy = async (payload: CreateStrategyRequest): Promise<Strategy> => {
@@ -44,7 +43,6 @@ export const createStrategy = async (payload: CreateStrategyRequest): Promise<St
     name: payload.name,
     description: payload.description ?? "",
     tags: payload.tags ?? [],
-    owner: payload.owner ?? "",
   });
   return response.data;
 };
