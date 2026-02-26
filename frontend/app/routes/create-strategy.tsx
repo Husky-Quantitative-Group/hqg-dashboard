@@ -82,10 +82,6 @@ export default function CreateStrategy() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!isFormValid || isSubmitting) return;
-    if (!user?.netid) {
-      setErrorMessage("Unable to determine your NetID for owner.");
-      return;
-    }
     setIsSubmitting(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -96,7 +92,6 @@ export default function CreateStrategy() {
         name: strategyName.trim(),
         description,
         tags,
-        owner: user.netid,
       });
       setSuccessMessage(`Created strategy ${newStrategy.name} (ID ${newStrategy.id})`);
       navigate(`/strategies/${newStrategy.id}`);
