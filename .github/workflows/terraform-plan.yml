@@ -48,6 +48,13 @@ jobs:
         run: |
           test -n "${{ vars.AWS_PLAN_ROLE_TO_ASSUME }}" || (echo "Missing repository variable AWS_PLAN_ROLE_TO_ASSUME" && exit 1)
 
+      - name: Debug OIDC context
+        run: |
+          echo "role=${{ vars.AWS_PLAN_ROLE_TO_ASSUME }}"
+          echo "event=$GITHUB_EVENT_NAME"
+          echo "ref=$GITHUB_REF"
+          echo "workflow_ref=$GITHUB_WORKFLOW_REF"
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
