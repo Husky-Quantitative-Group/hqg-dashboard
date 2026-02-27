@@ -29,7 +29,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
 
     if route_key == "POST /strategies":
         body = json.loads(event.get("body") or "{}")
-        return create_strategy(body)
+        return create_strategy(body, event)
 
     if route_key == "GET /strategies/{id}":
         strategy_id = (event.get("pathParameters") or {}).get("id")
@@ -49,7 +49,7 @@ def get_strategies() -> Dict[str, Any]:
     return _json(200, _clean_decimals(items))
 
 
-def create_strategy(body: Dict[str, Any]) -> Dict[str, Any]:
+def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, Any]:
     """
     Branch from an existing strategy and create a new one.
     Body expects:
@@ -57,7 +57,6 @@ def create_strategy(body: Dict[str, Any]) -> Dict[str, Any]:
       - name (str)
       - description (str, optional) -> becomes README.md content
       - tags (list[str], optional)
-      - owner (str, optional)
     """
     source_id = body.get("source_strategy_id") or body.get("sourceStrategyId")
     if not source_id:
@@ -69,7 +68,10 @@ def create_strategy(body: Dict[str, Any]) -> Dict[str, Any]:
 
     description = body.get("description") or ""
     tags = body.get("tags") or []
-    owner = body.get("owner") or ""
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+    owner = netid
 
     source = _get_strategy_by_id(source_id)
     if not source:
@@ -258,3 +260,18 @@ def _json(code: int, body: Any) -> Dict[str, Any]:
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps(body),
     }
+
+
+def _get_netid_from_event(event: Dict[str, Any]) -> Optional[str]:
+    request_context = event.get("requestContext") or {}
+    authorizer = request_context.get("authorizer") or {}
+
+    netid = authorizer.get("netid")
+    if not netid and isinstance(authorizer.get("lambda"), dict):
+        netid = authorizer.get("lambda", {}).get("netid")
+
+    if not isinstance(netid, str):
+        return None
+
+    netid = netid.strip()
+    return netid or None
