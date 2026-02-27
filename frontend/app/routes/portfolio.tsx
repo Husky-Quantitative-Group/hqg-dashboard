@@ -71,6 +71,8 @@ type PortfolioEventsTableProps = {
   isLoading: boolean;
 };
 
+type EventFilter = "all" | "order" | "rebalance";
+
 type AllocationBreakdownProps = {
   view: AllocationView;
   slices: AllocationSlice[];
@@ -512,10 +514,22 @@ function PortfolioEquityChart({ data, highlights, timeframe, onChangeTimeframe }
 }
 
 function PortfolioEventsTable({ events, isLoading }: PortfolioEventsTableProps) {
+  const [filter, setFilter] = useState<EventFilter>("all");
   const badgeClasses: Record<PortfolioEvent["type"], string> = {
     Order: "text-emerald-300 bg-emerald-400/10 border border-emerald-500/40",
     Rebalance: "text-sky-300 bg-sky-400/10 border border-sky-500/40",
   };
+  const orderCount = events.filter((event) => event.type === "Order").length;
+  const rebalanceCount = events.filter((event) => event.type === "Rebalance").length;
+  const filteredEvents = events.filter((event) => {
+    if (filter === "order") {
+      return event.type === "Order";
+    }
+    if (filter === "rebalance") {
+      return event.type === "Rebalance";
+    }
+    return true;
+  });
 
   return (
     <article className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 shadow-xl">
@@ -524,6 +538,32 @@ function PortfolioEventsTable({ events, isLoading }: PortfolioEventsTableProps) 
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Events</p>
           <h2 className="text-xl font-semibold text-white">Logs & Alerts</h2>
           <p className="text-sm text-slate-400">Execution and allocation events in the selected timeframe.</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Orders: {orderCount} • Rebalances: {rebalanceCount}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {[
+            { id: "all", label: "All" },
+            { id: "order", label: "Orders" },
+            { id: "rebalance", label: "Rebalances" },
+          ].map((option) => {
+            const active = filter === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                className={`rounded-lg border px-3 py-1 text-xs font-medium transition ${
+                  active
+                    ? "border-indigo-400 bg-indigo-500/20 text-indigo-200"
+                    : "border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white"
+                }`}
+                onClick={() => setFilter(option.id as EventFilter)}
+              >
+                {option.label}
+              </button>
+            );
+          })}
         </div>
       </header>
 
@@ -551,7 +591,14 @@ function PortfolioEventsTable({ events, isLoading }: PortfolioEventsTableProps) 
                 </td>
               </tr>
             ) : null}
-            {events.map((event, index) => (
+            {!isLoading && events.length > 0 && filteredEvents.length === 0 ? (
+              <tr>
+                <td className="px-4 py-3 text-slate-400" colSpan={3}>
+                  No events found for this filter.
+                </td>
+              </tr>
+            ) : null}
+            {filteredEvents.map((event, index) => (
               <tr key={event.id} className={index % 2 === 0 ? "bg-slate-950/30" : "bg-slate-950/10"}>
                 <td className="px-4 py-3 text-slate-200">{dateFormatter.format(new Date(event.timestamp))}</td>
                 <td className="px-4 py-3">
