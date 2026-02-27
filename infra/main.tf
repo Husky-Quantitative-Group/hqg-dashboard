@@ -343,6 +343,8 @@ resource "aws_dynamodb_table" "backtest_metrics" {
   tags = local.tags
 }
 
+
+
 # ------------------------------
 # IAM policy: allow Lambdas to use storage
 # ------------------------------

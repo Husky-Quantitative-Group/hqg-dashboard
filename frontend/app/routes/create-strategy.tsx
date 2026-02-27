@@ -245,7 +245,7 @@ export default function CreateStrategy() {
             </button>
             <button
               type="button"
-              onClick={() => navigate("/strategies")}
+              onClick={() => navigate("/")}
               className="rounded-xl border border-slate-700 px-5 py-2 text-sm font-semibold text-slate-100"
             >
               Cancel
