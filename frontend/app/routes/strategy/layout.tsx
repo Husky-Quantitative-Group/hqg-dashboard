@@ -34,6 +34,9 @@ export type StrategyWorkspaceContext = {
   setLatestBacktestData: (data: BacktestResponse | null) => void;
   latestBacktestStrategyVersion: number | string | null;
   setLatestBacktestStrategyVersion: (version: number | string | null) => void;
+  latestBacktestStrategyCode: string | null;
+  setLatestBacktestStrategyCode: (code: string | null) => void;
+  savedEntrypointContent: string | null;
   lastBacktestParamValues: Record<string, string>;
   setLastBacktestParamValues: (values: Record<string, string>) => void;
   activeBacktestSource: "live" | "saved" | null;
@@ -59,6 +62,11 @@ function cloneFiles(items: StrategyFile[]): StrategyFile[] {
   return items.map((file) => ({ ...file }));
 }
 
+function getEntrypointContent(items: StrategyFile[]): string | null {
+  const entrypoint = items.find((file) => file.isEntrypoint);
+  return typeof entrypoint?.content === "string" ? entrypoint.content : null;
+}
+
 export default function StrategyLayout() {
   const { strategyId = "1" } = useParams<{ strategyId?: string }>();
   const navigate = useNavigate();
@@ -80,6 +88,8 @@ export default function StrategyLayout() {
   const [loadedFilePaths, setLoadedFilePaths] = useState<string[]>([]);
   const [latestBacktestData, setLatestBacktestData] = useState<BacktestResponse | null>(null);
   const [latestBacktestStrategyVersion, setLatestBacktestStrategyVersion] = useState<number | string | null>(null);
+  const [latestBacktestStrategyCode, setLatestBacktestStrategyCode] = useState<string | null>(null);
+  const [savedEntrypointContent, setSavedEntrypointContent] = useState<string | null>(null);
   const [lastBacktestParamValues, setLastBacktestParamValues] = useState<Record<string, string>>({});
   const [activeBacktestSource, setActiveBacktestSource] = useState<"live" | "saved" | null>(null);
   const [activeSavedRunId, setActiveSavedRunId] = useState<string | null>(null);
@@ -132,6 +142,8 @@ export default function StrategyLayout() {
         }
         setLatestBacktestData(null);
         setLatestBacktestStrategyVersion(null);
+        setLatestBacktestStrategyCode(null);
+        setSavedEntrypointContent(getEntrypointContent(payload.files));
         setLastBacktestParamValues({});
         setActiveBacktestSource(null);
         setActiveSavedRunId(null);
@@ -229,7 +241,16 @@ export default function StrategyLayout() {
         setFiles((prev) => prev.map((f) => (f.path === selectedFilePath ? { ...f, content: content ?? "" } : f)));
         initialFilesRef.current = initialFilesRef.current.some((f) => f.path === selectedFilePath)
           ? initialFilesRef.current.map((f) => (f.path === selectedFilePath ? { ...f, content: content ?? "" } : f))
-          : [...initialFilesRef.current, { path: selectedFilePath, content: content ?? "", language: file?.language ?? "plaintext" }];
+          : [
+              ...initialFilesRef.current,
+              {
+                path: selectedFilePath,
+                content: content ?? "",
+                language: file?.language ?? "plaintext",
+                isEntrypoint: file?.isEntrypoint,
+              },
+            ];
+        setSavedEntrypointContent(getEntrypointContent(initialFilesRef.current));
         setLoadedFilePaths((prev) => (prev.includes(selectedFilePath) ? prev : [...prev, selectedFilePath]));
       })
       .catch((error) => {
@@ -272,6 +293,7 @@ export default function StrategyLayout() {
     try {
       const result = await uploadStrategyArtifacts(strategy.id, changedFiles);
       initialFilesRef.current = cloneFiles(files);
+      setSavedEntrypointContent(getEntrypointContent(initialFilesRef.current));
       setIsDirty(false);
       setAutosaveMessage("All changes saved");
       setStrategy((prev) =>
@@ -388,6 +410,9 @@ export default function StrategyLayout() {
     setLatestBacktestData,
     latestBacktestStrategyVersion,
     setLatestBacktestStrategyVersion,
+    latestBacktestStrategyCode,
+    setLatestBacktestStrategyCode,
+    savedEntrypointContent,
     lastBacktestParamValues,
     setLastBacktestParamValues,
     activeBacktestSource,
