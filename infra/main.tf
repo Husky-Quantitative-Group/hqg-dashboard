@@ -89,17 +89,6 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "strategy_artifact
   }
 }
 
-resource "aws_s3_bucket_cors_configuration" "strategy_artifacts" {
-  bucket = aws_s3_bucket.strategy_artifacts.id
-
-  cors_rule {
-    allowed_headers = ["*"]
-    allowed_methods = ["GET", "PUT", "HEAD"]
-    allowed_origins = ["http://localhost:5173", "https://dashboard.uconnquant.com"]
-    max_age_seconds = 300
-  }
-}
-
 # ------------------------------
 # S3 bucket for backtest storage
 # ------------------------------
@@ -144,7 +133,7 @@ resource "aws_s3_bucket_cors_configuration" "backtest_metrics" {
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "PUT", "POST", "HEAD"]
-    allowed_origins = ["http://localhost:5173", "https://dashboard.uconnquant.com"]
+    allowed_origins = [var.frontend_base_url, "https://dashboard.uconnquant.com"]
     max_age_seconds = 300
   }
 }
