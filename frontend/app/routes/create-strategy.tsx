@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createStrategy, fetchStrategies, type Strategy } from "../api/strategies";
+import { useUser } from "../context/UserConext";
 
 type TemplateOption = {
   id: string;
@@ -9,6 +10,7 @@ type TemplateOption = {
 
 export default function CreateStrategy() {
   const navigate = useNavigate();
+  const { user } = useUser();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -17,7 +19,6 @@ export default function CreateStrategy() {
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
-  const [owner, setOwner] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -91,7 +92,6 @@ export default function CreateStrategy() {
         name: strategyName.trim(),
         description,
         tags,
-        owner: owner.trim(),
       });
       setSuccessMessage(`Created strategy ${newStrategy.name} (ID ${newStrategy.id})`);
       navigate(`/strategies/${newStrategy.id}`);
@@ -194,18 +194,7 @@ export default function CreateStrategy() {
             />
           </label>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-2">
-              <span className="text-xs uppercase tracking-wide text-slate-500">Owner</span>
-              <input
-                value={owner}
-                onChange={(e) => setOwner(e.target.value)}
-                className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                placeholder="Owner name"
-              />
-            </label>
-
-            <label className="flex flex-col gap-2">
+          <label className="flex flex-col gap-2">
               <span className="text-xs uppercase tracking-wide text-slate-500">Tags</span>
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
@@ -241,8 +230,7 @@ export default function CreateStrategy() {
                   Add
                 </button>
               </div>
-            </label>
-          </div>
+          </label>
 
           {errorMessage && <p className="text-sm text-rose-400">{errorMessage}</p>}
           {successMessage && <p className="text-sm text-emerald-400">{successMessage}</p>}

@@ -35,7 +35,6 @@ export type CreateStrategyRequest = {
   name: string;
   description?: string;
   tags?: string[];
-  owner?: string;
 };
 
 export const createStrategy = async (payload: CreateStrategyRequest): Promise<Strategy> => {
@@ -44,7 +43,7 @@ export const createStrategy = async (payload: CreateStrategyRequest): Promise<St
     name: payload.name,
     description: payload.description ?? "",
     tags: payload.tags ?? [],
-    owner: payload.owner ?? "",
+    // owner is inferred by the backend from the auth token
   });
   return response.data;
 };

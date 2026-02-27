@@ -348,7 +348,7 @@ export default function StrategyLayout() {
       const confirmLeave = window.confirm("You have unsaved changes. Leave without saving?");
       if (!confirmLeave) return;
     }
-    navigate("/strategies");
+    navigate("/");
   }, [isDirty, navigate]);
 
   const surface = "border border-slate-800/70 bg-slate-950/60";
