@@ -9,7 +9,13 @@ import {
 } from "lightweight-charts";
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
-import { runBacktest, type BacktestResponse, type EquityCurve, type Metrics, type OhlcSeries, type Trade } from "~/api/backtest";
+import {
+  runBacktest,
+  type BacktestCandle,
+  type BacktestOrder,
+  type BacktestResponse,
+  type Metrics,
+} from "~/api/backtest";
 import { finalizeBacktestRun, gzipJson, presignBacktestRunUpload, uploadPresignedPost } from "~/api/backtestMetrics";
 import { useStrategyWorkspace } from "./layout";
 
@@ -36,15 +42,6 @@ type EquityStat = {
 };
 
 type EquityCandle = CandlestickData;
-
-type BacktestOrder = {
-  id: string;
-  timestamp: string;
-  ticker: string;
-  type: "Buy" | "Sell";
-  price: number;
-  amount: number;
-};
 
 type RunParameterState = Record<string, string>;
 
@@ -195,15 +192,23 @@ export default function StrategyBacktest() {
 
       await uploadPresignedPost(presign.s3.upload, gz, "run.json.gz");
 
-      const initialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
+      const normalizeDateValue = (value?: string) => {
+        if (!value) return "";
+        return value.split("T")[0]?.trim() ?? "";
+      };
+      const responseInitialCapital = backtestData.parameters?.starting_equity;
+      const fallbackInitialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
+      const initialCapital = Number.isFinite(responseInitialCapital) ? responseInitialCapital : fallbackInitialCapital;
+      const startDate = normalizeDateValue(lastBacktestParamValues.startDate ?? backtestData.parameters?.start_date);
+      const endDate = normalizeDateValue(lastBacktestParamValues.endDate ?? backtestData.parameters?.end_date);
 
       const finalizePayload: Parameters<typeof finalizeBacktestRun>[1] = {
         run_id: presign.run_id,
         s3_key: presign.s3.key,
         backtest_params: {
-          name: lastBacktestParamValues.name ?? `Run ${presign.run_id}`,
-          start_date: lastBacktestParamValues.startDate ?? "",
-          end_date: lastBacktestParamValues.endDate ?? "",
+          name: lastBacktestParamValues.name ?? backtestData.parameters?.name ?? `Run ${presign.run_id}`,
+          start_date: startDate,
+          end_date: endDate,
           initial_capital: Number.isFinite(initialCapital) ? initialCapital : 0,
         },
       };
@@ -232,15 +237,9 @@ export default function StrategyBacktest() {
   const skeletonHighlightColor = animatePlaceholder ? "#1d2a3f" : skeletonBaseColor;
 
   const metrics = useMemo(() => buildMetrics(backtestData?.metrics), [backtestData]);
-  const candles = useMemo(
-    () => buildCandles(backtestData?.ohlc, backtestData?.equity_curve),
-    [backtestData]
-  );
-  const orders = useMemo(() => buildOrders(backtestData?.trades), [backtestData]);
-  const equityStats = useMemo(
-    () => buildEquityStats(backtestData, lastRunParameters),
-    [backtestData, lastRunParameters]
-  );
+  const candles = useMemo(() => buildCandles(backtestData?.candles), [backtestData]);
+  const orders = useMemo(() => buildOrders(backtestData?.orders), [backtestData]);
+  const equityStats = useMemo(() => buildEquityStats(backtestData), [backtestData]);
 
   return (
     <SkeletonTheme baseColor={skeletonBaseColor} highlightColor={skeletonHighlightColor}>
@@ -558,44 +557,29 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
               </tr>
             </thead>
             <tbody>
-              {orders.map((order) => (
-                <tr key={order.id} className="border-t border-slate-800 text-slate-200">
-                  <td className="px-3 py-3">{dateFormatter.format(new Date(order.timestamp))}</td>
-                  <td className="px-3 py-3 font-semibold">{order.ticker}</td>
-                  <td className="px-3 py-3">
-                    <span className={`font-semibold ${order.type === "Buy" ? "text-emerald-400" : "text-rose-400"}`}>
-                      {order.type}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3 font-mono">{currencyFormatter.format(order.price)}</td>
-                  <td className="px-3 py-3">{numberFormatter.format(order.amount)}</td>
-                </tr>
-              ))}
+              {orders.map((order) => {
+                const isBuy = String(order.action).toLowerCase() === "buy";
+                const orderType = isBuy ? "Buy" : "Sell";
+                return (
+                  <tr key={order.id} className="border-t border-slate-800 text-slate-200">
+                    <td className="px-3 py-3">{dateFormatter.format(new Date(order.timestamp))}</td>
+                    <td className="px-3 py-3 font-semibold">{order.symbol}</td>
+                    <td className="px-3 py-3">
+                      <span className={`font-semibold ${isBuy ? "text-emerald-400" : "text-rose-400"}`}>
+                        {orderType}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 font-mono">{currencyFormatter.format(order.price)}</td>
+                    <td className="px-3 py-3">{numberFormatter.format(order.shares)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
     </article>
   );
-}
-
-function toUnixTime(dateString: string): UTCTimestamp {
-  const input = dateString.trim();
-
-  let normalized = input;
-  // Handle "YYYY-MM-DD HH:mm:ss" (common from pandas) deterministically as UTC.
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(input)) {
-    normalized = `${input.replace(" ", "T")}Z`;
-  } else if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
-    normalized = `${input}T00:00:00Z`;
-  }
-
-  const ms = Date.parse(normalized);
-  if (Number.isNaN(ms)) {
-    return Math.floor(new Date(input).getTime() / 1000) as UTCTimestamp;
-  }
-
-  return Math.floor(ms / 1000) as UTCTimestamp;
 }
 
 const DEFAULT_PARAMETERS: BacktestParameter[] = [
@@ -613,6 +597,11 @@ const formatNumber = (value: number | null, decimals = 2) =>
 const formatPercent = (value: number | null, decimals = 2) => {
   if (value === null) return "—";
   return `${(value * 100).toFixed(decimals)}%`;
+};
+
+const formatPercentValue = (value: number | null, decimals = 2) => {
+  if (value === null) return "—";
+  return `${value.toFixed(decimals)}%`;
 };
 
 const formatMoney = (value: number | null) => (value === null ? "—" : currencyFormatter.format(value));
@@ -647,90 +636,48 @@ const buildMetrics = (metrics?: Metrics): BacktestMetric[] => {
   ];
 };
 
-const buildCandlesFromOhlc = (ohlc?: OhlcSeries): EquityCandle[] => {
-  if (!ohlc) return [];
+const toCandleTime = (time: number): UTCTimestamp => Math.floor(time) as UTCTimestamp;
 
-  const entries = Object.entries(ohlc)
-    .map(([date, value]) => ({ date, value }))
-    .sort((a, b) => toUnixTime(a.date) - toUnixTime(b.date));
+const buildCandles = (candles?: BacktestCandle[]): EquityCandle[] => {
+  if (!Array.isArray(candles) || candles.length === 0) return [];
 
-  return entries.map(({ date, value }) => ({
-    time: toUnixTime(date),
-    open: value.open,
-    high: value.high,
-    low: value.low,
-    close: value.close,
+  return [...candles]
+    .sort((a, b) => a.time - b.time)
+    .map((candle) => ({
+      time: toCandleTime(candle.time),
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+    }));
+};
+
+const buildOrders = (orders?: BacktestOrder[]): BacktestOrder[] => {
+  if (!Array.isArray(orders)) return [];
+
+  return orders.map((order, index) => ({
+    ...order,
+    id: order.id || `${order.timestamp}-${order.symbol}-${index}`,
   }));
 };
 
-const buildCandlesFromEquityCurve = (equityCurve?: EquityCurve): EquityCandle[] => {
-  if (!equityCurve) return [];
-
-  const entries = Object.entries(equityCurve)
-    .map(([date, value]) => ({ date, value }))
-    .sort((a, b) => toUnixTime(a.date) - toUnixTime(b.date));
-
-  if (entries.length === 0) return [];
-
-  const candles: EquityCandle[] = [];
-  let previous = entries[0].value;
-  for (const entry of entries) {
-    const open = previous;
-    const close = entry.value;
-    candles.push({
-      time: toUnixTime(entry.date),
-      open,
-      high: Math.max(open, close),
-      low: Math.min(open, close),
-      close,
-    });
-    previous = close;
-  }
-
-  return candles;
-};
-
-const buildCandles = (ohlc?: OhlcSeries, equityCurve?: EquityCurve): EquityCandle[] => {
-  const fromOhlc = buildCandlesFromOhlc(ohlc);
-  if (fromOhlc.length > 0) return fromOhlc;
-  return buildCandlesFromEquityCurve(equityCurve);
-};
-
-const buildOrders = (trades?: Trade[]): BacktestOrder[] => {
-  if (!trades) return [];
-
-  return trades.map((trade, index) => ({
-    id: `${trade.timestamp}-${trade.symbol}-${index}`,
-    timestamp: trade.timestamp,
-    ticker: trade.symbol,
-    type: trade.action === "buy" ? "Buy" : "Sell",
-    price: trade.price,
-    amount: trade.shares,
-  }));
-};
-
-const buildEquityStats = (data: BacktestResponse | null, params: BacktestParameter[]): EquityStat[] => {
+const buildEquityStats = (data: BacktestResponse | null): EquityStat[] => {
   if (!data) return [];
 
-  const startingEquityParam = params.find((p) => p.id === "startingEquity")?.value ?? "0";
-  const parsedStarting = Number.parseFloat(startingEquityParam.replace(/,/g, ""));
-  const initialCapital = Number.isFinite(parsedStarting) ? parsedStarting : 0;
-
-  const finalEquity = data.final_value ?? null;
-  const cash = data.final_cash ?? null;
-  const netProfit = finalEquity === null ? null : finalEquity - initialCapital;
-  const returnPct = netProfit === null || initialCapital === 0 ? null : netProfit / initialCapital;
+  const finalEquity = toDecimal(data.equity_stats?.equity);
+  const fees = toDecimal(data.equity_stats?.fees);
+  const netProfit = toDecimal(data.equity_stats?.net_profit);
+  const returnPct = toDecimal(data.equity_stats?.return_pct);
+  const volume = toDecimal(data.equity_stats?.volume);
 
   const profitAccent = netProfit !== null && netProfit >= 0 ? "text-emerald-300" : "text-rose-300";
   const returnAccent = returnPct !== null && returnPct >= 0 ? "text-emerald-300" : "text-rose-300";
 
-  const positionsCount = Array.isArray(data.final_positions) ? data.final_positions.length : 0;
-
   return [
     { id: "finalEquity", label: "Final Equity", value: formatMoney(finalEquity), accentClass: "text-white" },
     { id: "netProfit", label: "Net Profit", value: formatMoney(netProfit), accentClass: profitAccent },
-    { id: "return", label: "Return", value: formatPercent(returnPct), accentClass: returnAccent },
-    { id: "cash", label: "Cash", value: formatMoney(cash), accentClass: "text-white" },
-    { id: "positions", label: "Positions", value: String(positionsCount), accentClass: "text-white" },
+    { id: "return", label: "Return", value: formatPercentValue(returnPct), accentClass: returnAccent },
+    { id: "fees", label: "Fees", value: formatMoney(fees), accentClass: "text-white" },
+    { id: "volume", label: "Volume", value: volume === null ? "—" : numberFormatter.format(volume), accentClass: "text-white" },
   ];
 };

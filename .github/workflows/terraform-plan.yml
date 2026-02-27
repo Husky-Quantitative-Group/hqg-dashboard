@@ -1,0 +1,87 @@
+name: Terraform Plan
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "infra/**"
+      - "aws/**"
+      - ".github/workflows/terraform-plan.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-plan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Plan Terraform (prod)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: infra
+
+    env:
+      TF_IN_AUTOMATION: "true"
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Build Lambda layers
+        run: bash scripts/build_layers.sh
+
+      - name: Verify AWS role variable is configured
+        run: |
+          test -n "${{ vars.AWS_PLAN_ROLE_TO_ASSUME }}" || (echo "Missing repository variable AWS_PLAN_ROLE_TO_ASSUME" && exit 1)
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform init (S3 backend)
+        run: terraform init -input=false -backend-config=backend.hcl
+
+      - name: Terraform plan
+        id: plan
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          terraform plan -input=false -no-color -detailed-exitcode -refresh=false -lock=false -var-file=prod.tfvars -out=tfplan 2>&1 | tee plan.txt
+          ec=${PIPESTATUS[0]}
+
+          if [ "$ec" -eq 0 ]; then
+            echo "status=no_changes" >> "$GITHUB_OUTPUT"
+          elif [ "$ec" -eq 2 ]; then
+            echo "status=changes" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=error" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload plan output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ github.run_id }}
+          path: infra/plan.txt
+
+      - name: Fail when terraform plan errors
+        if: steps.plan.outputs.status == 'error'
+        run: |
+          echo "terraform plan failed"
+          exit 1
