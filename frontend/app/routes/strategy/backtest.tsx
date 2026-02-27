@@ -151,7 +151,7 @@ export default function StrategyBacktest() {
     setLatestBacktestStrategyVersion(
       savedEntrypointContent !== null && strategyCode === savedEntrypointContent ? strategy.current_version ?? null : null
     );
-    addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
+    addToast("Queued backtest", "info");
     setLastBacktestParamValues(values);
 
     try {
@@ -229,7 +229,6 @@ export default function StrategyBacktest() {
         run_id: presign.run_id,
         s3_key: presign.s3.key,
         backtest_params: {
-          name: lastBacktestParamValues.name ?? backtestData.parameters?.name ?? `Run ${presign.run_id}`,
           start_date: startDate,
           end_date: endDate,
           initial_capital: Number.isFinite(initialCapital) ? initialCapital : 0,
@@ -371,7 +370,7 @@ function BacktestParameters({ strategyName, parameters, isRunning, isDisabled, d
       </header>
       <form onSubmit={handleSubmit} className="mt-5 grid gap-4 md:grid-cols-2">
         {parameters.map((param) => (
-          <div key={param.id} className="space-y-1">
+          <div key={param.id} className={`space-y-1 ${param.id === "startingEquity" ? "md:col-span-2" : ""}`}>
             <label htmlFor={param.id} className="text-sm font-medium text-slate-200">
               {param.label}
             </label>
@@ -653,7 +652,6 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
 }
 
 const DEFAULT_PARAMETERS: BacktestParameter[] = [
-  { id: "name", label: "Name", value: "Backtest Trial 1", type: "text" },
   { id: "startingEquity", label: "Starting Equity", value: "100000", prefix: "$", type: "currency" },
   { id: "startDate", label: "Start Date", value: "2020-01-03", type: "date" },
   { id: "endDate", label: "End Date", value: "2024-01-03", type: "date" },

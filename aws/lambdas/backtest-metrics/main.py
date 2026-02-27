@@ -201,12 +201,11 @@ def dynamo_backtest_write(event):
     if not isinstance(backtest_params, dict):
         return _json(400, {"message": "backtest_params must be an object"})
 
-    name = (backtest_params.get("name") or "").strip()
     start_date = (backtest_params.get("start_date") or "").strip()
     end_date = (backtest_params.get("end_date") or "").strip()
     initial_capital = backtest_params.get("initial_capital")
-    if not name or not start_date or not end_date:
-        return _json(400, {"message": "backtest_params must include name, start_date, end_date"})
+    if not start_date or not end_date:
+        return _json(400, {"message": "backtest_params must include start_date and end_date"})
     if not isinstance(initial_capital, (int, float)) or not (initial_capital == initial_capital):
         return _json(400, {"message": "backtest_params.initial_capital must be a number"})
 
@@ -257,11 +256,11 @@ def dynamo_backtest_write(event):
     item = {
         "strategy_id": strategy_id,
         "run_id": run_id,
+        "name": "Backtest Run",
         "time_created": now,
         "user": netid,
         "strategy_version": strategy_version,
         "backtest_params": {
-            "name": name,
             "start_date": start_date,
             "end_date": end_date,
             "initial_capital": _to_decimal(initial_capital),
