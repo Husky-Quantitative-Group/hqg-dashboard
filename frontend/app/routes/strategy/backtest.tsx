@@ -109,6 +109,7 @@ export default function StrategyBacktest() {
     savedEntrypointContent,
     lastBacktestParamValues,
     setLastBacktestParamValues,
+    savedBacktestRuns,
     refreshSavedBacktestRuns,
     activeBacktestSource,
     setActiveBacktestSource,
@@ -205,6 +206,13 @@ export default function StrategyBacktest() {
       return;
     }
 
+    const responseInitialCapital = backtestData.parameters?.starting_equity;
+    const fallbackInitialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
+    const initialCapital = Number.isFinite(responseInitialCapital) ? responseInitialCapital : fallbackInitialCapital;
+    const normalizedInitialCapital = Number.isFinite(initialCapital) ? initialCapital : 0;
+    const startDate = normalizeDateValue(lastBacktestParamValues.startDate ?? backtestData.parameters?.start_date);
+    const endDate = normalizeDateValue(lastBacktestParamValues.endDate ?? backtestData.parameters?.end_date);
+
     setIsSavingBacktest(true);
     addToast("Preparing upload…", "info");
 
@@ -215,23 +223,13 @@ export default function StrategyBacktest() {
 
       await uploadPresignedPost(presign.s3.upload, gz, "run.json.gz");
 
-      const normalizeDateValue = (value?: string) => {
-        if (!value) return "";
-        return value.split("T")[0]?.trim() ?? "";
-      };
-      const responseInitialCapital = backtestData.parameters?.starting_equity;
-      const fallbackInitialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
-      const initialCapital = Number.isFinite(responseInitialCapital) ? responseInitialCapital : fallbackInitialCapital;
-      const startDate = normalizeDateValue(lastBacktestParamValues.startDate ?? backtestData.parameters?.start_date);
-      const endDate = normalizeDateValue(lastBacktestParamValues.endDate ?? backtestData.parameters?.end_date);
-
       const finalizePayload: Parameters<typeof finalizeBacktestRun>[1] = {
         run_id: presign.run_id,
         s3_key: presign.s3.key,
         backtest_params: {
           start_date: startDate,
           end_date: endDate,
-          initial_capital: Number.isFinite(initialCapital) ? initialCapital : 0,
+          initial_capital: normalizedInitialCapital,
         },
       };
 
@@ -272,12 +270,38 @@ export default function StrategyBacktest() {
     if (strategy.current_version === null || strategy.current_version === undefined) {
       return "Save a strategy version before saving results.";
     }
+    const responseInitialCapital = backtestData.parameters?.starting_equity;
+    const fallbackInitialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
+    const initialCapital = Number.isFinite(responseInitialCapital) ? responseInitialCapital : fallbackInitialCapital;
+    const normalizedInitialCapital = Number.isFinite(initialCapital) ? initialCapital : 0;
+    const startDate = normalizeDateValue(lastBacktestParamValues.startDate ?? backtestData.parameters?.start_date);
+    const endDate = normalizeDateValue(lastBacktestParamValues.endDate ?? backtestData.parameters?.end_date);
+    const strategyVersionKey = String(strategy.current_version);
+    const duplicateRun = savedBacktestRuns.find((run) => {
+      if (String(run.strategy_version ?? "") !== strategyVersionKey) return false;
+      const params = run.backtest_params;
+      if (!params) return false;
+      const runInitialCapital = toFiniteNumber(params.initial_capital);
+      return (
+        normalizeDateValue(params.start_date) === startDate &&
+        normalizeDateValue(params.end_date) === endDate &&
+        runInitialCapital !== null &&
+        runInitialCapital === normalizedInitialCapital
+      );
+    });
+    if (duplicateRun) {
+      return `Duplicate saved run exists (${duplicateRun.run_id.slice(0, 10)}).`;
+    }
     return undefined;
   }, [
     activeBacktestSource,
     backtestData,
     currentEntrypointContent,
+    lastBacktestParamValues.endDate,
+    lastBacktestParamValues.startDate,
+    lastBacktestParamValues.startingEquity,
     latestBacktestStrategyCode,
+    savedBacktestRuns,
     savedEntrypointContent,
     strategy.current_version,
   ]);
@@ -656,6 +680,16 @@ const DEFAULT_PARAMETERS: BacktestParameter[] = [
   { id: "startDate", label: "Start Date", value: "2020-01-03", type: "date" },
   { id: "endDate", label: "End Date", value: "2024-01-03", type: "date" },
 ];
+
+const normalizeDateValue = (value?: string) => {
+  if (!value) return "";
+  return value.split("T")[0]?.trim() ?? "";
+};
+
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value;
+};
 
 const toDecimal = (value: number | undefined) => (Number.isFinite(value) ? (value as number) : null);
 
