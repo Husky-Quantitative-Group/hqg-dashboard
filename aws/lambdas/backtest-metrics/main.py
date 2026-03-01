@@ -10,8 +10,11 @@ import boto3
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 
+from wonderwords import RandomWord
+
 s3 = boto3.client("s3")
 dynamo = boto3.resource("dynamodb")
+_WORD_GENERATOR = RandomWord()
 
 BACKTESTS_BUCKET = os.environ.get("BACKTESTS_BUCKET", "")
 BACKTEST_METRICS_TABLE = os.environ.get("BACKTEST_METRICS_TABLE", "")
@@ -221,9 +224,9 @@ def dynamo_backtest_write(event):
 
     table = dynamo.Table(BACKTEST_METRICS_TABLE)
     try:
+        strategy_runs = _list_strategy_runs(table, strategy_id)
         duplicate_item = _find_duplicate_run(
-            table,
-            strategy_id=strategy_id,
+            strategy_runs,
             run_id=run_id,
             strategy_version_key=strategy_version_key,
             start_date=normalized_start_date,
@@ -287,7 +290,7 @@ def dynamo_backtest_write(event):
     item = {
         "strategy_id": strategy_id,
         "run_id": run_id,
-        "name": "Backtest Run",
+        "name": _generate_backtest_name(len(strategy_runs)),
         "time_created": now,
         "user": netid,
         "strategy_version": strategy_version,
@@ -415,13 +418,15 @@ def _normalize_date_value(value):
         return ""
     return value.split("T")[0].strip()
 
-def _find_duplicate_run(table, *, strategy_id, run_id, strategy_version_key, start_date, end_date, initial_capital):
+def _list_strategy_runs(table, strategy_id):
     resp = table.query(
         KeyConditionExpression=Key("strategy_id").eq(strategy_id),
         ConsistentRead=True,
         ScanIndexForward=False,
     )
-    items = resp.get("Items", [])
+    return resp.get("Items", [])
+
+def _find_duplicate_run(items, *, run_id, strategy_version_key, start_date, end_date, initial_capital):
     for item in items:
         if item.get("run_id") == run_id:
             continue
@@ -446,6 +451,19 @@ def _find_duplicate_run(table, *, strategy_id, run_id, strategy_version_key, sta
             return item
 
     return None
+
+def _generate_backtest_name(existing_runs_count):
+    if not isinstance(existing_runs_count, int) or existing_runs_count < 0:
+        existing_runs_count = 0
+
+    capped = existing_runs_count % (26 * 26)
+    first = chr(ord("a") + (capped // 26))
+    second = chr(ord("a") + (capped % 26))
+
+    adjective = _WORD_GENERATOR.word(starts_with=first, include_parts_of_speech=["adjectives"])
+    noun = _WORD_GENERATOR.word(starts_with=second, include_parts_of_speech=["nouns"])
+
+    return f"{adjective.strip().title()} {noun.strip().title()}"
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
