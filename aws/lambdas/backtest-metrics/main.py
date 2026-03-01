@@ -18,6 +18,7 @@ _WORD_GENERATOR = RandomWord()
 
 BACKTESTS_BUCKET = os.environ.get("BACKTESTS_BUCKET", "")
 BACKTEST_METRICS_TABLE = os.environ.get("BACKTEST_METRICS_TABLE", "")
+STRATEGIES_TABLE = os.environ.get("STRATEGIES_TABLE", "")
 
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -185,7 +186,12 @@ def get_backtest_run(event):
     )
 
 def dynamo_backtest_write(event):
-    ctx = _require_strategy_context(event, require_table=True, require_bucket=True)
+    ctx = _require_strategy_context(
+        event,
+        require_table=True,
+        require_bucket=True,
+        require_strategies_table=True,
+    )
     if isinstance(ctx, dict):
         return ctx
     strategy_id, netid = ctx
@@ -285,6 +291,7 @@ def dynamo_backtest_write(event):
     sharpe = metrics.get("sharpe_ratio")
     win_rate = metrics.get("win_rate")
     max_drawdown = metrics.get("max_drawdown")
+    strategy_metadata_metrics = _strategy_metadata_metrics(metrics)
 
     now = _now()
     item = {
@@ -319,8 +326,23 @@ def dynamo_backtest_write(event):
     except ClientError as exc:
         code = (exc.response.get("Error") or {}).get("Code")
         if code == "ConditionalCheckFailedException":
+            metadata_warning = _update_strategy_metadata(strategy_id, strategy_metadata_metrics)
+            if metadata_warning:
+                return _json(500, {"message": metadata_warning})
+
+            try:
+                existing = table.get_item(Key={"strategy_id": strategy_id, "run_id": run_id}).get("Item")
+            except ClientError:
+                existing = None
+
+            if existing:
+                return _json(200, _clean_decimals(existing))
             return _json(409, {"message": "Run already finalized"})
         return _json(500, {"message": f"Failed to write DynamoDB item: {code or 'error'}"})
+
+    metadata_warning = _update_strategy_metadata(strategy_id, strategy_metadata_metrics)
+    if metadata_warning:
+        return _json(500, {"message": metadata_warning})
 
     return _json(201, _clean_decimals(item))
 
@@ -339,11 +361,13 @@ def _netid_from_authorizer(event):
 
     return None
 
-def _require_strategy_context(event, *, require_table=False, require_bucket=False):
+def _require_strategy_context(event, *, require_table=False, require_bucket=False, require_strategies_table=False):
     if require_table and not BACKTEST_METRICS_TABLE:
         return _json(500, {"message": "BACKTEST_METRICS_TABLE is not configured"})
     if require_bucket and not BACKTESTS_BUCKET:
         return _json(500, {"message": "BACKTESTS_BUCKET is not configured"})
+    if require_strategies_table and not STRATEGIES_TABLE:
+        return _json(500, {"message": "STRATEGIES_TABLE is not configured"})
 
     strategy_id = (event.get("pathParameters") or {}).get("id")
     if not strategy_id:
@@ -412,6 +436,46 @@ def _strategy_version_key(value):
     if value is None:
         return ""
     return str(value).strip()
+
+def _strategy_metadata_metrics(metrics):
+    if not isinstance(metrics, dict):
+        return {}
+
+    result = {}
+    for key, raw_value in metrics.items():
+        value = _to_decimal(raw_value)
+        if value is not None:
+            result[key] = value
+
+    return result
+
+def _update_strategy_metadata(strategy_id, strategy_metadata_metrics):
+    if not STRATEGIES_TABLE:
+        print("Strategy metadata update skipped: STRATEGIES_TABLE is not configured")
+        return "STRATEGIES_TABLE is not configured"
+
+    strategy_table = dynamo.Table(STRATEGIES_TABLE)
+    update_kwargs = {
+        "Key": {"id": strategy_id},
+        "ConditionExpression": "attribute_exists(#id)",
+        "ExpressionAttributeNames": {"#id": "id", "#metrics": "metrics"},
+    }
+    if strategy_metadata_metrics:
+        update_kwargs["UpdateExpression"] = "SET #metrics = :metrics"
+        update_kwargs["ExpressionAttributeValues"] = {":metrics": strategy_metadata_metrics}
+    else:
+        update_kwargs["UpdateExpression"] = "REMOVE #metrics"
+
+    try:
+        strategy_table.update_item(**update_kwargs)
+    except ClientError as exc:
+        err = exc.response.get("Error") or {}
+        code = err.get("Code") or "error"
+        message = err.get("Message") or ""
+        print(f"Failed to update strategy metadata for strategy_id={strategy_id}: {code} {message}")
+        return f"Failed to update strategy metadata: {code}"
+
+    return None
 
 def _normalize_date_value(value):
     if not isinstance(value, str):
