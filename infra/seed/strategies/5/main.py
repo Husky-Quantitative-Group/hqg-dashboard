@@ -1,4 +1,12 @@
-from hqg_algorithms import Strategy, Cadence, Slice, PortfolioView
+from hqg_algorithms import (
+    Strategy,
+    Cadence,
+    Slice,
+    PortfolioView,
+    Signal,
+    TargetWeights,
+    Hold,
+)
 import numpy as np
 import pandas as pd
 import cvxpy as cp
@@ -6,6 +14,23 @@ from collections import deque
 
 
 class MeanVar(Strategy):
+    universe = [
+        "SPY",
+        "IWM",
+        "EFA",
+        "EEM",
+        "QQQ",
+        "VNQ",
+        "GLD",
+        "DBC",
+        "AGG",
+        "LQD",
+        "HYG",
+        "TLT",
+        "TIP",
+        "BTC",
+    ]
+    cadence = Cadence()
     
     def __init__(self):
 
@@ -18,41 +43,20 @@ class MeanVar(Strategy):
         # Store price history internally
         # Structure: {"SPY": deque([price1, price2, ...], maxlen=lookback_days), ...}
         self.price_history: dict[str, deque] = {}
-        
-    def universe(self) -> list[str]:
-        return [
-            "SPY",  # US large-cap
-            "IWM",  # US small-cap
-            "EFA",  # Developed ex-US
-            "EEM",  # Emerging markets
-            "QQQ",  # US large-cap growth tilt
-            "VNQ",  # US REITs
-            "GLD",  # Gold
-            "DBC",  # Broad commodities
-            "AGG",  # US aggregate bonds
-            "LQD",  # Investment-grade corporates
-            "HYG",  # High yield
-            "TLT",  # Long Treasuries
-            "TIP",  # Treasury inflation protected securities
-            "BTC"   # Bitcoin
-        ]
-    
-    def cadence(self) -> Cadence:
-        return Cadence()
-    
-    def on_data(self, data: Slice, portfolio: PortfolioView) -> dict[str, float] | None:
+
+    def on_data(self, data: Slice, portfolio: PortfolioView) -> Signal:
         self._update_history(data)
         
-        tradable = [sym for sym in self.universe() if data.has(sym) and data.close(sym) is not None]
+        tradable = [sym for sym in self.universe if data.has(sym) and data.close(sym) is not None]
         
         if len(tradable) < 3:
-            return None
+            return Hold()
         
         # Build price DataFrame from history
         price_df = self._build_price_dataframe(tradable)
         
         if price_df is None or price_df.shape[0] < self.min_obs:
-            return None  # Insufficient history
+            return Hold()
         
         # Calculate expected returns and covariance
         mu = self._get_mu(price_df)
@@ -62,7 +66,7 @@ class MeanVar(Strategy):
         weights = self._allocate(mu, Sigma)
         
         if weights is None or len(weights) == 0:
-            return None
+            return Hold()
         
         # Convert to weight dictionary, filtering negligible weights
         weight_dict = {}
@@ -70,10 +74,10 @@ class MeanVar(Strategy):
             if w > 1e-6:
                 weight_dict[sym] = float(w)
         
-        return weight_dict
+        return TargetWeights(weight_dict)
     
     def _update_history(self, data: Slice) -> None:
-        for symbol in self.universe():
+        for symbol in self.universe:
             close_price = data.close(symbol)
             if close_price is not None:
                 if symbol not in self.price_history:

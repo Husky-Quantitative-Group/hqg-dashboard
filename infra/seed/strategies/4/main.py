@@ -8,7 +8,16 @@ Logic: Compute 14-day RSI on AAPL.
        Otherwise → AAPL 50% / BND 50%
 No shorting.
 """
-from hqg_algorithms import Strategy, Cadence, Slice, PortfolioView, BarSize
+from hqg_algorithms import (
+    Strategy,
+    Cadence,
+    Slice,
+    PortfolioView,
+    BarSize,
+    Signal,
+    TargetWeights,
+    Hold,
+)
 from collections import deque
 
 START_DATE = "2010-01-01"
@@ -16,16 +25,13 @@ END_DATE = "2025-06-30"
 
 
 class MeanReversionRSI_Daily(Strategy):
+    universe = ["AAPL", "BND"]
+    cadence = Cadence(bar_size=BarSize.DAILY)
+
     def __init__(self):
         self._period = 14
         self._prices = deque(maxlen=self._period + 1)
         self._first_trade = True
-
-    def universe(self) -> list[str]:
-        return ["AAPL", "BND"]
-
-    def cadence(self) -> Cadence:
-        return Cadence(bar_size=BarSize.DAILY)
 
     def _compute_rsi(self) -> float | None:
         if len(self._prices) < self._period + 1:
@@ -52,10 +58,10 @@ class MeanReversionRSI_Daily(Strategy):
         rs = avg_gain / avg_loss
         return 100.0 - (100.0 / (1.0 + rs))
 
-    def on_data(self, data: Slice, portfolio: PortfolioView) -> dict[str, float] | None:
+    def on_data(self, data: Slice, portfolio: PortfolioView) -> Signal:
         price = data.close("AAPL")
         if price is None:
-            return None
+            return Hold()
 
         self._prices.append(price)
         rsi = self._compute_rsi()
@@ -63,14 +69,13 @@ class MeanReversionRSI_Daily(Strategy):
         if rsi is None:
             if self._first_trade:
                 self._first_trade = False
-                return {"BND": 1.0}
-            return None
+                return TargetWeights({"BND": 1.0})
+            return Hold()
 
         self._first_trade = False
 
         if rsi < 30:
-            return {"AAPL": 0.8, "BND": 0.2}
-        elif rsi > 70:
-            return {"BND": 1.0}
-        else:
-            return {"AAPL": 0.5, "BND": 0.5}
+            return TargetWeights({"AAPL": 0.8, "BND": 0.2})
+        if rsi > 70:
+            return TargetWeights({"BND": 1.0})
+        return TargetWeights({"AAPL": 0.5, "BND": 0.5})
