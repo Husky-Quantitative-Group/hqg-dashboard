@@ -5,23 +5,31 @@ Seed the storage layer with initial strategies.
 Creates:
 - S3 objects for versioned files (sourced from infra/seed/strategies/<id>).
 - DynamoDB items in Strategies, StrategyArtifacts, StrategyArtifactVersions.
+- Gzipped backtest payloads in the backtests bucket.
+- DynamoDB items in BacktestMetrics.
 Optional:
 - DynamoDB item in Users to grant an admin role.
 
 Example:
-    python infra/seed/main.py \
+    python3 seed/main.py \
     --bucket "$(terraform output -raw artifacts_bucket_name)" \
+    --backtests-bucket "$(terraform output -raw backtests_bucket_name)" \
     --strategies-table "$(terraform output -raw strategies_table_name)" \
     --artifacts-table "$(terraform output -raw strategy_artifacts_table_name)" \
     --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
+    --backtest-metrics-table "$(terraform output -raw backtest_metrics_table_name)" \
     --users-table "$(terraform output -raw users_table_name)" \
     --admin-netid "YOUR_NETID" \
     --region us-east-1
 """
 
 import argparse
+import gzip
 import json
+import secrets
+import time
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 import sys
 from typing import Iterable
@@ -34,10 +42,53 @@ ROOT = Path(__file__).parent
 STRATEGIES_DIR = ROOT / "strategies"
 STRATEGIES_JSON = ROOT / "strategies.json"
 VERSION = 1
+_CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
 def utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def encode_crockford(value: int, length: int) -> str:
+    chars = []
+    for _ in range(length):
+        chars.append(_CROCKFORD_BASE32[value & 31])
+        value >>= 5
+    return "".join(reversed(chars))
+
+
+def ulid() -> str:
+    ts_ms = int(time.time() * 1000)
+    ts_str = encode_crockford(ts_ms, 10)
+    rand_str = encode_crockford(secrets.randbits(80), 16)
+    return ts_str + rand_str
+
+
+def to_decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return Decimal(value)
+    if isinstance(value, float):
+        if value != value:
+            return None
+        return Decimal(str(value))
+    return None
+
+
+def clean_numbers(data: object) -> object:
+    if isinstance(data, list):
+        return [clean_numbers(item) for item in data]
+    if isinstance(data, dict):
+        return {k: clean_numbers(v) for k, v in data.items()}
+    dec = to_decimal(data)
+    if dec is not None:
+        return dec
+    return data
 
 
 def load_strategies() -> list[dict[str, object]]:
@@ -76,6 +127,107 @@ def put_objects(
         keys[filename] = key
         print(f"Uploaded {filename} -> s3://{bucket}/{key}")
     return keys
+
+
+def load_backtest_payload(strategy_id: str, filename: str) -> dict[str, object]:
+    path = STRATEGIES_DIR / strategy_id / filename
+    raw = path.read_text(encoding="utf-8")
+    if not raw.strip():
+        return {}
+
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"Backtest file {path} must contain a JSON object")
+    return parsed
+
+
+def seed_backtests(
+    s3_client,
+    dynamo,
+    backtests_bucket: str,
+    backtest_metrics_table: str,
+    strategy_id: str,
+    author: str,
+    backtests: list[dict[str, object]],
+) -> None:
+    table = dynamo.Table(backtest_metrics_table)
+
+    for backtest in backtests:
+        file_value = backtest.get("file")
+        file_name = str(file_value).strip() if file_value is not None else ""
+        if not file_name:
+            raise ValueError(f"Strategy {strategy_id} backtest entry missing file")
+
+        run_id_value = backtest.get("run_id")
+        run_id = str(run_id_value).strip() if run_id_value is not None else ""
+        if not run_id:
+            run_id = ulid()
+
+        s3_key = f"strategies/{strategy_id}/runs/{run_id}/run.json.gz"
+        payload = load_backtest_payload(strategy_id=strategy_id, filename=file_name)
+        compressed = gzip.compress(json.dumps(payload).encode("utf-8"))
+
+        s3_client.put_object(
+            Bucket=backtests_bucket,
+            Key=s3_key,
+            Body=compressed,
+            ContentType="application/gzip",
+        )
+        print(f"Uploaded {file_name} -> s3://{backtests_bucket}/{s3_key}")
+
+        time_created_value = backtest.get("time_created")
+        time_created = str(time_created_value).strip() if time_created_value is not None else ""
+        if not time_created:
+            time_created = utcnow_iso()
+
+        user_value = backtest.get("user")
+        user = str(user_value).strip() if user_value is not None else ""
+        if not user:
+            user = author
+
+        name_value = backtest.get("name")
+        name = str(name_value).strip() if name_value is not None else ""
+
+        strategy_version = backtest.get("strategy_version")
+        if strategy_version in (None, ""):
+            strategy_version = VERSION
+
+        params_value = backtest.get("backtest_params")
+        params = params_value if isinstance(params_value, dict) else {}
+
+        metrics_value = backtest.get("metrics", "")
+        net_pnl = backtest.get("net_pnl", "")
+        sharpe = backtest.get("sharpe", "")
+        win_rate = backtest.get("win_rate", "")
+        max_drawdown = backtest.get("max_drawdown", "")
+        trades_count = backtest.get("trades_count", "")
+
+        item: dict[str, object] = {
+            "strategy_id": strategy_id,
+            "run_id": run_id,
+            "name": name,
+            "time_created": time_created,
+            "user": user,
+            "strategy_version": strategy_version,
+            "backtest_params": {
+                "name": name,
+                "start_date": params.get("start_date", ""),
+                "end_date": params.get("end_date", ""),
+                "initial_capital": params.get("initial_capital", ""),
+            },
+            "metrics": metrics_value,
+            "net_pnl": net_pnl,
+            "sharpe": sharpe,
+            "win_rate": win_rate,
+            "max_drawdown": max_drawdown,
+            "trades_count": trades_count,
+            "s3_bucket": backtests_bucket,
+            "s3_key": s3_key,
+        }
+
+        item = clean_numbers(item)  # DynamoDB requires Decimal for numeric values.
+        table.put_item(Item=item)
+        print(f"Upserted backtest run {run_id} for strategy {strategy_id} in {backtest_metrics_table}")
 
 
 def seed_tables(
@@ -129,9 +281,11 @@ def seed_strategies(
     s3_client,
     dynamo,
     bucket: str,
+    backtests_bucket: str,
     strategies_table: str,
     artifacts_table: str,
     versions_table: str,
+    backtest_metrics_table: str,
 ) -> None:
     strategies = load_strategies()
     for entry in strategies:
@@ -161,6 +315,18 @@ def seed_strategies(
             raise ValueError(f"Strategy {strategy_id} missing files list")
         filenames = [str(name) for name in files_value]
 
+        backtests_value = entry.get("backtests")
+        if backtests_value is None:
+            backtests: list[dict[str, object]] = []
+        elif isinstance(backtests_value, list):
+            backtests = []
+            for idx, item in enumerate(backtests_value):
+                if not isinstance(item, dict):
+                    raise ValueError(f"Strategy {strategy_id} backtests[{idx}] must be an object")
+                backtests.append(item)
+        else:
+            raise ValueError(f"Strategy {strategy_id} backtests must be a list")
+
         files = load_strategy_files(strategy_id=strategy_id, filenames=filenames)
         keys = put_objects(
             s3_client=s3_client,
@@ -180,6 +346,16 @@ def seed_strategies(
             author=author,
             s3_keys=keys,
         )
+        if backtests:
+            seed_backtests(
+                s3_client=s3_client,
+                dynamo=dynamo,
+                backtests_bucket=backtests_bucket,
+                backtest_metrics_table=backtest_metrics_table,
+                strategy_id=strategy_id,
+                author=author,
+                backtests=backtests,
+            )
 
 
 def seed_admin_user(dynamo, users_table: str, netid: str) -> None:
@@ -201,12 +377,18 @@ def seed_admin_user(dynamo, users_table: str, netid: str) -> None:
 def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed initial strategy data.")
     parser.add_argument("--bucket", required=True, help="Artifacts S3 bucket name.")
+    parser.add_argument("--backtests-bucket", required=True, help="Backtests S3 bucket name.")
     parser.add_argument("--strategies-table", required=True, help="DynamoDB Strategies table name.")
     parser.add_argument("--artifacts-table", required=True, help="DynamoDB StrategyArtifacts table name.")
     parser.add_argument(
         "--artifact-versions-table",
         required=True,
         help="DynamoDB StrategyArtifactVersions table name.",
+    )
+    parser.add_argument(
+        "--backtest-metrics-table",
+        required=True,
+        help="DynamoDB BacktestMetrics table name.",
     )
     parser.add_argument("--users-table", default=None, help="DynamoDB Users table name.")
     parser.add_argument("--admin-netid", default=None, help="NetID to seed as an admin user.")
@@ -232,14 +414,16 @@ def main(argv: Iterable[str]) -> int:
             s3_client=s3,
             dynamo=dynamo,
             bucket=args.bucket,
+            backtests_bucket=args.backtests_bucket,
             strategies_table=args.strategies_table,
             artifacts_table=args.artifacts_table,
             versions_table=args.artifact_versions_table,
+            backtest_metrics_table=args.backtest_metrics_table,
         )
         admin_netid = args.admin_netid.strip() if args.admin_netid else None
         if admin_netid and args.users_table:
             seed_admin_user(dynamo=dynamo, users_table=args.users_table, netid=admin_netid)
-    except (ClientError, BotoCoreError) as exc:
+    except (ClientError, BotoCoreError, ValueError, OSError) as exc:
         print(f"Failed to seed data: {exc}", file=sys.stderr)
         return 1
 

@@ -47,9 +47,11 @@ Seeding is required the first time you create a new stack.
 python3 -m pip install --user boto3
 python3 seed/main.py \
   --bucket "$(terraform output -raw artifacts_bucket_name)" \
+  --backtests-bucket "$(terraform output -raw backtests_bucket_name)" \
   --strategies-table "$(terraform output -raw strategies_table_name)" \
   --artifacts-table "$(terraform output -raw strategy_artifacts_table_name)" \
   --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
+  --backtest-metrics-table "$(terraform output -raw backtest_metrics_table_name)" \
   --users-table "$(terraform output -raw users_table_name)" \
   --admin-netid "YOUR_NETID" \
   --region us-east-1

@@ -4,34 +4,139 @@
     "title": "Buy and Hold SPY",
     "author": "hqg",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md"]
+    "files": ["main.py", "README.md"],
+    "backtests": [
+      {
+        "file": "backtest.json",
+        "name": "",
+        "run_id": "",
+        "time_created": "",
+        "user": "",
+        "strategy_version": "",
+        "backtest_params": {
+          "start_date": "",
+          "end_date": "",
+          "initial_capital": ""
+        },
+        "metrics": "",
+        "net_pnl": "",
+        "sharpe": "",
+        "win_rate": "",
+        "max_drawdown": "",
+        "trades_count": ""
+      }
+    ]
   },
   {
     "id": "2",
     "title": "Simple Momentum",
     "author": "hqg",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md"]
+    "files": ["main.py", "README.md"],
+    "backtests": [
+      {
+        "file": "backtest.json",
+        "name": "",
+        "run_id": "",
+        "time_created": "",
+        "user": "",
+        "strategy_version": "",
+        "backtest_params": {
+          "start_date": "",
+          "end_date": "",
+          "initial_capital": ""
+        },
+        "metrics": "",
+        "net_pnl": "",
+        "sharpe": "",
+        "win_rate": "",
+        "max_drawdown": "",
+        "trades_count": ""
+      }
+    ]
   },
   {
     "id": "3",
     "title": "SMA Crossover",
     "author": "hqg",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md"]
+    "files": ["main.py", "README.md"],
+    "backtests": [
+      {
+        "file": "backtest.json",
+        "name": "",
+        "run_id": "",
+        "time_created": "",
+        "user": "",
+        "strategy_version": "",
+        "backtest_params": {
+          "start_date": "",
+          "end_date": "",
+          "initial_capital": ""
+        },
+        "metrics": "",
+        "net_pnl": "",
+        "sharpe": "",
+        "win_rate": "",
+        "max_drawdown": "",
+        "trades_count": ""
+      }
+    ]
   },
   {
     "id": "4",
     "title": "Mean Reversion",
     "author": "hqg",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md"]
+    "files": ["main.py", "README.md"],
+    "backtests": [
+      {
+        "file": "backtest.json",
+        "name": "",
+        "run_id": "",
+        "time_created": "",
+        "user": "",
+        "strategy_version": "",
+        "backtest_params": {
+          "start_date": "",
+          "end_date": "",
+          "initial_capital": ""
+        },
+        "metrics": "",
+        "net_pnl": "",
+        "sharpe": "",
+        "win_rate": "",
+        "max_drawdown": "",
+        "trades_count": ""
+      }
+    ]
   },
   {
     "id": "5",
     "title": "Mean Variance (Markowitz)",
     "author": "hqg",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md"]
+    "files": ["main.py", "README.md"],
+    "backtests": [
+      {
+        "file": "backtest.json",
+        "name": "",
+        "run_id": "",
+        "time_created": "",
+        "user": "",
+        "strategy_version": "",
+        "backtest_params": {
+          "start_date": "",
+          "end_date": "",
+          "initial_capital": ""
+        },
+        "metrics": "",
+        "net_pnl": "",
+        "sharpe": "",
+        "win_rate": "",
+        "max_drawdown": "",
+        "trades_count": ""
+      }
+    ]
   }
 ]
