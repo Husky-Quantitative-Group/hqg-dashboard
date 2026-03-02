@@ -1,0 +1,262 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DiscoveryRead",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity",
+        "s3:ListAllMyBuckets",
+        "dynamodb:ListTables",
+        "lambda:ListFunctions",
+        "lambda:ListLayers",
+        "lambda:ListLayerVersions",
+        "iam:ListRoles",
+        "iam:ListPolicies",
+        "iam:GetRole",
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListPolicyVersions",
+        "acm:ListCertificates",
+        "acm:DescribeCertificate",
+        "logs:DescribeLogGroups",
+        "ssm:DescribeParameters",
+        "scheduler:ListSchedules",
+        "scheduler:ListScheduleGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "BackendBootstrapCreate",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "dynamodb:CreateTable"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "BackendStateBucketMeta",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketAcl",
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketVersioning",
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::hqg-prod-terraform-state*"
+    },
+    {
+      "Sid": "BackendStateObjectRW",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::hqg-prod-terraform-state*/*"
+    },
+    {
+      "Sid": "BackendLockTableRW",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:UpdateItem"
+      ],
+      "Resource": "arn:aws:dynamodb:us-east-1:016299216645:table/hqg-prod-terraform-locks"
+    },
+    {
+      "Sid": "S3HqgProdBuckets",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::hqg-prod-*",
+        "arn:aws:s3:::hqg-prod-*/*"
+      ]
+    },
+    {
+      "Sid": "DynamoHqgProdTables",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DescribeTable",
+        "dynamodb:DescribeContinuousBackups",
+        "dynamodb:DescribeTimeToLive",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateTable",
+        "dynamodb:UpdateContinuousBackups",
+        "dynamodb:TagResource",
+        "dynamodb:UntagResource",
+        "dynamodb:ListTagsOfResource",
+        "dynamodb:DeleteTable"
+      ],
+      "Resource": "arn:aws:dynamodb:us-east-1:016299216645:table/hqg-prod-*"
+    },
+    {
+      "Sid": "LambdaHqgProdFunctions",
+      "Effect": "Allow",
+      "Action": "lambda:*",
+      "Resource": [
+        "arn:aws:lambda:us-east-1:016299216645:function:hqg-prod-*",
+        "arn:aws:lambda:us-east-1:016299216645:function:hqg-prod-*:*"
+      ]
+    },
+    {
+      "Sid": "LambdaListVersionsWildcard",
+      "Effect": "Allow",
+      "Action": "lambda:ListVersionsByFunction",
+      "Resource": "*"
+    },
+    {
+      "Sid": "LambdaHqgProdLayers",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:PublishLayerVersion",
+        "lambda:GetLayerVersion",
+        "lambda:DeleteLayerVersion",
+        "lambda:TagResource",
+        "lambda:UntagResource"
+      ],
+      "Resource": [
+        "arn:aws:lambda:us-east-1:016299216645:layer:hqg-prod-*",
+        "arn:aws:lambda:us-east-1:016299216645:layer:hqg-prod-*:*"
+      ]
+    },
+    {
+      "Sid": "IamManageHqgProdRolesPolicies",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:CreatePolicy",
+        "iam:DeletePolicy",
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicyVersion",
+        "iam:TagPolicy",
+        "iam:UntagPolicy",
+        "iam:ListRolePolicies",
+        "iam:GetRolePolicy",
+        "iam:ListInstanceProfilesForRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::016299216645:role/hqg-prod-*",
+        "arn:aws:iam::016299216645:policy/hqg-prod-*"
+      ]
+    },
+    {
+      "Sid": "IamCreateServiceLinkedRoleForApiGateway",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "iam:AWSServiceName": [
+            "ops.apigateway.amazonaws.com",
+            "apigateway.amazonaws.com"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "PassOnlyHqgProdRolesToLambdaScheduler",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::016299216645:role/hqg-prod-*",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": [
+            "lambda.amazonaws.com",
+            "scheduler.amazonaws.com"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ApiGatewayV2CreateReadUpdateDelete",
+      "Effect": "Allow",
+      "Action": "apigateway:*",
+      "Resource": "arn:aws:apigateway:us-east-1::/*"
+    },
+    {
+      "Sid": "AcmApiCustomDomain",
+      "Effect": "Allow",
+      "Action": [
+        "acm:RequestCertificate",
+        "acm:DeleteCertificate",
+        "acm:GetCertificate",
+        "acm:DescribeCertificate",
+        "acm:AddTagsToCertificate",
+        "acm:RemoveTagsFromCertificate",
+        "acm:ListTagsForCertificate"
+      ],
+      "Resource": "arn:aws:acm:us-east-1:016299216645:certificate/*"
+    },
+    {
+      "Sid": "SchedulerHqgProd",
+      "Effect": "Allow",
+      "Action": [
+        "scheduler:CreateSchedule",
+        "scheduler:UpdateSchedule",
+        "scheduler:DeleteSchedule",
+        "scheduler:GetSchedule",
+        "scheduler:TagResource",
+        "scheduler:UntagResource"
+      ],
+      "Resource": "arn:aws:scheduler:us-east-1:016299216645:schedule/default/hqg-prod-*"
+    },
+    {
+      "Sid": "LogsHqgProdApiGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:TagResource",
+        "logs:UntagResource",
+        "logs:TagLogGroup",
+        "logs:UntagLogGroup",
+        "logs:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:logs:us-east-1:016299216645:log-group:/aws/apigateway/hqg-prod-*"
+    },
+    {
+      "Sid": "LogsDeliveryForApiGateway",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogDelivery",
+        "logs:GetLogDelivery",
+        "logs:UpdateLogDelivery",
+        "logs:DeleteLogDelivery",
+        "logs:ListLogDeliveries",
+        "logs:PutResourcePolicy",
+        "logs:DescribeResourcePolicies",
+        "logs:DescribeLogGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SsmHqgProdParams",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:PutParameter",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:DeleteParameter",
+        "ssm:AddTagsToResource",
+        "ssm:RemoveTagsFromResource",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:ssm:us-east-1:016299216645:parameter/hqg-prod-*"
+    }
+  ]
+}

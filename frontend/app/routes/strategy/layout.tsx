@@ -32,6 +32,8 @@ export type StrategyWorkspaceContext = {
   selectRun: (runId: number) => void;
   latestBacktestData: BacktestResponse | null;
   setLatestBacktestData: (data: BacktestResponse | null) => void;
+  latestBacktestStrategyVersion: number | string | null;
+  setLatestBacktestStrategyVersion: (version: number | string | null) => void;
   lastBacktestParamValues: Record<string, string>;
   setLastBacktestParamValues: (values: Record<string, string>) => void;
   activeBacktestSource: "live" | "saved" | null;
@@ -77,6 +79,7 @@ export default function StrategyLayout() {
   const [fileLoadError, setFileLoadError] = useState<string | null>(null);
   const [loadedFilePaths, setLoadedFilePaths] = useState<string[]>([]);
   const [latestBacktestData, setLatestBacktestData] = useState<BacktestResponse | null>(null);
+  const [latestBacktestStrategyVersion, setLatestBacktestStrategyVersion] = useState<number | string | null>(null);
   const [lastBacktestParamValues, setLastBacktestParamValues] = useState<Record<string, string>>({});
   const [activeBacktestSource, setActiveBacktestSource] = useState<"live" | "saved" | null>(null);
   const [activeSavedRunId, setActiveSavedRunId] = useState<string | null>(null);
@@ -128,6 +131,7 @@ export default function StrategyLayout() {
           return;
         }
         setLatestBacktestData(null);
+        setLatestBacktestStrategyVersion(null);
         setLastBacktestParamValues({});
         setActiveBacktestSource(null);
         setActiveSavedRunId(null);
@@ -322,7 +326,7 @@ export default function StrategyLayout() {
       const confirmLeave = window.confirm("You have unsaved changes. Leave without saving?");
       if (!confirmLeave) return;
     }
-    navigate("/strategies");
+    navigate("/");
   }, [isDirty, navigate]);
 
   const surface = "border border-slate-800/70 bg-slate-950/60";
@@ -382,6 +386,8 @@ export default function StrategyLayout() {
     selectRun,
     latestBacktestData,
     setLatestBacktestData,
+    latestBacktestStrategyVersion,
+    setLatestBacktestStrategyVersion,
     lastBacktestParamValues,
     setLastBacktestParamValues,
     activeBacktestSource,

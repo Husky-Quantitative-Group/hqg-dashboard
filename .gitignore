@@ -3,3 +3,5 @@
 node_modules
 
 aws/lambda_layers/*/build/
+
+__pycache__/

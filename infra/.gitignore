@@ -6,7 +6,10 @@ terraform.tfstate.*
 # Local override files
 *.tfvars
 !example.tfvars
+!prod.tfvars
 *.tfvars.json
+backend.tf
+backend.hcl
 override.tf
 override.tf.json
 *_override.tf

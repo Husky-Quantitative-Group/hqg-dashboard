@@ -11,7 +11,7 @@ This repo has two main parts:
 
 ## 1) Infra (AWS / Terraform)
 
-If you already have a deployed API, you can skip this section and just set `VITE_CORE_API` in `frontend/.env`.
+If you already have a deployed API, you can skip this section and just set `CORE_API_URL` in `frontend/.env`.
 
 ### Create your tfvars file
 ```bash
@@ -83,10 +83,12 @@ terraform -chdir=../infra output -raw http_api_endpoint
 
 Edit `frontend/.env`:
 ```ini
-VITE_CORE_API=https://your-api.execute-api.us-east-1.amazonaws.com/dev
+CORE_API_URL=https://your-api.execute-api.us-east-1.amazonaws.com/dev
+IS_PROD=0
 ```
 
-- `VITE_CORE_API` should point at the deployed API Gateway URL.
+- `CORE_API_URL` should point at the deployed API Gateway URL.
+- `IS_PROD=0` keeps local proxy behavior (`/api` and `/backtester-api`) for development.
 
 ### Run the dev server
 ```bash

@@ -92,3 +92,20 @@ output "http_api_endpoint" {
   value       = aws_apigatewayv2_stage.stage.invoke_url
   description = "Invoke URL for the HTTP API stage."
 }
+
+output "api_custom_domain_validation_records" {
+  value = local.api_custom_domain_requested ? [
+    for dvo in aws_acm_certificate.api_custom_domain[0].domain_validation_options : {
+      domain_name  = dvo.domain_name
+      record_name  = dvo.resource_record_name
+      record_type  = dvo.resource_record_type
+      record_value = dvo.resource_record_value
+    }
+  ] : []
+  description = "DNS validation records for the API custom-domain ACM certificate (prod only)."
+}
+
+output "api_custom_domain_target" {
+  value       = local.api_custom_domain_activated ? aws_apigatewayv2_domain_name.api_custom_domain[0].domain_name_configuration[0].target_domain_name : null
+  description = "Target value for your DNS CNAME record (prod only)."
+}

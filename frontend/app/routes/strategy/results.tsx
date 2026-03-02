@@ -44,6 +44,7 @@ export default function StrategyResults() {
     strategy,
     addToast,
     setLatestBacktestData,
+    setLatestBacktestStrategyVersion,
     setLastBacktestParamValues,
     setActiveBacktestSource,
     setActiveSavedRunId,
@@ -69,6 +70,7 @@ export default function StrategyResults() {
       const backtest = await gunzipJson<BacktestResponse>(raw);
 
       setLatestBacktestData(backtest);
+      setLatestBacktestStrategyVersion(resp.item.strategy_version ?? null);
       setActiveBacktestSource("saved");
       setActiveSavedRunId(run.run_id);
 

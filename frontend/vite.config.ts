@@ -5,11 +5,12 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const coreApiBaseUrl = env.VITE_CORE_API ?? "http://localhost:5000";
+  const coreApiBaseUrl = env.CORE_API_URL ?? "http://localhost:5000";
   const backtesterTarget = env.BACKTESTER_URL;
   const backtesterEndpoint = "/api/v1/backtest";
 
   return {
+    envPrefix: ["VITE_", "CORE_", "IS_", "BACKTESTER_"],
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
     server: {
       proxy: {
