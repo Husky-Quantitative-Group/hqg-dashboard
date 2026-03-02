@@ -14,6 +14,7 @@ STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
 VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
 ARTIFACT_BUCKET = os.environ["ARTIFACT_BUCKET"]
+STRATEGY_NAME_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 75
 README_MAX_CHARS = 10_000
 
@@ -58,7 +59,7 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
     Branch from an existing strategy and create a new one.
     Body expects:
       - source_strategy_id (str)
-      - name (str)
+      - name (str, max 60 chars)
       - description (str, optional, max 75 chars)
       - readme_content (str, required; can be empty, max 10k chars)
       - tags (list[str], optional)
@@ -67,9 +68,14 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
     if not source_id:
         return _json(400, {"message": "source_strategy_id is required"})
 
-    name = (body.get("name") or "").strip()
+    name_raw = body.get("name", "")
+    if not isinstance(name_raw, str):
+        return _json(400, {"message": "name must be a string"})
+    name = name_raw.strip()
     if not name:
         return _json(400, {"message": "name is required"})
+    if len(name) > STRATEGY_NAME_MAX_CHARS:
+        return _json(400, {"message": f"name must be {STRATEGY_NAME_MAX_CHARS} characters or fewer"})
 
     description_raw = body.get("description", "")
     if not isinstance(description_raw, str):

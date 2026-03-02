@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createStrategy, fetchStrategies, type Strategy } from "../api/strategies";
 
+const STRATEGY_NAME_MAX_CHARS = 60;
 const DESCRIPTION_MAX_CHARS = 75;
 const README_MAX_CHARS = 10_000;
 
@@ -64,7 +65,13 @@ export default function CreateStrategy() {
     [selectedTemplateId, strategies]
   );
 
+  const trimmedStrategyName = strategyName.trim();
+  const strategyNameLength = trimmedStrategyName.length;
   const selectedTemplateTags = selectedTemplate?.tags ?? [];
+  const strategyNameError =
+    strategyNameLength > STRATEGY_NAME_MAX_CHARS
+      ? `Strategy name must be ${STRATEGY_NAME_MAX_CHARS} characters or fewer.`
+      : null;
   const descriptionLength = description.length;
   const readmeLength = readmeContent.length;
   const descriptionError =
@@ -75,13 +82,12 @@ export default function CreateStrategy() {
     readmeLength > README_MAX_CHARS
       ? `README must be ${README_MAX_CHARS} characters or fewer.`
       : null;
-  const isFormValid = !!selectedTemplate && !!strategyName.trim() && !descriptionError && !readmeError;
+  const isFormValid = !!selectedTemplate && !!trimmedStrategyName && !strategyNameError && !descriptionError && !readmeError;
 
   useEffect(() => {
     if (hasEditedReadme) return;
-    const trimmedName = strategyName.trim();
-    setReadmeContent(trimmedName ? `# ${trimmedName}` : "");
-  }, [hasEditedReadme, strategyName]);
+    setReadmeContent(trimmedStrategyName ? `# ${trimmedStrategyName}` : "");
+  }, [hasEditedReadme, trimmedStrategyName]);
 
   const handleAddTag = () => {
     const value = tagInput.trim();
@@ -108,7 +114,7 @@ export default function CreateStrategy() {
     try {
       const newStrategy = await createStrategy({
         sourceStrategyId: selectedTemplateId,
-        name: strategyName.trim(),
+        name: trimmedStrategyName,
         description,
         readmeContent,
         tags,
@@ -202,13 +208,21 @@ export default function CreateStrategy() {
 
         <form className="space-y-5" onSubmit={handleSubmit}>
           <label className="flex flex-col gap-2">
-            <span className="text-xs uppercase tracking-wide text-slate-500">New Strategy Name</span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs uppercase tracking-wide text-slate-500">New Strategy Name</span>
+              <span
+                className={`text-xs ${strategyNameLength > STRATEGY_NAME_MAX_CHARS ? "text-rose-400" : "text-slate-500"}`}
+              >
+                {strategyNameLength}/{STRATEGY_NAME_MAX_CHARS}
+              </span>
+            </div>
             <input
               value={strategyName}
               onChange={(e) => setStrategyName(e.target.value)}
               className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
               placeholder="My branched strategy"
             />
+            {strategyNameError && <p className="text-sm text-rose-400">{strategyNameError}</p>}
           </label>
 
           <label className="flex flex-col gap-2">
