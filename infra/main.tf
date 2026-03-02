@@ -1062,6 +1062,7 @@ resource "aws_lambda_function" "strategy_artifacts" {
       STRATEGY_ARTIFACTS_TABLE         = aws_dynamodb_table.strategy_artifacts.name
       STRATEGY_ARTIFACT_VERSIONS_TABLE = aws_dynamodb_table.strategy_artifact_versions.name
       ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket
+      STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
     }
   }
 
@@ -1316,6 +1317,14 @@ resource "aws_apigatewayv2_route" "post_strategy_artifacts" {
 resource "aws_apigatewayv2_route" "get_strategy_artifact_by_id" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /strategies/{id}/artifacts/{artifactId}"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "get_strategy_write_permissions" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /strategies/{id}/permissions/write"
   target             = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id

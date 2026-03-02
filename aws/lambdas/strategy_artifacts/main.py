@@ -12,6 +12,7 @@ BUCKET = os.environ["ARTIFACT_BUCKET"]
 ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
 STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
+WRITE_PERMISSIONS_TABLE = dynamo.Table(os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"])
 def handler(event, context):
     route = event["requestContext"]["routeKey"]
 
@@ -22,7 +23,11 @@ def handler(event, context):
     if route == "POST /strategies/{id}/artifacts":
         strategy_id = event["pathParameters"]["id"]
         body = json.loads(event.get("body") or "{}")
-        return upload_artifacts(strategy_id, body)
+        return upload_artifacts(strategy_id, body, event)
+
+    if route == "GET /strategies/{id}/permissions/write":
+        strategy_id = event["pathParameters"]["id"]
+        return get_write_permission(strategy_id, event)
 
     if route == "GET /strategies/{id}/artifacts/{artifactId}":
         strategy_id = event["pathParameters"]["id"]
@@ -84,7 +89,7 @@ def download_artifact(strategy_id, artifact_id, max_bytes=1_000_000):
         "body": base64.b64encode(body).decode("utf-8"),
     }
 
-def upload_artifacts(strategy_id, body):
+def upload_artifacts(strategy_id, body, event):
     """
     New upload flow: accept all files + contents in a single request.
     Expected body:
@@ -99,6 +104,13 @@ def upload_artifacts(strategy_id, body):
 
     if not isinstance(files, list) or not files:
         return _json(400, {"message": "files must be a non-empty list"})
+
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    if not _has_write_permission(strategy_id, netid):
+        return _json(403, {"message": "forbidden"})
 
     strategy = STRATEGIES_TABLE.get_item(Key={"id": strategy_id}).get("Item")
     if not strategy:
@@ -167,6 +179,14 @@ def upload_artifacts(strategy_id, body):
 
     return _json(200, {"ok": True, "version": new_version, "artifacts": [f.get("artifactId") for f in files]})
 
+def get_write_permission(strategy_id, event):
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    can_write = _has_write_permission(strategy_id, netid)
+    return _json(200, {"canWrite": can_write})
+
 def _clean_decimals(data):
     if isinstance(data, list):
         return [_clean_decimals(item) for item in data]
@@ -183,3 +203,26 @@ def _json(code, body):
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps(body),
     }
+
+
+def _get_netid_from_event(event):
+    request_context = event.get("requestContext") or {}
+    authorizer = request_context.get("authorizer") or {}
+
+    netid = authorizer.get("netid")
+    if not netid and isinstance(authorizer.get("lambda"), dict):
+        netid = authorizer.get("lambda", {}).get("netid")
+
+    if not isinstance(netid, str):
+        return None
+
+    netid = netid.strip()
+    return netid or None
+
+
+def _has_write_permission(strategy_id, netid):
+    principal = f"USER#{netid}"
+    resp = WRITE_PERMISSIONS_TABLE.get_item(
+        Key={"strategy_id": strategy_id, "principal": principal}
+    )
+    return "Item" in resp

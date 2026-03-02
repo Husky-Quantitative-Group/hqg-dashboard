@@ -37,3 +37,10 @@ export const uploadStrategyArtifacts = async (
   const response = await coreApi.post(`/strategies/${strategyId}/artifacts`, payload);
   return response.data;
 };
+
+export const fetchStrategyWriteAccess = async (
+  strategyId: string | number
+): Promise<boolean> => {
+  const response = await coreApi.get<{ canWrite?: boolean }>(`/strategies/${strategyId}/permissions/write`);
+  return response.data.canWrite === true;
+};
