@@ -98,7 +98,9 @@ export default function StrategyTable({
               </td>
             </tr>
           ) : (
-            sortedStrategies.map((strategy, index) => (
+            sortedStrategies.map((strategy, index) => {
+              const ownerLabel = strategy.owner_display ?? strategy.owner ?? "—";
+              return (
               <tr
                 key={strategy.id}
                 className={`border-b border-slate-800 hover:bg-slate-600/50 transition-colors ${
@@ -120,7 +122,7 @@ export default function StrategyTable({
                 </td>
                 <td className="py-4 px-4">
                   <div className="text-white font-medium">
-                    {strategy.owner ?? "—"}
+                    {ownerLabel}
                   </div>
                 </td>
                 <td className="py-4 px-4">
@@ -154,7 +156,7 @@ export default function StrategyTable({
                   {formatPercent(strategy.metrics?.cagr)}
                 </td>
               </tr>
-            ))
+            )})
           )}
         </tbody>
       </table>

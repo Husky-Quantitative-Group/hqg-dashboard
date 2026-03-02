@@ -40,7 +40,7 @@ export default function Strategies() {
     }
 
     return strategies.filter((strategy) => {
-      const owner = strategy.owner?.toLowerCase() ?? "";
+      const owner = (strategy.owner_display ?? strategy.owner ?? "").toLowerCase();
       const project = strategy.project_id?.toLowerCase() ?? "";
       const tags = strategy.tags ?? [];
       return (
