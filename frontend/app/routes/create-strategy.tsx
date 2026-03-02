@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createStrategy, fetchStrategies, type Strategy } from "../api/strategies";
-import { useUser } from "../context/UserConext";
+
+const DESCRIPTION_MAX_CHARS = 75;
+const README_MAX_CHARS = 10_000;
 
 type TemplateOption = {
   id: string;
@@ -10,13 +12,14 @@ type TemplateOption = {
 
 export default function CreateStrategy() {
   const navigate = useNavigate();
-  const { user } = useUser();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [strategyName, setStrategyName] = useState("");
   const [description, setDescription] = useState("");
+  const [readmeContent, setReadmeContent] = useState("");
+  const [hasEditedReadme, setHasEditedReadme] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -62,7 +65,23 @@ export default function CreateStrategy() {
   );
 
   const selectedTemplateTags = selectedTemplate?.tags ?? [];
-  const isFormValid = selectedTemplate && strategyName.trim();
+  const descriptionLength = description.length;
+  const readmeLength = readmeContent.length;
+  const descriptionError =
+    descriptionLength > DESCRIPTION_MAX_CHARS
+      ? `Description must be ${DESCRIPTION_MAX_CHARS} characters or fewer.`
+      : null;
+  const readmeError =
+    readmeLength > README_MAX_CHARS
+      ? `README must be ${README_MAX_CHARS} characters or fewer.`
+      : null;
+  const isFormValid = !!selectedTemplate && !!strategyName.trim() && !descriptionError && !readmeError;
+
+  useEffect(() => {
+    if (hasEditedReadme) return;
+    const trimmedName = strategyName.trim();
+    setReadmeContent(trimmedName ? `# ${trimmedName}` : "");
+  }, [hasEditedReadme, strategyName]);
 
   const handleAddTag = () => {
     const value = tagInput.trim();
@@ -91,13 +110,21 @@ export default function CreateStrategy() {
         sourceStrategyId: selectedTemplateId,
         name: strategyName.trim(),
         description,
+        readmeContent,
         tags,
       });
       setSuccessMessage(`Created strategy ${newStrategy.name} (ID ${newStrategy.id})`);
       navigate(`/strategies/${newStrategy.id}`);
     } catch (error) {
       console.error("Failed to create strategy", error);
-      setErrorMessage("Failed to create strategy");
+      const apiMessage =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === "string"
+          ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+          : null;
+      setErrorMessage(apiMessage ?? "Failed to create strategy");
     } finally {
       setIsSubmitting(false);
     }
@@ -185,13 +212,38 @@ export default function CreateStrategy() {
           </label>
 
           <label className="flex flex-col gap-2">
-            <span className="text-xs uppercase tracking-wide text-slate-500">README (markdown)</span>
-            <textarea
+            <div className="flex items-center justify-between">
+              <span className="text-xs uppercase tracking-wide text-slate-500">Description</span>
+              <span
+                className={`text-xs ${descriptionLength > DESCRIPTION_MAX_CHARS ? "text-rose-400" : "text-slate-500"}`}
+              >
+                {descriptionLength}/{DESCRIPTION_MAX_CHARS}
+              </span>
+            </div>
+            <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="min-h-[140px] rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-              placeholder="Describe the strategy..."
+              className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+              placeholder="Short strategy summary for cards and listings"
             />
+            {descriptionError && <p className="text-sm text-rose-400">{descriptionError}</p>}
+          </label>
+
+          <label className="flex flex-col gap-2">
+            <span className="text-xs uppercase tracking-wide text-slate-500">README (markdown)</span>
+            <textarea
+              value={readmeContent}
+              onChange={(e) => {
+                setHasEditedReadme(true);
+                setReadmeContent(e.target.value);
+              }}
+              className="min-h-[140px] rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+              placeholder="# My strategy"
+            />
+            <div className={`text-xs ${readmeLength > README_MAX_CHARS ? "text-rose-400" : "text-slate-500"}`}>
+              {readmeLength}/{README_MAX_CHARS}
+            </div>
+            {readmeError && <p className="text-sm text-rose-400">{readmeError}</p>}
           </label>
 
           <label className="flex flex-col gap-2">
