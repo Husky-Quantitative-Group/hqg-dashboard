@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import axios from "axios";
 import { fetchStrategyWorkspace, startStrategyRunExecution } from "./workspace";
 import type { BacktestResult } from "./workspace";
 import { fetchStrategyArtifactContent, uploadStrategyArtifacts, type StrategyFile } from "~/api/strategyArtifacts";
@@ -46,6 +47,7 @@ export type StrategyWorkspaceContext = {
   addToast: (message: string, variant?: ToastVariant) => void;
   loadingFilePath: string | null;
   fileLoadError: string | null;
+  isWriteForbidden: boolean;
 };
 
 const TABS = [
@@ -72,6 +74,7 @@ export default function StrategyLayout() {
   const [isSaving, setIsSaving] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [autosaveMessage, setAutosaveMessage] = useState("All changes saved");
+  const [isWriteForbidden, setIsWriteForbidden] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -125,6 +128,7 @@ export default function StrategyLayout() {
     const loadWorkspace = async () => {
       setIsWorkspaceLoading(true);
       setLoadError(null);
+      setIsWriteForbidden(true);
       try {
         const payload = await fetchStrategyWorkspace(strategyId);
         if (cancelled) {
@@ -147,6 +151,7 @@ export default function StrategyLayout() {
         setSelectedRunId(payload.backtestResults[0]?.id ?? null);
         setIsDirty(false);
         setAutosaveMessage("All changes saved");
+        setIsWriteForbidden(!payload.canWrite);
 
         try {
           setIsSavedBacktestRunsLoading(true);
@@ -179,6 +184,7 @@ export default function StrategyLayout() {
         console.error("Failed to load strategy workspace", error);
         setLoadError("Failed to load strategy workspace");
         addToast("Unable to load strategy workspace", "warning");
+        setIsWriteForbidden(true);
       } finally {
         if (!cancelled) {
           setIsWorkspaceLoading(false);
@@ -203,10 +209,13 @@ export default function StrategyLayout() {
 
   const updateFileContent = useCallback(
     (path: string, content: string) => {
+      if (isWriteForbidden) {
+        return;
+      }
       setFiles((prev) => prev.map((file) => (file.path === path ? { ...file, content } : file)));
       markDirty();
     },
-    [markDirty]
+    [isWriteForbidden, markDirty]
   );
 
   // Lazy-load file content when a file is selected and not yet loaded.
@@ -249,7 +258,7 @@ export default function StrategyLayout() {
   }, [addToast, files, selectedFilePath, strategy]);
 
   const handleSave = useCallback(async () => {
-    if (isSaving || !strategy) {
+    if (isSaving || !strategy || isWriteForbidden) {
       return;
     }
 
@@ -274,6 +283,7 @@ export default function StrategyLayout() {
       initialFilesRef.current = cloneFiles(files);
       setIsDirty(false);
       setAutosaveMessage("All changes saved");
+      setIsWriteForbidden(false);
       setStrategy((prev) =>
         prev
           ? {
@@ -285,13 +295,19 @@ export default function StrategyLayout() {
       );
       addToast(result.version ? `Workspace saved (v${result.version})` : "Workspace saved", "success");
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 403) {
+        setAutosaveMessage("You do not have write access");
+        setIsWriteForbidden(true);
+        addToast("You do not have write access", "warning");
+        return;
+      }
       console.error("Failed to save workspace", error);
       setAutosaveMessage("Save failed");
       addToast("Save failed", "warning");
     } finally {
       setIsSaving(false);
     }
-  }, [addToast, files, isSaving, strategy]);
+  }, [addToast, files, isSaving, isWriteForbidden, strategy]);
 
   const handleRun = useCallback(() => {
     if (isRunning || !strategy) {
@@ -400,6 +416,7 @@ export default function StrategyLayout() {
     addToast,
     loadingFilePath,
     fileLoadError,
+    isWriteForbidden,
   };
 
   return (
@@ -427,9 +444,11 @@ export default function StrategyLayout() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              disabled={isSaving || !isDirty}
+              disabled={isSaving || !isDirty || isWriteForbidden}
               className={`rounded-xl px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
-                isSaving || !isDirty ? "cursor-not-allowed bg-slate-700/60 text-slate-300" : "bg-gradient-to-r from-fuchsia-600 to-indigo-500"
+                isSaving || !isDirty || isWriteForbidden
+                  ? "cursor-not-allowed bg-slate-700/60 text-slate-300"
+                  : "bg-gradient-to-r from-fuchsia-600 to-indigo-500"
               }`}
               onClick={handleSave}
             >

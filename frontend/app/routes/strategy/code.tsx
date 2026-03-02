@@ -15,6 +15,7 @@ export default function StrategyCodeWorkspace() {
     isSaving,
     loadingFilePath,
     fileLoadError,
+    isWriteForbidden,
   } = useStrategyWorkspace();
 
   const [editorReady, setEditorReady] = useState(false);
@@ -122,6 +123,7 @@ export default function StrategyCodeWorkspace() {
                 fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo",
                 scrollBeyondLastLine: false,
                 smoothScrolling: true,
+                readOnly: isWriteForbidden,
               }}
             />
           ) : (
