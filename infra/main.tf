@@ -41,6 +41,8 @@ locals {
   users_table_name                    = coalesce(var.users_table_name, "${local.name_prefix}-users")
   user_access_applications_table_name = coalesce(var.user_access_applications_table_name, "${local.name_prefix}-user-access-applications")
   backtest_metrics_table_name         = coalesce(var.backtest_metrics_table_name, "${local.name_prefix}-backtest-metrics")
+  strategies_read_permissions_table_name  = coalesce(var.strategies_read_permissions_table_name, "${local.name_prefix}-strategies-read-permissions")
+  strategies_write_permissions_table_name = coalesce(var.strategies_write_permissions_table_name, "${local.name_prefix}-strategies-write-permissions")
 
   tags = merge(
     {
@@ -343,7 +345,73 @@ resource "aws_dynamodb_table" "backtest_metrics" {
   tags = local.tags
 }
 
+resource "aws_dynamodb_table" "strategies_read_permissions" {
+  name         = local.strategies_read_permissions_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "strategy_id"
+  range_key    = "principal"
 
+  attribute {
+    name = "strategy_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "principal"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "principal-strategy-index"
+    hash_key        = "principal"
+    range_key       = "strategy_id"
+    projection_type = "ALL"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = local.tags
+}
+
+resource "aws_dynamodb_table" "strategies_write_permissions" {
+  name         = local.strategies_write_permissions_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "strategy_id"
+  range_key    = "principal"
+
+  attribute {
+    name = "strategy_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "principal"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "principal-strategy-index"
+    hash_key        = "principal"
+    range_key       = "strategy_id"
+    projection_type = "ALL"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = local.tags
+}
 
 # ------------------------------
 # IAM policy: allow Lambdas to use storage

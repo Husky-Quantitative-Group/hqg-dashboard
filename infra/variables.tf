@@ -67,6 +67,18 @@ variable "backtest_metrics_table_name" {
   default     = null
 }
 
+variable "strategies_read_permissions_table_name" {
+  description = "Optional explicit name for the StrategiesReadPermissions table. Defaults to \"<project>-<env>-strategies-read-permissions\"."
+  type        = string
+  default     = null
+}
+
+variable "strategies_write_permissions_table_name" {
+  description = "Optional explicit name for the StrategiesWritePermissions table. Defaults to \"<project>-<env>-strategies-write-permissions\"."
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "Additional tags to apply to resources."
   type        = map(string)

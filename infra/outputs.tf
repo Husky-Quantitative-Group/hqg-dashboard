@@ -83,6 +83,26 @@ output "backtest_metrics_table_arn" {
   description = "ARN of the BacktestMetrics table."
 }
 
+output "strategies_read_permissions_table_name" {
+  value       = aws_dynamodb_table.strategies_read_permissions.name
+  description = "Name of the StrategiesReadPermissions table."
+}
+
+output "strategies_read_permissions_table_arn" {
+  value       = aws_dynamodb_table.strategies_read_permissions.arn
+  description = "ARN of the StrategiesReadPermissions table."
+}
+
+output "strategies_write_permissions_table_name" {
+  value       = aws_dynamodb_table.strategies_write_permissions.name
+  description = "Name of the StrategiesWritePermissions table."
+}
+
+output "strategies_write_permissions_table_arn" {
+  value       = aws_dynamodb_table.strategies_write_permissions.arn
+  description = "ARN of the StrategiesWritePermissions table."
+}
+
 output "http_api_id" {
   value       = aws_apigatewayv2_api.api.id
   description = "ID of the HTTP API Gateway."
