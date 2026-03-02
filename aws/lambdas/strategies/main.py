@@ -143,7 +143,7 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
                     "Put": {
                         "TableName": READ_PERMISSIONS_TABLE,
                         "Item": _ddb_item(
-                            {"strategy_id": new_strategy_id, "principal": "PUBLIC#*"}
+                            {"strategy_id": new_strategy_id, "principal": "ROLE#PUBLIC"}
                         ),
                     }
                 },
@@ -346,13 +346,13 @@ def _has_read_permission(strategy_id: str, netid: str) -> bool:
     if "Item" in resp:
         return True
     public_resp = READ_PERMISSIONS_DDB.get_item(
-        Key={"strategy_id": strategy_id, "principal": "PUBLIC#*"}
+        Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
     )
     return "Item" in public_resp
 
 
 def _list_readable_strategy_ids(netid: str) -> List[str]:
-    principals = [_principal_for_user(netid), "PUBLIC#*"]
+    principals = [_principal_for_user(netid), "ROLE#PUBLIC"]
     strategy_ids: List[str] = []
     seen = set()
 
