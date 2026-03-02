@@ -4,69 +4,34 @@
     "title": "Buy and Hold SPY",
     "author": "hqg",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md", "requirements.txt"]
+    "files": ["main.py", "README.md"]
   },
   {
     "id": "2",
-    "title": "60/40 Portfolio",
-    "author": "hqg",
-    "entrypoint": "main.py",
-    "files": ["main.py", "README.md", "requirements.txt"]
-  },
-  {
-    "id": "3",
     "title": "Simple Momentum",
     "author": "hqg",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md", "requirements.txt"]
+    "files": ["main.py", "README.md"]
+  },
+  {
+    "id": "3",
+    "title": "SMA Crossover",
+    "author": "hqg",
+    "entrypoint": "main.py",
+    "files": ["main.py", "README.md"]
   },
   {
     "id": "4",
-    "title": "Pairs Trading",
+    "title": "Mean Reversion",
     "author": "hqg",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md", "requirements.txt"]
+    "files": ["main.py", "README.md"]
   },
   {
     "id": "5",
-    "title": "Moving Average Crossover",
+    "title": "Mean Variance (Markowitz)",
     "author": "hqg",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md", "requirements.txt"]
-  },
-  {
-    "id": "6",
-    "title": "Volatility Targeting",
-    "author": "hqg",
-    "entrypoint": "main.py",
-    "files": ["main.py", "README.md", "requirements.txt"]
-  },
-  {
-    "id": "7",
-    "title": "Equal Risk Contribution (Risk Parity Lite)",
-    "author": "hqg",
-    "entrypoint": "main.py",
-    "files": ["main.py", "README.md", "requirements.txt"]
-  },
-  {
-    "id": "8",
-    "title": "Multi-Factor Ranking",
-    "author": "hqg",
-    "entrypoint": "main.py",
-    "files": ["main.py", "README.md", "requirements.txt"]
-  },
-  {
-    "id": "9",
-    "title": "Sector Rotation",
-    "author": "hqg",
-    "entrypoint": "main.py",
-    "files": ["main.py", "README.md", "requirements.txt"]
-  },
-  {
-    "id": "10",
-    "title": "Mean-Variance Optimization (Markowitz)",
-    "author": "hqg",
-    "entrypoint": "main.py",
-    "files": ["main.py", "README.md", "requirements.txt"]
+    "files": ["main.py", "README.md"]
   }
 ]

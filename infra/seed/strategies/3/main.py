@@ -1,72 +1,44 @@
 """
-Strategy 3: Simple Momentum
-
-Ranks stocks by past 6-month returns and allocates equally to top 5 performers.
-Demonstrates cross-sectional momentum: winners tend to keep winning.
+Strategy 02: SMA Crossover – QQQ vs AGG
+Period: 2005-01-01 to 2015-12-31
+Cadence: Weekly
+Logic: 10-week SMA vs 30-week SMA on QQQ. If fast > slow, hold QQQ; else hold AGG.
+No shorting.
 """
-from datetime import timedelta
+from hqg_algorithms import Strategy, Cadence, Slice, PortfolioView, BarSize
 from collections import deque
-from hqg_algorithms import Strategy, Cadence, Slice, PortfolioView
+
+START_DATE = "2005-01-01"
+END_DATE = "2015-12-31"
 
 
-class SimpleMomentum(Strategy):
-    MOMENTUM_DAYS = 126  # 6-month lookback
-    TOP_N = 5
-
+class SMACrossoverQQQ_Weekly(Strategy):
     def __init__(self):
-        # Store historical prices for each symbol
-        self.price_history = {}
+        self._fast_len = 10
+        self._slow_len = 30
+        self._prices = deque(maxlen=self._slow_len)
 
     def universe(self) -> list[str]:
-        return [
-            "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
-            "JPM", "BAC", "WFC", "GS", "MS",
-            "JNJ", "UNH", "PFE", "ABBV", "TMO",
-            "XOM", "CVX", "COP", "SLB",
-            "WMT", "HD", "NKE", "MCD", "COST"
-        ]
+        return ["QQQ", "AGG"]
 
     def cadence(self) -> Cadence:
-        return Cadence(bar_size=timedelta(days=30))  # Monthly rebalance
+        return Cadence(bar_size=BarSize.WEEKLY)
 
     def on_data(self, data: Slice, portfolio: PortfolioView) -> dict[str, float] | None:
-        momentum_scores = {}
+        price = data.close("QQQ")
+        if price is None:
+            return None
 
-        for symbol in self.universe():
-            try:
-                current_price = data.close(symbol)
-                if current_price is None:
-                    continue
+        self._prices.append(price)
 
-                # Initialize price history for this symbol if needed
-                if symbol not in self.price_history:
-                    self.price_history[symbol] = deque(maxlen=self.MOMENTUM_DAYS + 1)
+        if len(self._prices) < self._slow_len:
+            return {"AGG": 1.0}
 
-                # Store current price
-                self.price_history[symbol].append(current_price)
+        prices_list = list(self._prices)
+        fast_sma = sum(prices_list[-self._fast_len:]) / self._fast_len
+        slow_sma = sum(prices_list) / self._slow_len
 
-                # Need at least MOMENTUM_DAYS of data
-                if len(self.price_history[symbol]) < self.MOMENTUM_DAYS + 1:
-                    continue
-
-                # Get the oldest price (MOMENTUM_DAYS ago)
-                past_price = self.price_history[symbol][0]
-                if past_price is None or past_price <= 0:
-                    continue
-
-                # Calculate return over lookback period
-                momentum = (current_price / past_price) - 1.0
-                momentum_scores[symbol] = momentum
-            except Exception:
-                continue
-
-        if len(momentum_scores) < self.TOP_N:
-            return {}  # Not enough data, hold cash
-
-        # Sort by momentum (highest first) and select top N
-        sorted_assets = sorted(momentum_scores.items(), key=lambda x: x[1], reverse=True)
-        top_assets = [symbol for symbol, _ in sorted_assets[:self.TOP_N]]
-
-        # Equal-weight allocation
-        weight_per_asset = 1.0 / self.TOP_N
-        return {symbol: weight_per_asset for symbol in top_assets}
+        if fast_sma > slow_sma:
+            return {"QQQ": 1.0}
+        else:
+            return {"AGG": 1.0}
