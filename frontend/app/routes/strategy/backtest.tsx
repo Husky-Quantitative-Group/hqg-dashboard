@@ -67,6 +67,7 @@ type StrategyEquityChartProps = {
   onSave: () => void;
   isSaving: boolean;
   isViewingSaved: boolean;
+  isWriteForbidden: boolean;
   showPlaceholder: boolean;
   animatePlaceholder: boolean;
 };
@@ -110,6 +111,7 @@ export default function StrategyBacktest() {
     activeBacktestSource,
     setActiveBacktestSource,
     setActiveSavedRunId,
+    isWriteForbidden,
   } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [isSavingBacktest, setIsSavingBacktest] = useState(false);
@@ -173,6 +175,10 @@ export default function StrategyBacktest() {
 
   const handleSaveResults = async () => {
     if (isSavingBacktest) return;
+    if (isWriteForbidden) {
+      addToast("You do not have write access to save results.", "warning");
+      return;
+    }
     if (!backtestData) {
       addToast("Run a backtest before saving.", "warning");
       return;
@@ -275,6 +281,7 @@ export default function StrategyBacktest() {
               onSave={handleSaveResults}
               isSaving={isSavingBacktest}
               isViewingSaved={activeBacktestSource === "saved"}
+              isWriteForbidden={isWriteForbidden}
               showPlaceholder={showPlaceholder}
               animatePlaceholder={animatePlaceholder}
             />
@@ -405,7 +412,7 @@ function BacktestMetrics({ metrics, showPlaceholder, animatePlaceholder }: Backt
   );
 }
 
-function StrategyEquityChart({ strategyName, stats, candles, onSave, isSaving, isViewingSaved, showPlaceholder, animatePlaceholder }: StrategyEquityChartProps) {
+function StrategyEquityChart({ strategyName, stats, candles, onSave, isSaving, isViewingSaved, isWriteForbidden, showPlaceholder, animatePlaceholder }: StrategyEquityChartProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const [benchmarkEnabled, setBenchmarkEnabled] = useState(true);
   const [selectedBenchmark, setSelectedBenchmark] = useState("sp500");
@@ -471,9 +478,9 @@ function StrategyEquityChart({ strategyName, stats, candles, onSave, isSaving, i
         <button
           type="button"
           onClick={onSave}
-          disabled={showPlaceholder || isSaving || isViewingSaved}
+          disabled={showPlaceholder || isSaving || isViewingSaved || isWriteForbidden}
           className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
-            showPlaceholder || isSaving || isViewingSaved
+            showPlaceholder || isSaving || isViewingSaved || isWriteForbidden
               ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
               : "bg-fuchsia-500 hover:bg-fuchsia-400"
           }`}

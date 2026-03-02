@@ -15,6 +15,7 @@ dynamo = boto3.resource("dynamodb")
 
 BACKTESTS_BUCKET = os.environ.get("BACKTESTS_BUCKET", "")
 BACKTEST_METRICS_TABLE = os.environ.get("BACKTEST_METRICS_TABLE", "")
+WRITE_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_WRITE_PERMISSIONS_TABLE", "")
 
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -41,6 +42,8 @@ def presign_backtest_upload(event):
     if isinstance(ctx, dict):
         return ctx
     strategy_id, netid = ctx
+    if not _has_write_permission(strategy_id, netid):
+        return _json(403, {"message": "forbidden"})
 
     run_id = _ulid()
     key = f"strategies/{strategy_id}/runs/{run_id}/run.json.gz"
@@ -186,6 +189,8 @@ def dynamo_backtest_write(event):
     if isinstance(ctx, dict):
         return ctx
     strategy_id, netid = ctx
+    if not _has_write_permission(strategy_id, netid):
+        return _json(403, {"message": "forbidden"})
 
     try:
         body = json.loads(event.get("body") or "{}")
@@ -322,6 +327,14 @@ def _require_strategy_context(event, *, require_table=False, require_bucket=Fals
         return _json(401, {"message": "unauthorized"})
 
     return strategy_id, netid
+
+def _has_write_permission(strategy_id, netid):
+    if not WRITE_PERMISSIONS_TABLE:
+        return False
+    principal = f"USER#{netid}"
+    table = dynamo.Table(WRITE_PERMISSIONS_TABLE)
+    resp = table.get_item(Key={"strategy_id": strategy_id, "principal": principal})
+    return "Item" in resp
 
 def _ulid():
     ts_ms = int(time.time() * 1000)
