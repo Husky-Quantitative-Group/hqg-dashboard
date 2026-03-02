@@ -8,6 +8,7 @@ export type Strategy = {
   created_at?: string;
   updated_at?: string;
   owner?: string;
+  owner_display?: string;
   project_id: string;
   project_name: string;
   metrics?: {

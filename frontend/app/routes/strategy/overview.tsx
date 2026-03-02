@@ -71,7 +71,9 @@ export default function StrategyOverview() {
             <dl className="space-y-3 text-sm">
               <div>
                 <dt className={labelColor}>Owner</dt>
-                <dd className="text-base font-medium">{strategy.owner}</dd>
+                <dd className="text-base font-medium">
+                  {strategy.owner_display ?? strategy.owner ?? "—"}
+                </dd>
               </div>
               <div>
                 <dt className={labelColor}>Project</dt>
