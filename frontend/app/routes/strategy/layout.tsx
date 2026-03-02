@@ -426,7 +426,9 @@ export default function StrategyLayout() {
           <div className="flex-1 min-w-[220px]">
             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Strategy</p>
             <h1 className="text-3xl font-semibold tracking-tight">{strategy.name}</h1>
-            <p className="mt-1 text-sm text-slate-400">Owned by {strategy.owner}</p>
+            <p className="mt-1 text-sm text-slate-400">
+              Owned by {strategy.owner_display ?? strategy.owner ?? "—"}
+            </p>
           </div>
 
           <div className="text-right">
