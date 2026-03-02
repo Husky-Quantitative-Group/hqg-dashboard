@@ -66,6 +66,8 @@ type StrategyEquityChartProps = {
   candles: EquityCandle[];
   onSave: () => void;
   isSaving: boolean;
+  isSaveDisabled: boolean;
+  saveDisabledReason?: string;
   isViewingSaved: boolean;
   showPlaceholder: boolean;
   animatePlaceholder: boolean;
@@ -98,12 +100,13 @@ export default function StrategyBacktest() {
     strategy,
     entrypoint,
     addToast,
-    isDirty,
     isSaving: isWorkspaceSaving,
     latestBacktestData,
     setLatestBacktestData,
-    latestBacktestStrategyVersion,
     setLatestBacktestStrategyVersion,
+    latestBacktestStrategyCode,
+    setLatestBacktestStrategyCode,
+    savedEntrypointContent,
     lastBacktestParamValues,
     setLastBacktestParamValues,
     refreshSavedBacktestRuns,
@@ -114,6 +117,7 @@ export default function StrategyBacktest() {
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [isSavingBacktest, setIsSavingBacktest] = useState(false);
   const backtestData = latestBacktestData;
+  const currentEntrypointContent = typeof entrypoint?.content === "string" ? entrypoint.content : null;
   const lastRunParameters = useMemo(
     () =>
       DEFAULT_PARAMETERS.map((param) => ({
@@ -127,10 +131,6 @@ export default function StrategyBacktest() {
     if (isRunningBacktest) return;
     if (isWorkspaceSaving) {
       addToast("Please wait for your strategy changes to finish saving before running a backtest.", "info");
-      return;
-    }
-    if (isDirty) {
-      addToast("Save a new version of your strategy before running a backtest.", "warning");
       return;
     }
 
@@ -147,7 +147,10 @@ export default function StrategyBacktest() {
     setActiveBacktestSource("live");
     setActiveSavedRunId(null);
     setLatestBacktestData(null);
-    setLatestBacktestStrategyVersion(strategy.current_version ?? null);
+    setLatestBacktestStrategyCode(strategyCode);
+    setLatestBacktestStrategyVersion(
+      savedEntrypointContent !== null && strategyCode === savedEntrypointContent ? strategy.current_version ?? null : null
+    );
     addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
     setLastBacktestParamValues(values);
 
@@ -164,6 +167,7 @@ export default function StrategyBacktest() {
     } catch {
       setLatestBacktestData(null);
       setLatestBacktestStrategyVersion(null);
+      setLatestBacktestStrategyCode(null);
       addToast("Backtest failed", "warning");
     } finally {
       setIsRunningBacktest(false);
@@ -179,6 +183,25 @@ export default function StrategyBacktest() {
     }
     if (activeBacktestSource === "saved") {
       addToast("This is an existing saved run. Run a new backtest to save again.", "info");
+      return;
+    }
+    if (!latestBacktestStrategyCode) {
+      addToast("Code snapshot missing for this run. Please run the backtest again.", "warning");
+      return;
+    }
+    if (!currentEntrypointContent || latestBacktestStrategyCode !== currentEntrypointContent) {
+      addToast("Save blocked: strategy code has changed since this backtest ran. Re-run backtest to save results.", "warning");
+      return;
+    }
+    if (!savedEntrypointContent || latestBacktestStrategyCode !== savedEntrypointContent) {
+      addToast(
+        "Save blocked: save a strategy version with the exact code used for this backtest before saving results.",
+        "warning"
+      );
+      return;
+    }
+    if (strategy.current_version === null || strategy.current_version === undefined) {
+      addToast("Save blocked: strategy version is unavailable. Save strategy code and try again.", "warning");
       return;
     }
 
@@ -213,9 +236,7 @@ export default function StrategyBacktest() {
         },
       };
 
-      if (latestBacktestStrategyVersion !== null && latestBacktestStrategyVersion !== undefined) {
-        finalizePayload.strategy_version = latestBacktestStrategyVersion;
-      }
+      finalizePayload.strategy_version = strategy.current_version;
 
       await finalizeBacktestRun(strategy.id, finalizePayload);
 
@@ -233,6 +254,35 @@ export default function StrategyBacktest() {
 
   const showPlaceholder = !backtestData || isRunningBacktest;
   const animatePlaceholder = isRunningBacktest;
+  const saveDisabledReason = useMemo(() => {
+    if (!backtestData) {
+      return "Run a backtest before saving.";
+    }
+    if (activeBacktestSource === "saved") {
+      return "This run is already saved.";
+    }
+    if (!latestBacktestStrategyCode) {
+      return "Run a new backtest to capture the strategy code snapshot.";
+    }
+    if (!currentEntrypointContent || latestBacktestStrategyCode !== currentEntrypointContent) {
+      return "Strategy code changed after this run. Re-run backtest before saving results.";
+    }
+    if (!savedEntrypointContent || latestBacktestStrategyCode !== savedEntrypointContent) {
+      return "Save a strategy version with this exact code before saving results.";
+    }
+    if (strategy.current_version === null || strategy.current_version === undefined) {
+      return "Save a strategy version before saving results.";
+    }
+    return undefined;
+  }, [
+    activeBacktestSource,
+    backtestData,
+    currentEntrypointContent,
+    latestBacktestStrategyCode,
+    savedEntrypointContent,
+    strategy.current_version,
+  ]);
+  const isSaveDisabled = showPlaceholder || isSavingBacktest || !!saveDisabledReason;
   const skeletonBaseColor = "#111a26";
   const skeletonHighlightColor = animatePlaceholder ? "#1d2a3f" : skeletonBaseColor;
 
@@ -258,10 +308,8 @@ export default function StrategyBacktest() {
               strategyName={strategy.name}
               parameters={lastRunParameters}
               isRunning={isRunningBacktest}
-              isDisabled={isRunningBacktest || isDirty || isWorkspaceSaving}
-              disabledReason={
-                isDirty ? "Save a new version before running." : isWorkspaceSaving ? "Saving changes…" : undefined
-              }
+              isDisabled={isRunningBacktest || isWorkspaceSaving}
+              disabledReason={isWorkspaceSaving ? "Saving changes…" : undefined}
               onRun={handleRunBacktest}
             />
             <BacktestMetrics metrics={metrics} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
@@ -274,6 +322,8 @@ export default function StrategyBacktest() {
               candles={candles}
               onSave={handleSaveResults}
               isSaving={isSavingBacktest}
+              isSaveDisabled={isSaveDisabled}
+              saveDisabledReason={saveDisabledReason}
               isViewingSaved={activeBacktestSource === "saved"}
               showPlaceholder={showPlaceholder}
               animatePlaceholder={animatePlaceholder}
@@ -405,10 +455,22 @@ function BacktestMetrics({ metrics, showPlaceholder, animatePlaceholder }: Backt
   );
 }
 
-function StrategyEquityChart({ strategyName, stats, candles, onSave, isSaving, isViewingSaved, showPlaceholder, animatePlaceholder }: StrategyEquityChartProps) {
+function StrategyEquityChart({
+  strategyName,
+  stats,
+  candles,
+  onSave,
+  isSaving,
+  isSaveDisabled,
+  saveDisabledReason,
+  isViewingSaved,
+  showPlaceholder,
+  animatePlaceholder,
+}: StrategyEquityChartProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const [benchmarkEnabled, setBenchmarkEnabled] = useState(true);
   const [selectedBenchmark, setSelectedBenchmark] = useState("sp500");
+  const saveHelperTextId = "save-results-helper-text";
 
   useEffect(() => {
     if (showPlaceholder || !chartContainerRef.current) {
@@ -468,18 +530,26 @@ function StrategyEquityChart({ strategyName, stats, candles, onSave, isSaving, i
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Strategy Equity</p>
           <h2 className="text-xl font-semibold text-white">{strategyName ?? "Active strategy"}</h2>
         </div>
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={showPlaceholder || isSaving || isViewingSaved}
-          className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
-            showPlaceholder || isSaving || isViewingSaved
-              ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
-              : "bg-fuchsia-500 hover:bg-fuchsia-400"
-          }`}
-        >
-          {isViewingSaved ? "Saved Run" : isSaving ? "Saving…" : "Save to Results"}
-        </button>
+        <div className="flex flex-col items-end gap-2">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={isSaveDisabled}
+            aria-describedby={isSaveDisabled && saveDisabledReason ? saveHelperTextId : undefined}
+            className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
+              isSaveDisabled
+                ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
+                : "bg-fuchsia-500 hover:bg-fuchsia-400"
+            }`}
+          >
+            {isViewingSaved ? "Saved Run" : isSaving ? "Saving…" : "Save to Results"}
+          </button>
+          {isSaveDisabled && saveDisabledReason ? (
+            <p id={saveHelperTextId} className="max-w-xs text-right text-sm text-slate-400">
+              {saveDisabledReason}
+            </p>
+          ) : null}
+        </div>
 	      </header>
 
       <dl className="mt-6 grid gap-4 md:grid-cols-3 lg:grid-cols-5">

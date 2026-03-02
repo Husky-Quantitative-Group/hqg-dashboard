@@ -45,6 +45,7 @@ export default function StrategyResults() {
     addToast,
     setLatestBacktestData,
     setLatestBacktestStrategyVersion,
+    setLatestBacktestStrategyCode,
     setLastBacktestParamValues,
     setActiveBacktestSource,
     setActiveSavedRunId,
@@ -71,6 +72,7 @@ export default function StrategyResults() {
 
       setLatestBacktestData(backtest);
       setLatestBacktestStrategyVersion(resp.item.strategy_version ?? null);
+      setLatestBacktestStrategyCode(null);
       setActiveBacktestSource("saved");
       setActiveSavedRunId(run.run_id);
 
