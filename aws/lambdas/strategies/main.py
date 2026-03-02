@@ -17,6 +17,8 @@ ARTIFACT_BUCKET = os.environ["ARTIFACT_BUCKET"]
 STRATEGY_NAME_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 75
 README_MAX_CHARS = 10_000
+TAGS_MAX_COUNT = 5
+TAG_MAX_CHARS = 15
 
 
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
@@ -62,7 +64,7 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
       - name (str, max 60 chars)
       - description (str, optional, max 75 chars)
       - readme_content (str, required; can be empty, max 10k chars)
-      - tags (list[str], optional)
+      - tags (list[str], optional; max 5 tags, max 15 chars each, no duplicates)
     """
     source_id = body.get("source_strategy_id") or body.get("sourceStrategyId")
     if not source_id:
@@ -92,7 +94,31 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
     if len(readme_content) > README_MAX_CHARS:
         return _json(400, {"message": f"readme_content must be {README_MAX_CHARS} characters or fewer"})
 
-    tags = body.get("tags") or []
+    tags_raw = body.get("tags", [])
+    if tags_raw is None:
+        tags_raw = []
+    if not isinstance(tags_raw, list):
+        return _json(400, {"message": "tags must be a list of strings"})
+    if len(tags_raw) > TAGS_MAX_COUNT:
+        return _json(400, {"message": f"tags must contain at most {TAGS_MAX_COUNT} items"})
+
+    tags: List[str] = []
+    seen_tags = set()
+    for tag in tags_raw:
+        if not isinstance(tag, str):
+            return _json(400, {"message": "each tag must be a string"})
+        normalized_tag = tag.strip()
+        if not normalized_tag:
+            return _json(400, {"message": "tags cannot be empty"})
+        if len(normalized_tag) > TAG_MAX_CHARS:
+            return _json(400, {"message": f"each tag must be {TAG_MAX_CHARS} characters or fewer"})
+
+        normalized_tag_key = normalized_tag.lower()
+        if normalized_tag_key in seen_tags:
+            return _json(400, {"message": "duplicate tags are not allowed"})
+
+        seen_tags.add(normalized_tag_key)
+        tags.append(normalized_tag)
     netid = _get_netid_from_event(event)
     if not netid:
         return _json(401, {"message": "unauthorized"})

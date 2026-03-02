@@ -5,6 +5,33 @@ import { createStrategy, fetchStrategies, type Strategy } from "../api/strategie
 const STRATEGY_NAME_MAX_CHARS = 60;
 const DESCRIPTION_MAX_CHARS = 75;
 const README_MAX_CHARS = 10_000;
+const TAGS_MAX_COUNT = 5;
+const TAG_MAX_CHARS = 15;
+
+const validateTags = (values: string[]): string | null => {
+  if (values.length > TAGS_MAX_COUNT) {
+    return `You can add up to ${TAGS_MAX_COUNT} tags.`;
+  }
+
+  const seen = new Set<string>();
+  for (const rawTag of values) {
+    const tag = rawTag.trim();
+    if (!tag) {
+      return "Tags cannot be empty.";
+    }
+    if (tag.length > TAG_MAX_CHARS) {
+      return `Each tag must be ${TAG_MAX_CHARS} characters or fewer.`;
+    }
+
+    const key = tag.toLowerCase();
+    if (seen.has(key)) {
+      return "Duplicate tags are not allowed.";
+    }
+    seen.add(key);
+  }
+
+  return null;
+};
 
 type TemplateOption = {
   id: string;
@@ -23,6 +50,7 @@ export default function CreateStrategy() {
   const [hasEditedReadme, setHasEditedReadme] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
+  const [tagInputError, setTagInputError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -82,7 +110,9 @@ export default function CreateStrategy() {
     readmeLength > README_MAX_CHARS
       ? `README must be ${README_MAX_CHARS} characters or fewer.`
       : null;
-  const isFormValid = !!selectedTemplate && !!trimmedStrategyName && !strategyNameError && !descriptionError && !readmeError;
+  const tagsError = useMemo(() => validateTags(tags), [tags]);
+  const activeTagError = tagInputError ?? tagsError;
+  const isFormValid = !!selectedTemplate && !!trimmedStrategyName && !strategyNameError && !descriptionError && !readmeError && !tagsError;
 
   useEffect(() => {
     if (hasEditedReadme) return;
@@ -90,10 +120,22 @@ export default function CreateStrategy() {
   }, [hasEditedReadme, trimmedStrategyName]);
 
   const handleAddTag = () => {
+    setTagInputError(null);
     const value = tagInput.trim();
-    if (!value) return;
+    if (!value) {
+      setTagInputError("Tag cannot be empty.");
+      return;
+    }
+    if (tags.length >= TAGS_MAX_COUNT) {
+      setTagInputError(`You can add up to ${TAGS_MAX_COUNT} tags.`);
+      return;
+    }
+    if (value.length > TAG_MAX_CHARS) {
+      setTagInputError(`Tag must be ${TAG_MAX_CHARS} characters or fewer.`);
+      return;
+    }
     if (tags.some((t) => t.toLowerCase() === value.toLowerCase())) {
-      setTagInput("");
+      setTagInputError("Duplicate tags are not allowed.");
       return;
     }
     setTags((prev) => [...prev, value]);
@@ -101,6 +143,7 @@ export default function CreateStrategy() {
   };
 
   const handleRemoveTag = (value: string) => {
+    setTagInputError(null);
     setTags((prev) => prev.filter((tag) => tag.toLowerCase() !== value.toLowerCase()));
   };
 
@@ -117,7 +160,7 @@ export default function CreateStrategy() {
         name: trimmedStrategyName,
         description,
         readmeContent,
-        tags,
+        tags: tags.map((tag) => tag.trim()),
       });
       setSuccessMessage(`Created strategy ${newStrategy.name} (ID ${newStrategy.id})`);
       navigate(`/strategies/${newStrategy.id}`);
@@ -261,7 +304,12 @@ export default function CreateStrategy() {
           </label>
 
           <label className="flex flex-col gap-2">
-              <span className="text-xs uppercase tracking-wide text-slate-500">Tags</span>
+              <div className="flex items-center justify-between">
+                <span className="text-xs uppercase tracking-wide text-slate-500">Tags</span>
+                <span className={`text-xs ${tags.length > TAGS_MAX_COUNT ? "text-rose-400" : "text-slate-500"}`}>
+                  {tags.length}/{TAGS_MAX_COUNT}
+                </span>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
                   <span
@@ -278,24 +326,30 @@ export default function CreateStrategy() {
               <div className="flex gap-2">
                 <input
                   value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
+                  onChange={(e) => {
+                    setTagInput(e.target.value);
+                    if (tagInputError) setTagInputError(null);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
                       handleAddTag();
                     }
                   }}
-                  className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                  placeholder="Add tag"
+                  disabled={tags.length >= TAGS_MAX_COUNT}
+                  className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 disabled:opacity-60"
+                  placeholder={`Add tag (max ${TAG_MAX_CHARS} chars)`}
                 />
                 <button
                   type="button"
                   onClick={handleAddTag}
-                  className="rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-white"
+                  disabled={tags.length >= TAGS_MAX_COUNT}
+                  className="rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 >
                   Add
                 </button>
               </div>
+              {activeTagError && <p className="text-sm text-rose-400">{activeTagError}</p>}
           </label>
 
           {errorMessage && <p className="text-sm text-rose-400">{errorMessage}</p>}
