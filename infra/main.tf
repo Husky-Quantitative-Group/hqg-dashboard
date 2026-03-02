@@ -456,6 +456,10 @@ data "aws_iam_policy_document" "strategy_storage" {
       aws_dynamodb_table.strategies.arn,
       aws_dynamodb_table.strategy_artifacts.arn,
       aws_dynamodb_table.strategy_artifact_versions.arn,
+      aws_dynamodb_table.strategies_read_permissions.arn,
+      "${aws_dynamodb_table.strategies_read_permissions.arn}/index/*",
+      aws_dynamodb_table.strategies_write_permissions.arn,
+      "${aws_dynamodb_table.strategies_write_permissions.arn}/index/*",
     ]
   }
 }
@@ -1035,6 +1039,8 @@ resource "aws_lambda_function" "strategies" {
       STRATEGY_ARTIFACTS_TABLE         = aws_dynamodb_table.strategy_artifacts.name
       STRATEGY_ARTIFACT_VERSIONS_TABLE = aws_dynamodb_table.strategy_artifact_versions.name
       ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket
+      STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
+      STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
     }
   }
 

@@ -5,15 +5,21 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 import boto3
+from boto3.dynamodb.types import TypeSerializer
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
 dynamo = boto3.resource("dynamodb")
+dynamo_client = boto3.client("dynamodb")
 s3 = boto3.client("s3")
+serializer = TypeSerializer()
 
 STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
 VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
 ARTIFACT_BUCKET = os.environ["ARTIFACT_BUCKET"]
+READ_PERMISSIONS_TABLE = os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"]
+WRITE_PERMISSIONS_TABLE = os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"]
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     """
     Strategies service Lambda.
@@ -105,7 +111,45 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
         "tags": tags,
     }
 
-    STRATEGIES_TABLE.put_item(Item=item)
+    owner_principal = _principal_for_user(owner)
+    try:
+        dynamo_client.transact_write_items(
+            TransactItems=[
+                {
+                    "Put": {
+                        "TableName": STRATEGIES_TABLE.name,
+                        "Item": _ddb_item(item),
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": READ_PERMISSIONS_TABLE,
+                        "Item": _ddb_item(
+                            {"strategy_id": new_strategy_id, "principal": owner_principal}
+                        ),
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": READ_PERMISSIONS_TABLE,
+                        "Item": _ddb_item(
+                            {"strategy_id": new_strategy_id, "principal": "PUBLIC#*"}
+                        ),
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": WRITE_PERMISSIONS_TABLE,
+                        "Item": _ddb_item(
+                            {"strategy_id": new_strategy_id, "principal": owner_principal}
+                        ),
+                    }
+                },
+            ]
+        )
+    except ClientError as exc:
+        return _json(500, {"message": f"Failed to create strategy permissions: {exc}"})
+
     return _json(201, item)
 
 
@@ -275,3 +319,11 @@ def _get_netid_from_event(event: Dict[str, Any]) -> Optional[str]:
 
     netid = netid.strip()
     return netid or None
+
+
+def _principal_for_user(netid: str) -> str:
+    return f"USER#{netid}"
+
+
+def _ddb_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: serializer.serialize(v) for k, v in item.items()}
