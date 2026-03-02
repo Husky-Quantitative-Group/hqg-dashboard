@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { Link } from "react-router-dom";
 import type { Strategy } from "../api/strategies";
 
@@ -11,19 +11,6 @@ export default function StrategyTable({
   strategies,
   isLoading = false,
 }: StrategyTableProps) {
-  const sortedStrategies = useMemo(
-    () =>
-      [...strategies].sort((a, b) => {
-        const aId = Number(a.id);
-        const bId = Number(b.id);
-        if (Number.isNaN(aId) || Number.isNaN(bId)) {
-          return String(a.id).localeCompare(String(b.id));
-        }
-        return aId - bId;
-      }),
-    [strategies]
-  );
-
   const formatDate = (value?: string) => {
     if (!value) return "—";
     const date = new Date(value);
@@ -98,7 +85,7 @@ export default function StrategyTable({
               </td>
             </tr>
           ) : (
-            sortedStrategies.map((strategy, index) => (
+            strategies.map((strategy, index) => (
               <tr
                 key={strategy.id}
                 className={`border-b border-slate-800 hover:bg-slate-600/50 transition-colors ${
