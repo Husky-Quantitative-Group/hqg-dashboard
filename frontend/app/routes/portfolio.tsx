@@ -17,6 +17,9 @@ import {
   fetchPortfolioMetrics,
   fetchPortfolioSnapshot,
   fetchPortfolioStrategyAllocations,
+  liquidatePortfolio,
+  resumePortfolioTrading,
+  stopPortfolioTrading,
   type AssetAllocationsResponse,
   type EquityResponse,
   type MetricsResponse,
@@ -58,6 +61,8 @@ type PortfolioMetric = {
   helper: string;
   trend: "up" | "down" | "neutral";
 };
+
+type PortfolioAction = "stop" | "resume" | "liquidate";
 
 type PortfolioEquityChartProps = {
   data: LineData[];
@@ -131,9 +136,13 @@ export default function Portfolio() {
   const [timeframe, setTimeframe] = useState<Exclude<Timeframe, null>>("YTD");
   const [portfolioIdInput, setPortfolioIdInput] = useState("1");
   const [portfolioId, setPortfolioId] = useState<number>(1);
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [actionPending, setActionPending] = useState<PortfolioAction | null>(null);
 
   const [latestSnapshot, setLatestSnapshot] = useState<SnapshotData | null>(null);
   const [equity, setEquity] = useState<EquityResponse["data"]>([]);
@@ -222,13 +231,44 @@ export default function Portfolio() {
     return () => {
       cancelled = true;
     };
-  }, [portfolioId, timeframe]);
+  }, [portfolioId, timeframe, refreshNonce]);
 
   const handlePortfolioIdInputChange = (nextValue: string) => {
     setPortfolioIdInput(nextValue);
     const next = Number(nextValue);
     if (Number.isInteger(next) && next > 0) {
       setPortfolioId(next);
+    }
+  };
+
+  const handlePortfolioAction = async (action: PortfolioAction) => {
+    setActionPending(action);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      const response =
+        action === "stop"
+          ? await stopPortfolioTrading(portfolioId)
+          : action === "resume"
+            ? await resumePortfolioTrading(portfolioId)
+            : await liquidatePortfolio(portfolioId);
+
+      setActionSuccess(response.message || "Portfolio action completed.");
+      setRefreshNonce((value) => value + 1);
+    } catch (actionRequestError) {
+      console.error("Failed to run portfolio action", actionRequestError);
+      if (axios.isAxiosError(actionRequestError)) {
+        const detail =
+          typeof actionRequestError.response?.data?.detail === "string"
+            ? actionRequestError.response.data.detail
+            : "Failed to run portfolio action.";
+        setActionError(detail);
+      } else {
+        setActionError("Failed to run portfolio action.");
+      }
+    } finally {
+      setActionPending(null);
     }
   };
 
@@ -373,12 +413,46 @@ export default function Portfolio() {
             value={portfolioIdInput}
             onChange={(event) => handlePortfolioIdInputChange(event.target.value)}
           />
+          <button
+            type="button"
+            onClick={() => void handlePortfolioAction("stop")}
+            disabled={actionPending !== null}
+            className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-200 transition hover:border-amber-400 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {actionPending === "stop" ? "Stopping..." : "Stop"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handlePortfolioAction("liquidate")}
+            disabled={actionPending !== null}
+            className="rounded-lg border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-200 transition hover:border-rose-400 hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {actionPending === "liquidate" ? "Liquidating..." : "Liquidate"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handlePortfolioAction("resume")}
+            disabled={actionPending !== null}
+            className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-200 transition hover:border-emerald-400 hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {actionPending === "resume" ? "Resuming..." : "Resume"}
+          </button>
         </div>
       </header>
 
       {error ? (
         <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
           {error}
+        </div>
+      ) : null}
+      {actionError ? (
+        <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
+          {actionError}
+        </div>
+      ) : null}
+      {actionSuccess ? (
+        <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+          {actionSuccess}
         </div>
       ) : null}
 
