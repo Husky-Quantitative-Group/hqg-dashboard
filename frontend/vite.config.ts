@@ -10,6 +10,8 @@ export default defineConfig(({ mode }) => {
   const engineTarget = env.VITE_ENGINE_API;
   const backtesterEndpoint = "/api/v1/backtest";
 
+  console.log("mode:", mode, "cwd:", process.cwd(), "VITE_ENGINE_API:", env.VITE_ENGINE_API);
+
   return {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
     server: {
@@ -26,7 +28,7 @@ export default defineConfig(({ mode }) => {
           target: engineTarget,
           changeOrigin: true,
           secure: false,
-          rewrite: (path) => path.replace(/^\/engine-api/, ""),
+          rewrite: (path) => path.replace(/^\/engine-api/, "/engine"),
         },
 
         "/api": {
