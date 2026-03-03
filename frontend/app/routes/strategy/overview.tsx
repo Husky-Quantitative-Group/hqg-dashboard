@@ -93,6 +93,12 @@ export default function StrategyOverview() {
                 <dt className={labelColor}>Updated</dt>
                 <dd>{strategy.updated_at ? formatter.format(new Date(strategy.updated_at)) : "-"}</dd>
               </div>
+              <div>
+                <dt className={labelColor}>Description</dt>
+                <dd className="text-base font-medium text-slate-200">
+                  {strategy.description?.trim() ? strategy.description : <span className="text-slate-500">No description</span>}
+                </dd>
+              </div>
             </dl>
 
             <div>
