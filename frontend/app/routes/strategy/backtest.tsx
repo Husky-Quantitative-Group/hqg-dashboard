@@ -131,7 +131,7 @@ export default function StrategyBacktest() {
     () =>
       DEFAULT_PARAMETERS.map((param) => ({
         ...param,
-        value: lastBacktestParamValues[param.id] ?? param.value,
+        value: (lastBacktestParamValues[param.id] ?? "").trim() || param.value,
       })),
     [lastBacktestParamValues]
   );
@@ -718,7 +718,7 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
 const DEFAULT_PARAMETERS: BacktestParameter[] = [
   { id: "startingEquity", label: "Starting Equity", value: "100000", prefix: "$", type: "currency" },
   { id: "startDate", label: "Start Date", value: "2020-01-03", type: "date" },
-  { id: "endDate", label: "End Date", value: "2024-01-03", type: "date" },
+  { id: "endDate", label: "End Date", value: "2024-12-31", type: "date" },
 ];
 
 const normalizeDateValue = (value?: string) => {
