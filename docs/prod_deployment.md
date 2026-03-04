@@ -184,13 +184,19 @@ python3 -m pip install --user boto3
 
 AWS_PROFILE=hqg-prod python3 infra/seed/main.py \
   --bucket "$(terraform -chdir=infra output -raw artifacts_bucket_name)" \
+  --backtests-bucket "$(terraform -chdir=infra output -raw backtests_bucket_name)" \
   --strategies-table "$(terraform -chdir=infra output -raw strategies_table_name)" \
   --artifacts-table "$(terraform -chdir=infra output -raw strategy_artifacts_table_name)" \
   --artifact-versions-table "$(terraform -chdir=infra output -raw strategy_artifact_versions_table_name)" \
+  --backtest-metrics-table "$(terraform -chdir=infra output -raw backtest_metrics_table_name)" \
+  --backtester-url "http://localhost:8005" \
   --users-table "$(terraform -chdir=infra output -raw users_table_name)" \
   --admin-netid "<your-netid>" \
   --region us-east-1
+# Optional: --skip-backtests
 ```
+
+Add `--skip-backtests` to the command if you want to seed strategies/artifacts/users without generating backtest runs.
 
 ## 13) Frontend wiring (if needed)
 

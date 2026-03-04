@@ -52,12 +52,16 @@ python3 seed/main.py \
   --artifacts-table "$(terraform output -raw strategy_artifacts_table_name)" \
   --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
   --backtest-metrics-table "$(terraform output -raw backtest_metrics_table_name)" \
+  --backtester-url "http://localhost:8005" \
   --users-table "$(terraform output -raw users_table_name)" \
   --admin-netid "YOUR_NETID" \
   --region us-east-1
+# Optional: --skip-backtests
 ```
 
 Run this from the `infra/` directory and use the same region as `aws_region` in `dev.tfvars`.
+If the backtester URL is unreachable or blocked, strategies still seed and backtests are skipped with a summary at the end.
+You can also force skipping backtests with `--skip-backtests`.
 
 ### Tear down
 ```bash
