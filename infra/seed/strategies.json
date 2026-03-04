@@ -5,11 +5,14 @@
     "owner": "hqg",
     "owner_display": "HQG",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md"],
+    "files": [
+      "main.py",
+      "README.md"
+    ],
     "backtests": [
       {
         "file": "backtest.json",
-        "name": "",
+        "name": "Accurate Alteration",
         "run_id": "",
         "time_created": "",
         "user": "",
@@ -34,11 +37,14 @@
     "owner": "hqg",
     "owner_display": "HQG",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md"],
+    "files": [
+      "main.py",
+      "README.md"
+    ],
     "backtests": [
       {
         "file": "backtest.json",
-        "name": "",
+        "name": "Animated Allegation",
         "run_id": "",
         "time_created": "",
         "user": "",
@@ -63,11 +69,14 @@
     "owner": "hqg",
     "owner_display": "HQG",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md"],
+    "files": [
+      "main.py",
+      "README.md"
+    ],
     "backtests": [
       {
         "file": "backtest.json",
-        "name": "",
+        "name": "Accidental Antecedent",
         "run_id": "",
         "time_created": "",
         "user": "",
@@ -92,11 +101,14 @@
     "owner": "hqg",
     "owner_display": "HQG",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md"],
+    "files": [
+      "main.py",
+      "README.md"
+    ],
     "backtests": [
       {
         "file": "backtest.json",
-        "name": "",
+        "name": "Anxious Accusation",
         "run_id": "",
         "time_created": "",
         "user": "",
@@ -121,11 +133,14 @@
     "owner": "hqg",
     "owner_display": "HQG",
     "entrypoint": "main.py",
-    "files": ["main.py", "README.md"],
+    "files": [
+      "main.py",
+      "README.md"
+    ],
     "backtests": [
       {
         "file": "backtest.json",
-        "name": "",
+        "name": "Aquatic Azimuth",
         "run_id": "",
         "time_created": "",
         "user": "",

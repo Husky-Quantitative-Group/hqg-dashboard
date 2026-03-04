@@ -26,13 +26,14 @@ Example:
 import argparse
 import gzip
 import json
+import math
 import secrets
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 import sys
-from typing import Iterable
+from typing import Any, Iterable
 
 import boto3
 from boto3.dynamodb.conditions import Attr, Key
@@ -91,6 +92,46 @@ def clean_numbers(data: object) -> object:
     if dec is not None:
         return dec
     return data
+
+
+def finite_number_or_none(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+        if math.isfinite(number):
+            return number
+    return None
+
+
+def normalize_date_value(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.split("T")[0].strip()
+
+
+def first_non_empty_string(*values: object) -> str:
+    for value in values:
+        if isinstance(value, str):
+            trimmed = value.strip()
+            if trimmed:
+                return trimmed
+    return ""
+
+
+def first_finite_number(*values: object) -> float | None:
+    for value in values:
+        number = finite_number_or_none(value)
+        if number is not None:
+            return number
+    return None
+
+
+def generate_backtest_name(existing_runs_count: int) -> str:
+    if not isinstance(existing_runs_count, int) or existing_runs_count < 0:
+        existing_runs_count = 0
+
+    return f"Backtest {existing_runs_count + 1}"
 
 
 def load_strategies() -> list[dict[str, object]]:
@@ -278,7 +319,7 @@ def seed_backtests(
 ) -> None:
     table = dynamo.Table(backtest_metrics_table)
 
-    for backtest in backtests:
+    for backtest_index, backtest in enumerate(backtests):
         file_value = backtest.get("file")
         file_name = str(file_value).strip() if file_value is not None else ""
         if not file_name:
@@ -313,6 +354,8 @@ def seed_backtests(
 
         name_value = backtest.get("name")
         name = str(name_value).strip() if name_value is not None else ""
+        if not name:
+            name = generate_backtest_name(backtest_index)
 
         strategy_version = backtest.get("strategy_version")
         if strategy_version in (None, ""):
@@ -320,13 +363,60 @@ def seed_backtests(
 
         params_value = backtest.get("backtest_params")
         params = params_value if isinstance(params_value, dict) else {}
+        payload_params = payload.get("parameters") if isinstance(payload, dict) else {}
+        if not isinstance(payload_params, dict):
+            payload_params = {}
 
-        metrics_value = backtest.get("metrics", "")
-        net_pnl = backtest.get("net_pnl", "")
-        sharpe = backtest.get("sharpe", "")
-        win_rate = backtest.get("win_rate", "")
-        max_drawdown = backtest.get("max_drawdown", "")
-        trades_count = backtest.get("trades_count", "")
+        payload_metrics = payload.get("metrics") if isinstance(payload, dict) else {}
+        if not isinstance(payload_metrics, dict):
+            payload_metrics = {}
+
+        payload_equity_stats = payload.get("equity_stats") if isinstance(payload, dict) else {}
+        if not isinstance(payload_equity_stats, dict):
+            payload_equity_stats = {}
+
+        payload_orders = payload.get("orders") if isinstance(payload, dict) else []
+        if not isinstance(payload_orders, list):
+            payload_orders = []
+
+        start_date = normalize_date_value(
+            first_non_empty_string(params.get("start_date"), payload_params.get("start_date"))
+        )
+        end_date = normalize_date_value(
+            first_non_empty_string(params.get("end_date"), payload_params.get("end_date"))
+        )
+        initial_capital = first_finite_number(params.get("initial_capital"), payload_params.get("starting_equity"))
+
+        metrics_value = backtest.get("metrics")
+        if not isinstance(metrics_value, dict) or not metrics_value:
+            metrics_value = payload_metrics
+
+        net_pnl = first_finite_number(
+            backtest.get("net_pnl"),
+            payload_equity_stats.get("net_profit"),
+        )
+        if net_pnl is None:
+            final_equity = finite_number_or_none(payload_equity_stats.get("equity"))
+            if final_equity is not None and initial_capital is not None:
+                net_pnl = final_equity - initial_capital
+
+        sharpe = first_finite_number(
+            backtest.get("sharpe"),
+            metrics_value.get("sharpe_ratio") if isinstance(metrics_value, dict) else None,
+        )
+        win_rate = first_finite_number(
+            backtest.get("win_rate"),
+            metrics_value.get("win_rate") if isinstance(metrics_value, dict) else None,
+        )
+        max_drawdown = first_finite_number(
+            backtest.get("max_drawdown"),
+            metrics_value.get("max_drawdown") if isinstance(metrics_value, dict) else None,
+        )
+        trades_count = first_finite_number(
+            backtest.get("trades_count"),
+            metrics_value.get("total_orders") if isinstance(metrics_value, dict) else None,
+            len(payload_orders),
+        )
 
         item: dict[str, object] = {
             "strategy_id": strategy_id,
@@ -337,9 +427,9 @@ def seed_backtests(
             "strategy_version": strategy_version,
             "backtest_params": {
                 "name": name,
-                "start_date": params.get("start_date", ""),
-                "end_date": params.get("end_date", ""),
-                "initial_capital": params.get("initial_capital", ""),
+                "start_date": start_date,
+                "end_date": end_date,
+                "initial_capital": initial_capital,
             },
             "metrics": metrics_value,
             "net_pnl": net_pnl,
