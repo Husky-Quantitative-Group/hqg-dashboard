@@ -18,6 +18,7 @@ Example:
     --artifacts-table "$(terraform output -raw strategy_artifacts_table_name)" \
     --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
     --backtest-metrics-table "$(terraform output -raw backtest_metrics_table_name)" \
+    --backtester-url "http://localhost:8005" \
     --users-table "$(terraform output -raw users_table_name)" \
     --admin-netid "YOUR_NETID" \
     --region us-east-1
@@ -28,11 +29,14 @@ import gzip
 import json
 import math
 import secrets
+import sys
 import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-import sys
 from typing import Any, Iterable
 
 import boto3
@@ -46,6 +50,157 @@ STRATEGIES_JSON = ROOT / "strategies.json"
 VERSION = 1
 SEED_STRATEGY_IDS = tuple(str(i) for i in range(1, 6))
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+DEFAULT_BACKTEST_START_DATE = "2020-01-03"
+DEFAULT_BACKTEST_END_DATE = "2024-12-31"
+DEFAULT_BACKTEST_INITIAL_CAPITAL = 100000.0
+
+BACKTEST_POLL_INTERVAL_SECONDS = 2.0
+BACKTEST_POLL_TIMEOUT_SECONDS = 900
+
+
+@dataclass
+class BacktestSeedSummary:
+    requested: int = 0
+    seeded: int = 0
+    skipped: int = 0
+    skip_reason: str = ""
+
+
+class BacktesterClient:
+    def __init__(self, base_url: str):
+        normalized = base_url.strip().rstrip("/")
+        if not normalized:
+            raise ValueError("--backtester-url must be a non-empty URL")
+        self.base_url = normalized
+
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+        timeout_seconds: int = 30,
+    ) -> tuple[int, object]:
+        url = f"{self.base_url}{path}"
+        headers: dict[str, str] = {}
+        body: bytes | None = None
+
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+            body = json.dumps(payload).encode("utf-8")
+
+        req = urllib.request.Request(url=url, data=body, headers=headers, method=method)
+
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+                status = resp.getcode()
+                raw_body = resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            raw_body = exc.read().decode("utf-8", errors="replace")
+        except urllib.error.URLError as exc:
+            raise ValueError(f"Request to {url} failed: {exc.reason}") from exc
+
+        if not raw_body.strip():
+            return status, {}
+
+        try:
+            return status, json.loads(raw_body)
+        except json.JSONDecodeError:
+            return status, {"raw": raw_body}
+
+    def preflight(self) -> tuple[bool, str]:
+        health_status, health_payload = self._request_json("GET", "/health", timeout_seconds=10)
+        if health_status != 200:
+            return False, f"GET /health returned HTTP {health_status}"
+
+        if not isinstance(health_payload, dict) or health_payload.get("status") != "healthy":
+            return False, "GET /health did not return expected {'status': 'healthy'} payload"
+
+        auth_status, auth_payload = self._request_json(
+            "POST",
+            "/api/v1/backtest",
+            payload={},
+            timeout_seconds=10,
+        )
+
+        if auth_status in (400, 422):
+            return True, ""
+
+        if auth_status in (401, 403):
+            return False, "Backtester API is running but blocked by auth/permissions"
+
+        detail = auth_payload.get("detail") if isinstance(auth_payload, dict) else None
+        if detail:
+            return False, f"POST /api/v1/backtest preflight returned HTTP {auth_status}: {detail}"
+        return False, f"POST /api/v1/backtest preflight returned unexpected HTTP {auth_status}"
+
+    def run_backtest(
+        self,
+        strategy_code: str,
+        start_date: str,
+        end_date: str,
+        initial_capital: float,
+        name: str,
+    ) -> dict[str, object]:
+        submit_payload: dict[str, object] = {
+            "strategy_code": strategy_code,
+            "start_date": start_date,
+            "end_date": end_date,
+            "initial_capital": initial_capital,
+            "name": name,
+        }
+
+        submit_status, submit_response = self._request_json(
+            "POST",
+            "/api/v1/backtest",
+            payload=submit_payload,
+            timeout_seconds=30,
+        )
+
+        if submit_status != 202:
+            detail = submit_response.get("detail") if isinstance(submit_response, dict) else submit_response
+            raise ValueError(f"Failed to submit backtest job (HTTP {submit_status}): {detail}")
+
+        if not isinstance(submit_response, dict):
+            raise ValueError("Backtester submit response was not a JSON object")
+
+        job_id = str(submit_response.get("job_id") or "").strip()
+        if not job_id:
+            raise ValueError("Backtester submit response missing job_id")
+
+        deadline = time.monotonic() + BACKTEST_POLL_TIMEOUT_SECONDS
+        while True:
+            if time.monotonic() >= deadline:
+                raise ValueError(
+                    f"Backtest job {job_id} did not finish within {BACKTEST_POLL_TIMEOUT_SECONDS} seconds"
+                )
+
+            status_code, status_response = self._request_json(
+                "GET",
+                f"/api/v1/backtest/{job_id}",
+                timeout_seconds=30,
+            )
+            if status_code != 200:
+                detail = status_response.get("detail") if isinstance(status_response, dict) else status_response
+                raise ValueError(f"Failed polling backtest job {job_id} (HTTP {status_code}): {detail}")
+
+            if not isinstance(status_response, dict):
+                raise ValueError(f"Backtest job {job_id} status response was not a JSON object")
+
+            job_status = str(status_response.get("status") or "").upper()
+            if job_status in {"PENDING", "RUNNING"}:
+                time.sleep(BACKTEST_POLL_INTERVAL_SECONDS)
+                continue
+
+            if job_status == "COMPLETED":
+                result = status_response.get("result")
+                if not isinstance(result, dict):
+                    raise ValueError(f"Backtest job {job_id} completed without a result payload")
+                return result
+
+            job_error = status_response.get("error")
+            raise ValueError(f"Backtest job {job_id} ended with status {job_status}: {job_error}")
 
 
 def utcnow_iso() -> str:
@@ -110,6 +265,16 @@ def normalize_date_value(value: object) -> str:
     return value.split("T")[0].strip()
 
 
+def normalize_datetime_value(value: object, fallback_date: str) -> str:
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if trimmed:
+            if "T" in trimmed:
+                return trimmed
+            return f"{trimmed}T00:00:00"
+    return f"{fallback_date}T00:00:00"
+
+
 def first_non_empty_string(*values: object) -> str:
     for value in values:
         if isinstance(value, str):
@@ -170,18 +335,6 @@ def put_objects(
         keys[filename] = key
         print(f"Uploaded {filename} -> s3://{bucket}/{key}")
     return keys
-
-
-def load_backtest_payload(strategy_id: str, filename: str) -> dict[str, object]:
-    path = STRATEGIES_DIR / strategy_id / filename
-    raw = path.read_text(encoding="utf-8")
-    if not raw.strip():
-        return {}
-
-    parsed = json.loads(raw)
-    if not isinstance(parsed, dict):
-        raise ValueError(f"Backtest file {path} must contain a JSON object")
-    return parsed
 
 
 def _delete_s3_prefix(s3_client, bucket: str, prefix: str) -> int:
@@ -313,25 +466,54 @@ def seed_backtests(
     dynamo,
     backtests_bucket: str,
     backtest_metrics_table: str,
+    backtester_client: BacktesterClient,
     strategy_id: str,
+    strategy_code: str,
     owner: str,
     backtests: list[dict[str, object]],
-) -> None:
+) -> int:
     table = dynamo.Table(backtest_metrics_table)
+    seeded = 0
 
     for backtest_index, backtest in enumerate(backtests):
-        file_value = backtest.get("file")
-        file_name = str(file_value).strip() if file_value is not None else ""
-        if not file_name:
-            raise ValueError(f"Strategy {strategy_id} backtest entry missing file")
-
         run_id_value = backtest.get("run_id")
         run_id = str(run_id_value).strip() if run_id_value is not None else ""
         if not run_id:
             run_id = ulid()
 
+        name_value = backtest.get("name")
+        name = str(name_value).strip() if name_value is not None else ""
+        if not name:
+            name = generate_backtest_name(backtest_index)
+
+        params_value = backtest.get("backtest_params")
+        params = params_value if isinstance(params_value, dict) else {}
+
+        start_date = normalize_date_value(
+            first_non_empty_string(params.get("start_date"), DEFAULT_BACKTEST_START_DATE)
+        )
+        end_date = normalize_date_value(
+            first_non_empty_string(params.get("end_date"), DEFAULT_BACKTEST_END_DATE)
+        )
+        initial_capital = first_finite_number(
+            params.get("initial_capital"),
+            DEFAULT_BACKTEST_INITIAL_CAPITAL,
+        )
+        if initial_capital is None:
+            raise ValueError(f"Strategy {strategy_id} has invalid backtest initial_capital")
+
+        backtester_start_date = normalize_datetime_value(start_date, DEFAULT_BACKTEST_START_DATE)
+        backtester_end_date = normalize_datetime_value(end_date, DEFAULT_BACKTEST_END_DATE)
+
+        payload = backtester_client.run_backtest(
+            strategy_code=strategy_code,
+            start_date=backtester_start_date,
+            end_date=backtester_end_date,
+            initial_capital=initial_capital,
+            name=name,
+        )
+
         s3_key = f"strategies/{strategy_id}/runs/{run_id}/run.json.gz"
-        payload = load_backtest_payload(strategy_id=strategy_id, filename=file_name)
         compressed = gzip.compress(json.dumps(payload).encode("utf-8"))
 
         s3_client.put_object(
@@ -340,7 +522,7 @@ def seed_backtests(
             Body=compressed,
             ContentType="application/gzip",
         )
-        print(f"Uploaded {file_name} -> s3://{backtests_bucket}/{s3_key}")
+        print(f"Generated backtest run {run_id} and uploaded -> s3://{backtests_bucket}/{s3_key}")
 
         time_created_value = backtest.get("time_created")
         time_created = str(time_created_value).strip() if time_created_value is not None else ""
@@ -352,17 +534,10 @@ def seed_backtests(
         if not user:
             user = owner
 
-        name_value = backtest.get("name")
-        name = str(name_value).strip() if name_value is not None else ""
-        if not name:
-            name = generate_backtest_name(backtest_index)
-
         strategy_version = backtest.get("strategy_version")
         if strategy_version in (None, ""):
             strategy_version = VERSION
 
-        params_value = backtest.get("backtest_params")
-        params = params_value if isinstance(params_value, dict) else {}
         payload_params = payload.get("parameters") if isinstance(payload, dict) else {}
         if not isinstance(payload_params, dict):
             payload_params = {}
@@ -380,12 +555,12 @@ def seed_backtests(
             payload_orders = []
 
         start_date = normalize_date_value(
-            first_non_empty_string(params.get("start_date"), payload_params.get("start_date"))
+            first_non_empty_string(start_date, payload_params.get("start_date"))
         )
         end_date = normalize_date_value(
-            first_non_empty_string(params.get("end_date"), payload_params.get("end_date"))
+            first_non_empty_string(end_date, payload_params.get("end_date"))
         )
-        initial_capital = first_finite_number(params.get("initial_capital"), payload_params.get("starting_equity"))
+        initial_capital = first_finite_number(initial_capital, payload_params.get("starting_equity"))
 
         metrics_value = backtest.get("metrics")
         if not isinstance(metrics_value, dict) or not metrics_value:
@@ -444,6 +619,9 @@ def seed_backtests(
         item = clean_numbers(item)  # DynamoDB requires Decimal for numeric values.
         table.put_item(Item=item)
         print(f"Upserted backtest run {run_id} for strategy {strategy_id} in {backtest_metrics_table}")
+        seeded += 1
+
+    return seeded
 
 
 def seed_tables(
@@ -504,7 +682,11 @@ def seed_strategies(
     artifacts_table: str,
     versions_table: str,
     backtest_metrics_table: str,
-) -> None:
+    backtester_client: BacktesterClient | None,
+    backtests_skip_reason: str,
+) -> BacktestSeedSummary:
+    summary = BacktestSeedSummary(skip_reason=backtests_skip_reason)
+
     strategies = load_strategies()
     for entry in strategies:
         if not isinstance(entry, dict):
@@ -570,16 +752,38 @@ def seed_strategies(
             owner_display=owner_display,
             s3_keys=keys,
         )
-        if backtests:
-            seed_backtests(
-                s3_client=s3_client,
-                dynamo=dynamo,
-                backtests_bucket=backtests_bucket,
-                backtest_metrics_table=backtest_metrics_table,
-                strategy_id=strategy_id,
-                owner=owner,
-                backtests=backtests,
+
+        if not backtests:
+            continue
+
+        summary.requested += len(backtests)
+
+        if backtester_client is None:
+            summary.skipped += len(backtests)
+            print(
+                f"Skipping {len(backtests)} backtest seed(s) for strategy {strategy_id}: {summary.skip_reason}"
             )
+            continue
+
+        strategy_code = files.get(entrypoint)
+        if not strategy_code:
+            raise ValueError(
+                f"Strategy {strategy_id} entrypoint '{entrypoint}' is not present in files list"
+            )
+
+        summary.seeded += seed_backtests(
+            s3_client=s3_client,
+            dynamo=dynamo,
+            backtests_bucket=backtests_bucket,
+            backtest_metrics_table=backtest_metrics_table,
+            backtester_client=backtester_client,
+            strategy_id=strategy_id,
+            strategy_code=strategy_code,
+            owner=owner,
+            backtests=backtests,
+        )
+
+    return summary
 
 
 def seed_admin_user(dynamo, users_table: str, netid: str) -> None:
@@ -614,6 +818,16 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
         required=True,
         help="DynamoDB BacktestMetrics table name.",
     )
+    parser.add_argument(
+        "--backtester-url",
+        default=None,
+        help="Backtester base URL (example: http://localhost:8005). If unavailable, backtests are skipped.",
+    )
+    parser.add_argument(
+        "--skip-backtests",
+        action="store_true",
+        help="Skip generating and seeding backtests.",
+    )
     parser.add_argument("--users-table", default=None, help="DynamoDB Users table name.")
     parser.add_argument("--admin-netid", default=None, help="NetID to seed as an admin user.")
     parser.add_argument("--region", default=None, help="AWS region (overrides default resolver).")
@@ -633,7 +847,26 @@ def main(argv: Iterable[str]) -> int:
     s3 = session.client("s3")
     dynamo = session.resource("dynamodb")
 
+    backtester_client: BacktesterClient | None = None
+    backtests_skip_reason = ""
+
     try:
+        if args.skip_backtests:
+            backtests_skip_reason = "--skip-backtests was set"
+            print("Backtest seeding disabled by --skip-backtests.")
+        elif args.backtester_url:
+            candidate = BacktesterClient(args.backtester_url)
+            healthy, reason = candidate.preflight()
+            if healthy:
+                backtester_client = candidate
+                print(f"Backtester preflight succeeded at {candidate.base_url}; backtest seeding enabled.")
+            else:
+                backtests_skip_reason = reason
+                print(f"Backtester preflight failed; backtest seeding disabled: {reason}")
+        else:
+            backtests_skip_reason = "--backtester-url was not provided"
+            print("No --backtester-url provided; backtest seeding disabled.")
+
         purge_seed_strategies(
             s3_client=s3,
             dynamo=dynamo,
@@ -644,7 +877,7 @@ def main(argv: Iterable[str]) -> int:
             versions_table=args.artifact_versions_table,
             backtest_metrics_table=args.backtest_metrics_table,
         )
-        seed_strategies(
+        summary = seed_strategies(
             s3_client=s3,
             dynamo=dynamo,
             bucket=args.bucket,
@@ -653,6 +886,8 @@ def main(argv: Iterable[str]) -> int:
             artifacts_table=args.artifacts_table,
             versions_table=args.artifact_versions_table,
             backtest_metrics_table=args.backtest_metrics_table,
+            backtester_client=backtester_client,
+            backtests_skip_reason=backtests_skip_reason,
         )
         admin_netid = args.admin_netid.strip() if args.admin_netid else None
         if admin_netid and args.users_table:
@@ -660,6 +895,17 @@ def main(argv: Iterable[str]) -> int:
     except (ClientError, BotoCoreError, ValueError, OSError) as exc:
         print(f"Failed to seed data: {exc}", file=sys.stderr)
         return 1
+
+    if summary.requested:
+        if summary.seeded == summary.requested:
+            print(f"Backtest seeding summary: seeded {summary.seeded}/{summary.requested} runs.")
+        else:
+            print(
+                f"Backtest seeding summary: seeded {summary.seeded}/{summary.requested} runs, "
+                f"skipped {summary.skipped}."
+            )
+            if summary.skip_reason:
+                print(f"Backtest seeding skipped reason: {summary.skip_reason}")
 
     print("Seeding complete.")
     return 0

@@ -11,23 +11,12 @@
     ],
     "backtests": [
       {
-        "file": "backtest.json",
         "name": "Accurate Alteration",
-        "run_id": "",
-        "time_created": "",
-        "user": "",
-        "strategy_version": "",
         "backtest_params": {
-          "start_date": "",
-          "end_date": "",
-          "initial_capital": ""
-        },
-        "metrics": "",
-        "net_pnl": "",
-        "sharpe": "",
-        "win_rate": "",
-        "max_drawdown": "",
-        "trades_count": ""
+          "start_date": "2020-01-03",
+          "end_date": "2024-12-31",
+          "initial_capital": 100000
+        }
       }
     ]
   },
@@ -43,23 +32,12 @@
     ],
     "backtests": [
       {
-        "file": "backtest.json",
         "name": "Animated Allegation",
-        "run_id": "",
-        "time_created": "",
-        "user": "",
-        "strategy_version": "",
         "backtest_params": {
-          "start_date": "",
-          "end_date": "",
-          "initial_capital": ""
-        },
-        "metrics": "",
-        "net_pnl": "",
-        "sharpe": "",
-        "win_rate": "",
-        "max_drawdown": "",
-        "trades_count": ""
+          "start_date": "2020-01-03",
+          "end_date": "2024-12-31",
+          "initial_capital": 100000
+        }
       }
     ]
   },
@@ -75,23 +53,12 @@
     ],
     "backtests": [
       {
-        "file": "backtest.json",
         "name": "Accidental Antecedent",
-        "run_id": "",
-        "time_created": "",
-        "user": "",
-        "strategy_version": "",
         "backtest_params": {
-          "start_date": "",
-          "end_date": "",
-          "initial_capital": ""
-        },
-        "metrics": "",
-        "net_pnl": "",
-        "sharpe": "",
-        "win_rate": "",
-        "max_drawdown": "",
-        "trades_count": ""
+          "start_date": "2020-01-03",
+          "end_date": "2024-12-31",
+          "initial_capital": 100000
+        }
       }
     ]
   },
@@ -107,23 +74,12 @@
     ],
     "backtests": [
       {
-        "file": "backtest.json",
         "name": "Anxious Accusation",
-        "run_id": "",
-        "time_created": "",
-        "user": "",
-        "strategy_version": "",
         "backtest_params": {
-          "start_date": "",
-          "end_date": "",
-          "initial_capital": ""
-        },
-        "metrics": "",
-        "net_pnl": "",
-        "sharpe": "",
-        "win_rate": "",
-        "max_drawdown": "",
-        "trades_count": ""
+          "start_date": "2020-01-03",
+          "end_date": "2024-12-31",
+          "initial_capital": 100000
+        }
       }
     ]
   },
@@ -139,23 +95,12 @@
     ],
     "backtests": [
       {
-        "file": "backtest.json",
         "name": "Aquatic Azimuth",
-        "run_id": "",
-        "time_created": "",
-        "user": "",
-        "strategy_version": "",
         "backtest_params": {
-          "start_date": "",
-          "end_date": "",
-          "initial_capital": ""
-        },
-        "metrics": "",
-        "net_pnl": "",
-        "sharpe": "",
-        "win_rate": "",
-        "max_drawdown": "",
-        "trades_count": ""
+          "start_date": "2020-01-03",
+          "end_date": "2024-12-31",
+          "initial_capital": 100000
+        }
       }
     ]
   }
