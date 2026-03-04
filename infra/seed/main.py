@@ -35,6 +35,7 @@ import sys
 from typing import Iterable
 
 import boto3
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import BotoCoreError, ClientError
 
 
@@ -42,6 +43,7 @@ ROOT = Path(__file__).parent
 STRATEGIES_DIR = ROOT / "strategies"
 STRATEGIES_JSON = ROOT / "strategies.json"
 VERSION = 1
+SEED_STRATEGY_IDS = tuple(str(i) for i in range(1, 6))
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
@@ -139,6 +141,130 @@ def load_backtest_payload(strategy_id: str, filename: str) -> dict[str, object]:
     if not isinstance(parsed, dict):
         raise ValueError(f"Backtest file {path} must contain a JSON object")
     return parsed
+
+
+def _delete_s3_prefix(s3_client, bucket: str, prefix: str) -> int:
+    paginator = s3_client.get_paginator("list_objects_v2")
+    keys: list[str] = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        keys.extend(obj["Key"] for obj in page.get("Contents", []) if "Key" in obj)
+
+    deleted = 0
+    for i in range(0, len(keys), 1000):
+        batch = keys[i : i + 1000]
+        delete_response = s3_client.delete_objects(
+            Bucket=bucket,
+            Delete={
+                "Objects": [{"Key": key} for key in batch],
+                "Quiet": True,
+            },
+        )
+        errors = delete_response.get("Errors", [])
+        if errors:
+            raise ValueError(f"Failed deleting s3://{bucket}/{prefix}: {errors}")
+        deleted += len(batch)
+
+    print(f"Deleted {deleted} objects from s3://{bucket}/{prefix}")
+    return deleted
+
+
+def _delete_items_for_strategy(table, strategy_id: str, sort_key_name: str) -> int:
+    deleted = 0
+    last_evaluated_key = None
+    with table.batch_writer() as batch:
+        while True:
+            query_kwargs = {
+                "KeyConditionExpression": Key("strategy_id").eq(strategy_id),
+                "ProjectionExpression": f"strategy_id, {sort_key_name}",
+            }
+            if last_evaluated_key:
+                query_kwargs["ExclusiveStartKey"] = last_evaluated_key
+
+            response = table.query(**query_kwargs)
+            for item in response.get("Items", []):
+                batch.delete_item(Key={"strategy_id": strategy_id, sort_key_name: item[sort_key_name]})
+                deleted += 1
+
+            last_evaluated_key = response.get("LastEvaluatedKey")
+            if not last_evaluated_key:
+                break
+    return deleted
+
+
+def purge_seed_strategies(
+    s3_client,
+    dynamo,
+    bucket: str,
+    backtests_bucket: str,
+    strategies_table: str,
+    artifacts_table: str,
+    versions_table: str,
+    backtest_metrics_table: str,
+) -> None:
+    print(f"Purging existing strategy data for IDs: {', '.join(SEED_STRATEGY_IDS)}")
+
+    for strategy_id in SEED_STRATEGY_IDS:
+        _delete_s3_prefix(s3_client=s3_client, bucket=bucket, prefix=f"{strategy_id}/")
+        _delete_s3_prefix(
+            s3_client=s3_client,
+            bucket=backtests_bucket,
+            prefix=f"strategies/{strategy_id}/",
+        )
+
+    artifacts = dynamo.Table(artifacts_table)
+    for strategy_id in SEED_STRATEGY_IDS:
+        deleted = _delete_items_for_strategy(
+            table=artifacts,
+            strategy_id=strategy_id,
+            sort_key_name="artifact_id",
+        )
+        print(f"Deleted {deleted} rows for strategy {strategy_id} from {artifacts_table}")
+
+    backtests = dynamo.Table(backtest_metrics_table)
+    for strategy_id in SEED_STRATEGY_IDS:
+        deleted = _delete_items_for_strategy(
+            table=backtests,
+            strategy_id=strategy_id,
+            sort_key_name="run_id",
+        )
+        print(f"Deleted {deleted} rows for strategy {strategy_id} from {backtest_metrics_table}")
+
+    versions = dynamo.Table(versions_table)
+    version_filter = None
+    for strategy_id in SEED_STRATEGY_IDS:
+        term = Attr("strategy_artifact_id").begins_with(f"{strategy_id}#")
+        version_filter = term if version_filter is None else (version_filter | term)
+
+    deleted_versions = 0
+    last_evaluated_key = None
+    with versions.batch_writer() as batch:
+        while True:
+            scan_kwargs = {
+                "ProjectionExpression": "strategy_artifact_id, strategy_version",
+                "FilterExpression": version_filter,
+            }
+            if last_evaluated_key:
+                scan_kwargs["ExclusiveStartKey"] = last_evaluated_key
+
+            response = versions.scan(**scan_kwargs)
+            for item in response.get("Items", []):
+                batch.delete_item(
+                    Key={
+                        "strategy_artifact_id": item["strategy_artifact_id"],
+                        "strategy_version": item["strategy_version"],
+                    }
+                )
+                deleted_versions += 1
+
+            last_evaluated_key = response.get("LastEvaluatedKey")
+            if not last_evaluated_key:
+                break
+    print(f"Deleted {deleted_versions} rows from {versions_table}")
+
+    strategies = dynamo.Table(strategies_table)
+    for strategy_id in SEED_STRATEGY_IDS:
+        strategies.delete_item(Key={"id": strategy_id})
+        print(f"Deleted strategy {strategy_id} from {strategies_table}")
 
 
 def seed_backtests(
@@ -410,6 +536,16 @@ def main(argv: Iterable[str]) -> int:
     dynamo = session.resource("dynamodb")
 
     try:
+        purge_seed_strategies(
+            s3_client=s3,
+            dynamo=dynamo,
+            bucket=args.bucket,
+            backtests_bucket=args.backtests_bucket,
+            strategies_table=args.strategies_table,
+            artifacts_table=args.artifacts_table,
+            versions_table=args.artifact_versions_table,
+            backtest_metrics_table=args.backtest_metrics_table,
+        )
         seed_strategies(
             s3_client=s3,
             dynamo=dynamo,
