@@ -107,7 +107,6 @@ export default function StrategyLayout() {
       const params = latest?.backtest_params;
       if (params) {
         setLastBacktestParamValues({
-          name: params.name ?? "",
           startingEquity: params.initial_capital !== undefined ? String(params.initial_capital) : "",
           startDate: params.start_date ?? "",
           endDate: params.end_date ?? "",
@@ -171,7 +170,6 @@ export default function StrategyLayout() {
           setSavedBacktestRuns(savedRuns.items ?? []);
           if (params) {
             setLastBacktestParamValues({
-              name: params.name ?? "",
               startingEquity: params.initial_capital !== undefined ? String(params.initial_capital) : "",
               startDate: params.start_date ?? "",
               endDate: params.end_date ?? "",

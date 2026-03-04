@@ -78,7 +78,6 @@ export default function StrategyResults() {
 
       const params = resp.item.backtest_params;
       setLastBacktestParamValues({
-        name: params?.name ?? "",
         startingEquity: params?.initial_capital !== undefined ? String(params.initial_capital) : "",
         startDate: params?.start_date ?? "",
         endDate: params?.end_date ?? "",
@@ -116,7 +115,7 @@ export default function StrategyResults() {
           <thead className="text-xs uppercase tracking-wide text-slate-400">
             <tr>
               <th className="px-4 py-3 text-left font-medium">ID</th>
-              <th className="px-4 py-3 text-left font-medium">Run</th>
+              <th className="px-4 py-3 text-left font-medium">Name</th>
               <th className="px-4 py-3 text-left font-medium">Strategy Version</th>
               <th className="px-4 py-3 text-left font-medium">Started</th>
               <th className="px-4 py-3 text-left font-medium">Parameters</th>
@@ -139,7 +138,7 @@ export default function StrategyResults() {
             {sortedRuns.map((run) => {
               const pnl = run.net_pnl ?? 0;
               const pnlClass = pnl >= 0 ? "text-emerald-400" : "text-rose-400";
-              const name = run.backtest_params?.name ?? "Untitled";
+              const name = run.name ?? "—";
               const start = run.backtest_params?.start_date ?? "—";
               const end = run.backtest_params?.end_date ?? "—";
               const equity = run.backtest_params?.initial_capital ?? 0;
@@ -159,9 +158,6 @@ export default function StrategyResults() {
                     <div className="text-xs text-slate-500">{formatDuration()}</div>
                   </td>
                   <td className="px-4 py-4 align-top text-xs text-slate-300">
-                    <div>
-                      <span className="text-slate-500">Name:</span> {name}
-                    </div>
                     <div>
                       <span className="text-slate-500">Start:</span> {start}
                     </div>
