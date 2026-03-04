@@ -1,0 +1,21 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Principal": {
+        "Federated": "arn:aws:iam::016299216645:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:Husky-Quantitative-Group/hqg-dashboard:ref:refs/heads/prod",
+          "token.actions.githubusercontent.com:job_workflow_ref": "Husky-Quantitative-Group/hqg-dashboard/.github/workflows/terraform-apply.yml@*"
+        }
+      }
+    }
+  ]
+}

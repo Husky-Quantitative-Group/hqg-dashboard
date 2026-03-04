@@ -34,6 +34,9 @@ export type StrategyWorkspaceContext = {
   setLatestBacktestData: (data: BacktestResponse | null) => void;
   latestBacktestStrategyVersion: number | string | null;
   setLatestBacktestStrategyVersion: (version: number | string | null) => void;
+  latestBacktestStrategyCode: string | null;
+  setLatestBacktestStrategyCode: (code: string | null) => void;
+  savedEntrypointContent: string | null;
   lastBacktestParamValues: Record<string, string>;
   setLastBacktestParamValues: (values: Record<string, string>) => void;
   activeBacktestSource: "live" | "saved" | null;
@@ -59,6 +62,46 @@ function cloneFiles(items: StrategyFile[]): StrategyFile[] {
   return items.map((file) => ({ ...file }));
 }
 
+function getEntrypointContent(items: StrategyFile[]): string | null {
+  const entrypoint = items.find((file) => file.isEntrypoint);
+  return typeof entrypoint?.content === "string" ? entrypoint.content : null;
+}
+
+function normalizeBacktestDate(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return trimmed.split("T")[0]?.trim() ?? "";
+}
+
+function normalizeBacktestStartingEquity(value: unknown): string {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : "";
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    const parsed = Number.parseFloat(trimmed.replace(/,/g, ""));
+    return Number.isFinite(parsed) ? String(parsed) : "";
+  }
+  return "";
+}
+
+function toLastBacktestParamValues(latestRun?: BacktestRunItem): Record<string, string> {
+  const params = latestRun?.backtest_params;
+  if (!params) return {};
+
+  const startDate = normalizeBacktestDate(params.start_date);
+  const endDate = normalizeBacktestDate(params.end_date);
+  const startingEquity = normalizeBacktestStartingEquity(params.initial_capital);
+
+  const values: Record<string, string> = {};
+  if (startingEquity) values.startingEquity = startingEquity;
+  if (startDate) values.startDate = startDate;
+  if (endDate) values.endDate = endDate;
+  return values;
+}
+
 export default function StrategyLayout() {
   const { strategyId = "1" } = useParams<{ strategyId?: string }>();
   const navigate = useNavigate();
@@ -80,6 +123,8 @@ export default function StrategyLayout() {
   const [loadedFilePaths, setLoadedFilePaths] = useState<string[]>([]);
   const [latestBacktestData, setLatestBacktestData] = useState<BacktestResponse | null>(null);
   const [latestBacktestStrategyVersion, setLatestBacktestStrategyVersion] = useState<number | string | null>(null);
+  const [latestBacktestStrategyCode, setLatestBacktestStrategyCode] = useState<string | null>(null);
+  const [savedEntrypointContent, setSavedEntrypointContent] = useState<string | null>(null);
   const [lastBacktestParamValues, setLastBacktestParamValues] = useState<Record<string, string>>({});
   const [activeBacktestSource, setActiveBacktestSource] = useState<"live" | "saved" | null>(null);
   const [activeSavedRunId, setActiveSavedRunId] = useState<string | null>(null);
@@ -94,15 +139,7 @@ export default function StrategyLayout() {
       setSavedBacktestRuns(savedRuns.items ?? []);
 
       const latest = savedRuns.items?.[0];
-      const params = latest?.backtest_params;
-      if (params) {
-        setLastBacktestParamValues({
-          name: params.name ?? "",
-          startingEquity: params.initial_capital !== undefined ? String(params.initial_capital) : "",
-          startDate: params.start_date ?? "",
-          endDate: params.end_date ?? "",
-        });
-      }
+      setLastBacktestParamValues(toLastBacktestParamValues(latest));
     } catch (error) {
       console.error("Failed to load saved backtest runs", error);
     } finally {
@@ -132,6 +169,8 @@ export default function StrategyLayout() {
         }
         setLatestBacktestData(null);
         setLatestBacktestStrategyVersion(null);
+        setLatestBacktestStrategyCode(null);
+        setSavedEntrypointContent(getEntrypointContent(payload.files));
         setLastBacktestParamValues({});
         setActiveBacktestSource(null);
         setActiveSavedRunId(null);
@@ -155,16 +194,8 @@ export default function StrategyLayout() {
             return;
           }
           const latest = savedRuns.items?.[0];
-          const params = latest?.backtest_params;
           setSavedBacktestRuns(savedRuns.items ?? []);
-          if (params) {
-            setLastBacktestParamValues({
-              name: params.name ?? "",
-              startingEquity: params.initial_capital !== undefined ? String(params.initial_capital) : "",
-              startDate: params.start_date ?? "",
-              endDate: params.end_date ?? "",
-            });
-          }
+          setLastBacktestParamValues(toLastBacktestParamValues(latest));
         } catch (error) {
           if (!cancelled) {
             console.error("Failed to load saved backtest params", error);
@@ -229,7 +260,16 @@ export default function StrategyLayout() {
         setFiles((prev) => prev.map((f) => (f.path === selectedFilePath ? { ...f, content: content ?? "" } : f)));
         initialFilesRef.current = initialFilesRef.current.some((f) => f.path === selectedFilePath)
           ? initialFilesRef.current.map((f) => (f.path === selectedFilePath ? { ...f, content: content ?? "" } : f))
-          : [...initialFilesRef.current, { path: selectedFilePath, content: content ?? "", language: file?.language ?? "plaintext" }];
+          : [
+              ...initialFilesRef.current,
+              {
+                path: selectedFilePath,
+                content: content ?? "",
+                language: file?.language ?? "plaintext",
+                isEntrypoint: file?.isEntrypoint,
+              },
+            ];
+        setSavedEntrypointContent(getEntrypointContent(initialFilesRef.current));
         setLoadedFilePaths((prev) => (prev.includes(selectedFilePath) ? prev : [...prev, selectedFilePath]));
       })
       .catch((error) => {
@@ -272,6 +312,7 @@ export default function StrategyLayout() {
     try {
       const result = await uploadStrategyArtifacts(strategy.id, changedFiles);
       initialFilesRef.current = cloneFiles(files);
+      setSavedEntrypointContent(getEntrypointContent(initialFilesRef.current));
       setIsDirty(false);
       setAutosaveMessage("All changes saved");
       setStrategy((prev) =>
@@ -326,7 +367,7 @@ export default function StrategyLayout() {
       const confirmLeave = window.confirm("You have unsaved changes. Leave without saving?");
       if (!confirmLeave) return;
     }
-    navigate("/strategies");
+    navigate("/");
   }, [isDirty, navigate]);
 
   const surface = "border border-slate-800/70 bg-slate-950/60";
@@ -388,6 +429,9 @@ export default function StrategyLayout() {
     setLatestBacktestData,
     latestBacktestStrategyVersion,
     setLatestBacktestStrategyVersion,
+    latestBacktestStrategyCode,
+    setLatestBacktestStrategyCode,
+    savedEntrypointContent,
     lastBacktestParamValues,
     setLastBacktestParamValues,
     activeBacktestSource,

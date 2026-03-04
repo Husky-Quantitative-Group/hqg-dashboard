@@ -7,7 +7,10 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const coreApiBaseUrl = env.CORE_API_URL ?? "http://localhost:5000";
   const backtesterTarget = env.BACKTESTER_URL;
+  const engineTarget = env.VITE_ENGINE_API;
   const backtesterEndpoint = "/api/v1/backtest";
+
+  console.log("mode:", mode, "cwd:", process.cwd(), "VITE_ENGINE_API:", env.VITE_ENGINE_API);
 
   return {
     envPrefix: ["VITE_", "CORE_", "IS_", "BACKTESTER_"],
@@ -19,7 +22,14 @@ export default defineConfig(({ mode }) => {
           target: backtesterTarget,
           changeOrigin: true,
           secure: false,
-          rewrite: (path) => path.replace(/^\/backtester-api\/?$/, backtesterEndpoint),
+          rewrite: (path) => path.replace(/^\/backtester-api/, backtesterEndpoint),
+        },
+
+        "/engine-api": {
+          target: engineTarget,
+          changeOrigin: true,
+          secure: false,
+          rewrite: (path) => path.replace(/^\/engine-api/, "/engine"),
         },
 
         "/api": {

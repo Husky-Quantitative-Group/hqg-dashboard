@@ -70,7 +70,6 @@ export const uploadPresignedPost = async (
 // API for DynamoDB upload
 
 export type BacktestParams = {
-  name: string;
   start_date: string;
   end_date: string;
   initial_capital: number;
@@ -86,6 +85,7 @@ export type FinalizeBacktestRunRequest = {
 export type FinalizeBacktestRunResponse = {
   strategy_id: string;
   run_id: string;
+  name?: string;
   time_created: string;
   user: string;
   strategy_version?: number | string;

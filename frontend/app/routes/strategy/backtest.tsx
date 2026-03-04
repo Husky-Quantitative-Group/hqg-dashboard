@@ -9,7 +9,14 @@ import {
 } from "lightweight-charts";
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
-import { runBacktest, type BacktestResponse, type EquityCurve, type Metrics, type OhlcSeries, type Trade } from "~/api/backtest";
+import {
+  submitBacktest,
+  getBacktestJob,
+  type BacktestCandle,
+  type BacktestOrder,
+  type BacktestResponse,
+  type Metrics,
+} from "~/api/backtest";
 import { finalizeBacktestRun, gzipJson, presignBacktestRunUpload, uploadPresignedPost } from "~/api/backtestMetrics";
 import { useStrategyWorkspace } from "./layout";
 
@@ -37,15 +44,6 @@ type EquityStat = {
 
 type EquityCandle = CandlestickData;
 
-type BacktestOrder = {
-  id: string;
-  timestamp: string;
-  ticker: string;
-  type: "Buy" | "Sell";
-  price: number;
-  amount: number;
-};
-
 type RunParameterState = Record<string, string>;
 
 type BacktestParametersProps = {
@@ -69,6 +67,8 @@ type StrategyEquityChartProps = {
   candles: EquityCandle[];
   onSave: () => void;
   isSaving: boolean;
+  isSaveDisabled: boolean;
+  saveDisabledReason?: string;
   isViewingSaved: boolean;
   showPlaceholder: boolean;
   animatePlaceholder: boolean;
@@ -101,14 +101,16 @@ export default function StrategyBacktest() {
     strategy,
     entrypoint,
     addToast,
-    isDirty,
     isSaving: isWorkspaceSaving,
     latestBacktestData,
     setLatestBacktestData,
-    latestBacktestStrategyVersion,
     setLatestBacktestStrategyVersion,
+    latestBacktestStrategyCode,
+    setLatestBacktestStrategyCode,
+    savedEntrypointContent,
     lastBacktestParamValues,
     setLastBacktestParamValues,
+    savedBacktestRuns,
     refreshSavedBacktestRuns,
     activeBacktestSource,
     setActiveBacktestSource,
@@ -116,12 +118,20 @@ export default function StrategyBacktest() {
   } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [isSavingBacktest, setIsSavingBacktest] = useState(false);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current !== null) clearInterval(pollIntervalRef.current);
+    };
+  }, []);
   const backtestData = latestBacktestData;
+  const currentEntrypointContent = typeof entrypoint?.content === "string" ? entrypoint.content : null;
   const lastRunParameters = useMemo(
     () =>
       DEFAULT_PARAMETERS.map((param) => ({
         ...param,
-        value: lastBacktestParamValues[param.id] ?? param.value,
+        value: (lastBacktestParamValues[param.id] ?? "").trim() || param.value,
       })),
     [lastBacktestParamValues]
   );
@@ -130,10 +140,6 @@ export default function StrategyBacktest() {
     if (isRunningBacktest) return;
     if (isWorkspaceSaving) {
       addToast("Please wait for your strategy changes to finish saving before running a backtest.", "info");
-      return;
-    }
-    if (isDirty) {
-      addToast("Save a new version of your strategy before running a backtest.", "warning");
       return;
     }
 
@@ -150,26 +156,62 @@ export default function StrategyBacktest() {
     setActiveBacktestSource("live");
     setActiveSavedRunId(null);
     setLatestBacktestData(null);
-    setLatestBacktestStrategyVersion(strategy.current_version ?? null);
-    addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
+    setLatestBacktestStrategyCode(strategyCode);
+    setLatestBacktestStrategyVersion(
+      savedEntrypointContent !== null && strategyCode === savedEntrypointContent ? strategy.current_version ?? null : null
+    );
+    addToast("Queued backtest", "info");
     setLastBacktestParamValues(values);
 
     try {
-      const response = await runBacktest({
+      const jobId = await submitBacktest({
         strategy_code: strategyCode,
         start_date: values.startDate,
         end_date: values.endDate,
         initial_capital: initialCapital,
       });
 
-      setLatestBacktestData(response);
-      addToast("Backtest finished", "success");
-    } catch {
+      const POLL_INTERVAL_MS = 2000;
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const job = await getBacktestJob(jobId);
+
+          if (job.status === "COMPLETED") {
+            clearInterval(pollIntervalRef.current!);
+            pollIntervalRef.current = null;
+            setLatestBacktestData(job.result!);
+            setIsRunningBacktest(false);
+            addToast("Backtest finished", "success");
+            console.log("[Backtest] Completed:", job);
+          } else if (job.status === "FAILED" || job.status === "CANCELLED") {
+            clearInterval(pollIntervalRef.current!);
+            pollIntervalRef.current = null;
+            setLatestBacktestData(null);
+            setLatestBacktestStrategyVersion(null);
+            setLatestBacktestStrategyCode(null);
+            setIsRunningBacktest(false);
+            addToast("Backtest failed", "warning");
+            console.error("[Backtest] Job failed:", job.error ?? "(no error details)", job);
+          }
+          // PENDING / RUNNING → keep polling
+        } catch (pollError) {
+          clearInterval(pollIntervalRef.current!);
+          pollIntervalRef.current = null;
+          setLatestBacktestData(null);
+          setLatestBacktestStrategyVersion(null);
+          setLatestBacktestStrategyCode(null);
+          setIsRunningBacktest(false);
+          addToast("Backtest failed", "warning");
+          console.error("[Backtest] Polling error:", pollError);
+        }
+      }, POLL_INTERVAL_MS);
+    } catch (submitError) {
       setLatestBacktestData(null);
       setLatestBacktestStrategyVersion(null);
-      addToast("Backtest failed", "warning");
-    } finally {
+      setLatestBacktestStrategyCode(null);
       setIsRunningBacktest(false);
+      addToast("Backtest failed", "warning");
+      console.error("[Backtest] Submission error:", submitError);
     }
   };
 
@@ -184,6 +226,32 @@ export default function StrategyBacktest() {
       addToast("This is an existing saved run. Run a new backtest to save again.", "info");
       return;
     }
+    if (!latestBacktestStrategyCode) {
+      addToast("Code snapshot missing for this run. Please run the backtest again.", "warning");
+      return;
+    }
+    if (!currentEntrypointContent || latestBacktestStrategyCode !== currentEntrypointContent) {
+      addToast("Save blocked: strategy code has changed since this backtest ran. Re-run backtest to save results.", "warning");
+      return;
+    }
+    if (!savedEntrypointContent || latestBacktestStrategyCode !== savedEntrypointContent) {
+      addToast(
+        "Save blocked: save a strategy version with the exact code used for this backtest before saving results.",
+        "warning"
+      );
+      return;
+    }
+    if (strategy.current_version === null || strategy.current_version === undefined) {
+      addToast("Save blocked: strategy version is unavailable. Save strategy code and try again.", "warning");
+      return;
+    }
+
+    const responseInitialCapital = backtestData.parameters?.starting_equity;
+    const fallbackInitialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
+    const initialCapital = Number.isFinite(responseInitialCapital) ? responseInitialCapital : fallbackInitialCapital;
+    const normalizedInitialCapital = Number.isFinite(initialCapital) ? initialCapital : 0;
+    const startDate = normalizeDateValue(lastBacktestParamValues.startDate ?? backtestData.parameters?.start_date);
+    const endDate = normalizeDateValue(lastBacktestParamValues.endDate ?? backtestData.parameters?.end_date);
 
     setIsSavingBacktest(true);
     addToast("Preparing upload…", "info");
@@ -195,22 +263,17 @@ export default function StrategyBacktest() {
 
       await uploadPresignedPost(presign.s3.upload, gz, "run.json.gz");
 
-      const initialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
-
       const finalizePayload: Parameters<typeof finalizeBacktestRun>[1] = {
         run_id: presign.run_id,
         s3_key: presign.s3.key,
         backtest_params: {
-          name: lastBacktestParamValues.name ?? `Run ${presign.run_id}`,
-          start_date: lastBacktestParamValues.startDate ?? "",
-          end_date: lastBacktestParamValues.endDate ?? "",
-          initial_capital: Number.isFinite(initialCapital) ? initialCapital : 0,
+          start_date: startDate,
+          end_date: endDate,
+          initial_capital: normalizedInitialCapital,
         },
       };
 
-      if (latestBacktestStrategyVersion !== null && latestBacktestStrategyVersion !== undefined) {
-        finalizePayload.strategy_version = latestBacktestStrategyVersion;
-      }
+      finalizePayload.strategy_version = strategy.current_version;
 
       await finalizeBacktestRun(strategy.id, finalizePayload);
 
@@ -228,19 +291,68 @@ export default function StrategyBacktest() {
 
   const showPlaceholder = !backtestData || isRunningBacktest;
   const animatePlaceholder = isRunningBacktest;
+  const saveDisabledReason = useMemo(() => {
+    if (!backtestData) {
+      return "Run a backtest before saving.";
+    }
+    if (activeBacktestSource === "saved") {
+      return "This run is already saved.";
+    }
+    if (!latestBacktestStrategyCode) {
+      return "Run a new backtest to capture the strategy code snapshot.";
+    }
+    if (!currentEntrypointContent || latestBacktestStrategyCode !== currentEntrypointContent) {
+      return "Strategy code changed after this run. Re-run backtest before saving results.";
+    }
+    if (!savedEntrypointContent || latestBacktestStrategyCode !== savedEntrypointContent) {
+      return "Save a strategy version with this exact code before saving results.";
+    }
+    if (strategy.current_version === null || strategy.current_version === undefined) {
+      return "Save a strategy version before saving results.";
+    }
+    const responseInitialCapital = backtestData.parameters?.starting_equity;
+    const fallbackInitialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
+    const initialCapital = Number.isFinite(responseInitialCapital) ? responseInitialCapital : fallbackInitialCapital;
+    const normalizedInitialCapital = Number.isFinite(initialCapital) ? initialCapital : 0;
+    const startDate = normalizeDateValue(lastBacktestParamValues.startDate ?? backtestData.parameters?.start_date);
+    const endDate = normalizeDateValue(lastBacktestParamValues.endDate ?? backtestData.parameters?.end_date);
+    const strategyVersionKey = String(strategy.current_version);
+    const duplicateRun = savedBacktestRuns.find((run) => {
+      if (String(run.strategy_version ?? "") !== strategyVersionKey) return false;
+      const params = run.backtest_params;
+      if (!params) return false;
+      const runInitialCapital = toFiniteNumber(params.initial_capital);
+      return (
+        normalizeDateValue(params.start_date) === startDate &&
+        normalizeDateValue(params.end_date) === endDate &&
+        runInitialCapital !== null &&
+        runInitialCapital === normalizedInitialCapital
+      );
+    });
+    if (duplicateRun) {
+      return `Duplicate saved run exists (${duplicateRun.run_id.slice(0, 10)}).`;
+    }
+    return undefined;
+  }, [
+    activeBacktestSource,
+    backtestData,
+    currentEntrypointContent,
+    lastBacktestParamValues.endDate,
+    lastBacktestParamValues.startDate,
+    lastBacktestParamValues.startingEquity,
+    latestBacktestStrategyCode,
+    savedBacktestRuns,
+    savedEntrypointContent,
+    strategy.current_version,
+  ]);
+  const isSaveDisabled = showPlaceholder || isSavingBacktest || !!saveDisabledReason;
   const skeletonBaseColor = "#111a26";
   const skeletonHighlightColor = animatePlaceholder ? "#1d2a3f" : skeletonBaseColor;
 
   const metrics = useMemo(() => buildMetrics(backtestData?.metrics), [backtestData]);
-  const candles = useMemo(
-    () => buildCandles(backtestData?.ohlc, backtestData?.equity_curve),
-    [backtestData]
-  );
-  const orders = useMemo(() => buildOrders(backtestData?.trades), [backtestData]);
-  const equityStats = useMemo(
-    () => buildEquityStats(backtestData, lastRunParameters),
-    [backtestData, lastRunParameters]
-  );
+  const candles = useMemo(() => buildCandles(backtestData?.candles), [backtestData]);
+  const orders = useMemo(() => buildOrders(backtestData?.orders), [backtestData]);
+  const equityStats = useMemo(() => buildEquityStats(backtestData), [backtestData]);
 
   return (
     <SkeletonTheme baseColor={skeletonBaseColor} highlightColor={skeletonHighlightColor}>
@@ -259,10 +371,8 @@ export default function StrategyBacktest() {
               strategyName={strategy.name}
               parameters={lastRunParameters}
               isRunning={isRunningBacktest}
-              isDisabled={isRunningBacktest || isDirty || isWorkspaceSaving}
-              disabledReason={
-                isDirty ? "Save a new version before running." : isWorkspaceSaving ? "Saving changes…" : undefined
-              }
+              isDisabled={isRunningBacktest || isWorkspaceSaving}
+              disabledReason={isWorkspaceSaving ? "Saving changes…" : undefined}
               onRun={handleRunBacktest}
             />
             <BacktestMetrics metrics={metrics} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
@@ -275,6 +385,8 @@ export default function StrategyBacktest() {
               candles={candles}
               onSave={handleSaveResults}
               isSaving={isSavingBacktest}
+              isSaveDisabled={isSaveDisabled}
+              saveDisabledReason={saveDisabledReason}
               isViewingSaved={activeBacktestSource === "saved"}
               showPlaceholder={showPlaceholder}
               animatePlaceholder={animatePlaceholder}
@@ -322,7 +434,7 @@ function BacktestParameters({ strategyName, parameters, isRunning, isDisabled, d
       </header>
       <form onSubmit={handleSubmit} className="mt-5 grid gap-4 md:grid-cols-2">
         {parameters.map((param) => (
-          <div key={param.id} className="space-y-1">
+          <div key={param.id} className={`space-y-1 ${param.id === "startingEquity" ? "md:col-span-2" : ""}`}>
             <label htmlFor={param.id} className="text-sm font-medium text-slate-200">
               {param.label}
             </label>
@@ -406,10 +518,22 @@ function BacktestMetrics({ metrics, showPlaceholder, animatePlaceholder }: Backt
   );
 }
 
-function StrategyEquityChart({ strategyName, stats, candles, onSave, isSaving, isViewingSaved, showPlaceholder, animatePlaceholder }: StrategyEquityChartProps) {
+function StrategyEquityChart({
+  strategyName,
+  stats,
+  candles,
+  onSave,
+  isSaving,
+  isSaveDisabled,
+  saveDisabledReason,
+  isViewingSaved,
+  showPlaceholder,
+  animatePlaceholder,
+}: StrategyEquityChartProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const [benchmarkEnabled, setBenchmarkEnabled] = useState(true);
   const [selectedBenchmark, setSelectedBenchmark] = useState("sp500");
+  const saveHelperTextId = "save-results-helper-text";
 
   useEffect(() => {
     if (showPlaceholder || !chartContainerRef.current) {
@@ -469,18 +593,26 @@ function StrategyEquityChart({ strategyName, stats, candles, onSave, isSaving, i
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Strategy Equity</p>
           <h2 className="text-xl font-semibold text-white">{strategyName ?? "Active strategy"}</h2>
         </div>
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={showPlaceholder || isSaving || isViewingSaved}
-          className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
-            showPlaceholder || isSaving || isViewingSaved
-              ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
-              : "bg-fuchsia-500 hover:bg-fuchsia-400"
-          }`}
-        >
-          {isViewingSaved ? "Saved Run" : isSaving ? "Saving…" : "Save to Results"}
-        </button>
+        <div className="flex flex-col items-end gap-2">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={isSaveDisabled}
+            aria-describedby={isSaveDisabled && saveDisabledReason ? saveHelperTextId : undefined}
+            className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
+              isSaveDisabled
+                ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
+                : "bg-fuchsia-500 hover:bg-fuchsia-400"
+            }`}
+          >
+            {isViewingSaved ? "Saved Run" : isSaving ? "Saving…" : "Save to Results"}
+          </button>
+          {isSaveDisabled && saveDisabledReason ? (
+            <p id={saveHelperTextId} className="max-w-xs text-right text-sm text-slate-400">
+              {saveDisabledReason}
+            </p>
+          ) : null}
+        </div>
 	      </header>
 
       <dl className="mt-6 grid gap-4 md:grid-cols-3 lg:grid-cols-5">
@@ -558,19 +690,23 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
               </tr>
             </thead>
             <tbody>
-              {orders.map((order) => (
-                <tr key={order.id} className="border-t border-slate-800 text-slate-200">
-                  <td className="px-3 py-3">{dateFormatter.format(new Date(order.timestamp))}</td>
-                  <td className="px-3 py-3 font-semibold">{order.ticker}</td>
-                  <td className="px-3 py-3">
-                    <span className={`font-semibold ${order.type === "Buy" ? "text-emerald-400" : "text-rose-400"}`}>
-                      {order.type}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3 font-mono">{currencyFormatter.format(order.price)}</td>
-                  <td className="px-3 py-3">{numberFormatter.format(order.amount)}</td>
-                </tr>
-              ))}
+              {orders.map((order) => {
+                const isBuy = String(order.action).toLowerCase() === "buy";
+                const orderType = isBuy ? "Buy" : "Sell";
+                return (
+                  <tr key={order.id} className="border-t border-slate-800 text-slate-200">
+                    <td className="px-3 py-3">{dateFormatter.format(new Date(order.timestamp))}</td>
+                    <td className="px-3 py-3 font-semibold">{order.symbol}</td>
+                    <td className="px-3 py-3">
+                      <span className={`font-semibold ${isBuy ? "text-emerald-400" : "text-rose-400"}`}>
+                        {orderType}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 font-mono">{currencyFormatter.format(order.price)}</td>
+                    <td className="px-3 py-3">{numberFormatter.format(order.shares)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -579,31 +715,21 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
   );
 }
 
-function toUnixTime(dateString: string): UTCTimestamp {
-  const input = dateString.trim();
-
-  let normalized = input;
-  // Handle "YYYY-MM-DD HH:mm:ss" (common from pandas) deterministically as UTC.
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(input)) {
-    normalized = `${input.replace(" ", "T")}Z`;
-  } else if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
-    normalized = `${input}T00:00:00Z`;
-  }
-
-  const ms = Date.parse(normalized);
-  if (Number.isNaN(ms)) {
-    return Math.floor(new Date(input).getTime() / 1000) as UTCTimestamp;
-  }
-
-  return Math.floor(ms / 1000) as UTCTimestamp;
-}
-
 const DEFAULT_PARAMETERS: BacktestParameter[] = [
-  { id: "name", label: "Name", value: "Backtest Trial 1", type: "text" },
   { id: "startingEquity", label: "Starting Equity", value: "100000", prefix: "$", type: "currency" },
   { id: "startDate", label: "Start Date", value: "2020-01-03", type: "date" },
-  { id: "endDate", label: "End Date", value: "2024-01-03", type: "date" },
+  { id: "endDate", label: "End Date", value: "2024-12-31", type: "date" },
 ];
+
+const normalizeDateValue = (value?: string) => {
+  if (!value) return "";
+  return value.split("T")[0]?.trim() ?? "";
+};
+
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value;
+};
 
 const toDecimal = (value: number | undefined) => (Number.isFinite(value) ? (value as number) : null);
 
@@ -613,6 +739,11 @@ const formatNumber = (value: number | null, decimals = 2) =>
 const formatPercent = (value: number | null, decimals = 2) => {
   if (value === null) return "—";
   return `${(value * 100).toFixed(decimals)}%`;
+};
+
+const formatPercentValue = (value: number | null, decimals = 2) => {
+  if (value === null) return "—";
+  return `${value.toFixed(decimals)}%`;
 };
 
 const formatMoney = (value: number | null) => (value === null ? "—" : currencyFormatter.format(value));
@@ -647,90 +778,48 @@ const buildMetrics = (metrics?: Metrics): BacktestMetric[] => {
   ];
 };
 
-const buildCandlesFromOhlc = (ohlc?: OhlcSeries): EquityCandle[] => {
-  if (!ohlc) return [];
+const toCandleTime = (time: number): UTCTimestamp => Math.floor(time) as UTCTimestamp;
 
-  const entries = Object.entries(ohlc)
-    .map(([date, value]) => ({ date, value }))
-    .sort((a, b) => toUnixTime(a.date) - toUnixTime(b.date));
+const buildCandles = (candles?: BacktestCandle[]): EquityCandle[] => {
+  if (!Array.isArray(candles) || candles.length === 0) return [];
 
-  return entries.map(({ date, value }) => ({
-    time: toUnixTime(date),
-    open: value.open,
-    high: value.high,
-    low: value.low,
-    close: value.close,
+  return [...candles]
+    .sort((a, b) => a.time - b.time)
+    .map((candle) => ({
+      time: toCandleTime(candle.time),
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+    }));
+};
+
+const buildOrders = (orders?: BacktestOrder[]): BacktestOrder[] => {
+  if (!Array.isArray(orders)) return [];
+
+  return orders.map((order, index) => ({
+    ...order,
+    id: order.id || `${order.timestamp}-${order.symbol}-${index}`,
   }));
 };
 
-const buildCandlesFromEquityCurve = (equityCurve?: EquityCurve): EquityCandle[] => {
-  if (!equityCurve) return [];
-
-  const entries = Object.entries(equityCurve)
-    .map(([date, value]) => ({ date, value }))
-    .sort((a, b) => toUnixTime(a.date) - toUnixTime(b.date));
-
-  if (entries.length === 0) return [];
-
-  const candles: EquityCandle[] = [];
-  let previous = entries[0].value;
-  for (const entry of entries) {
-    const open = previous;
-    const close = entry.value;
-    candles.push({
-      time: toUnixTime(entry.date),
-      open,
-      high: Math.max(open, close),
-      low: Math.min(open, close),
-      close,
-    });
-    previous = close;
-  }
-
-  return candles;
-};
-
-const buildCandles = (ohlc?: OhlcSeries, equityCurve?: EquityCurve): EquityCandle[] => {
-  const fromOhlc = buildCandlesFromOhlc(ohlc);
-  if (fromOhlc.length > 0) return fromOhlc;
-  return buildCandlesFromEquityCurve(equityCurve);
-};
-
-const buildOrders = (trades?: Trade[]): BacktestOrder[] => {
-  if (!trades) return [];
-
-  return trades.map((trade, index) => ({
-    id: `${trade.timestamp}-${trade.symbol}-${index}`,
-    timestamp: trade.timestamp,
-    ticker: trade.symbol,
-    type: trade.action === "buy" ? "Buy" : "Sell",
-    price: trade.price,
-    amount: trade.shares,
-  }));
-};
-
-const buildEquityStats = (data: BacktestResponse | null, params: BacktestParameter[]): EquityStat[] => {
+const buildEquityStats = (data: BacktestResponse | null): EquityStat[] => {
   if (!data) return [];
 
-  const startingEquityParam = params.find((p) => p.id === "startingEquity")?.value ?? "0";
-  const parsedStarting = Number.parseFloat(startingEquityParam.replace(/,/g, ""));
-  const initialCapital = Number.isFinite(parsedStarting) ? parsedStarting : 0;
-
-  const finalEquity = data.final_value ?? null;
-  const cash = data.final_cash ?? null;
-  const netProfit = finalEquity === null ? null : finalEquity - initialCapital;
-  const returnPct = netProfit === null || initialCapital === 0 ? null : netProfit / initialCapital;
+  const finalEquity = toDecimal(data.equity_stats?.equity);
+  const fees = toDecimal(data.equity_stats?.fees);
+  const netProfit = toDecimal(data.equity_stats?.net_profit);
+  const returnPct = toDecimal(data.equity_stats?.return_pct);
+  const volume = toDecimal(data.equity_stats?.volume);
 
   const profitAccent = netProfit !== null && netProfit >= 0 ? "text-emerald-300" : "text-rose-300";
   const returnAccent = returnPct !== null && returnPct >= 0 ? "text-emerald-300" : "text-rose-300";
 
-  const positionsCount = Array.isArray(data.final_positions) ? data.final_positions.length : 0;
-
   return [
     { id: "finalEquity", label: "Final Equity", value: formatMoney(finalEquity), accentClass: "text-white" },
     { id: "netProfit", label: "Net Profit", value: formatMoney(netProfit), accentClass: profitAccent },
-    { id: "return", label: "Return", value: formatPercent(returnPct), accentClass: returnAccent },
-    { id: "cash", label: "Cash", value: formatMoney(cash), accentClass: "text-white" },
-    { id: "positions", label: "Positions", value: String(positionsCount), accentClass: "text-white" },
+    { id: "return", label: "Return", value: formatPercentValue(returnPct), accentClass: returnAccent },
+    { id: "fees", label: "Fees", value: formatMoney(fees), accentClass: "text-white" },
+    { id: "volume", label: "Volume", value: volume === null ? "—" : numberFormatter.format(volume), accentClass: "text-white" },
   ];
 };
