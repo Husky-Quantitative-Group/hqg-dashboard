@@ -27,8 +27,7 @@ class MeanVar(Strategy):
         "LQD",
         "HYG",
         "TLT",
-        "TIP",
-        "BTC",
+        "TIP"
     ]
     cadence = Cadence()
     
