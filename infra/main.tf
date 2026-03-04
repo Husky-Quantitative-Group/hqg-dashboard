@@ -28,19 +28,19 @@ provider "aws" {
 data "aws_caller_identity" "current" {}
 
 locals {
-  name_prefix                         = "${var.project}-${var.env}"
-  is_prod                             = lower(var.env) == "prod"
-  api_custom_domain_requested         = local.is_prod && var.api_custom_domain_name != null
-  api_custom_domain_activated         = local.api_custom_domain_requested && var.api_custom_domain_activate
-  artifacts_bucket_name               = coalesce(var.artifacts_bucket_name, "${local.name_prefix}-strategy-artifacts-${data.aws_caller_identity.current.account_id}")
-  backtests_bucket_name               = coalesce(var.backtests_bucket_name, "${local.name_prefix}-backtest-metrics-${data.aws_caller_identity.current.account_id}")
-  jwks_bucket_name                    = coalesce(var.jwks_bucket_name, "${local.name_prefix}-jwks-${random_id.jwks_bucket_suffix.hex}")
-  strategies_table_name               = coalesce(var.strategies_table_name, "${local.name_prefix}-strategies")
-  strategy_artifacts_table_name       = coalesce(var.strategy_artifacts_table_name, "${local.name_prefix}-strategy-artifacts")
-  strategy_artifact_versions_table    = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
-  users_table_name                    = coalesce(var.users_table_name, "${local.name_prefix}-users")
-  user_access_applications_table_name = coalesce(var.user_access_applications_table_name, "${local.name_prefix}-user-access-applications")
-  backtest_metrics_table_name         = coalesce(var.backtest_metrics_table_name, "${local.name_prefix}-backtest-metrics")
+  name_prefix                             = "${var.project}-${var.env}"
+  is_prod                                 = lower(var.env) == "prod"
+  api_custom_domain_requested             = local.is_prod && var.api_custom_domain_name != null
+  api_custom_domain_activated             = local.api_custom_domain_requested && var.api_custom_domain_activate
+  artifacts_bucket_name                   = coalesce(var.artifacts_bucket_name, "${local.name_prefix}-strategy-artifacts-${data.aws_caller_identity.current.account_id}")
+  backtests_bucket_name                   = coalesce(var.backtests_bucket_name, "${local.name_prefix}-backtest-metrics-${data.aws_caller_identity.current.account_id}")
+  jwks_bucket_name                        = coalesce(var.jwks_bucket_name, "${local.name_prefix}-jwks-${random_id.jwks_bucket_suffix.hex}")
+  strategies_table_name                   = coalesce(var.strategies_table_name, "${local.name_prefix}-strategies")
+  strategy_artifacts_table_name           = coalesce(var.strategy_artifacts_table_name, "${local.name_prefix}-strategy-artifacts")
+  strategy_artifact_versions_table        = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
+  users_table_name                        = coalesce(var.users_table_name, "${local.name_prefix}-users")
+  user_access_applications_table_name     = coalesce(var.user_access_applications_table_name, "${local.name_prefix}-user-access-applications")
+  backtest_metrics_table_name             = coalesce(var.backtest_metrics_table_name, "${local.name_prefix}-backtest-metrics")
   strategies_read_permissions_table_name  = coalesce(var.strategies_read_permissions_table_name, "${local.name_prefix}-strategies-read-permissions")
   strategies_write_permissions_table_name = coalesce(var.strategies_write_permissions_table_name, "${local.name_prefix}-strategies-write-permissions")
 
@@ -1045,10 +1045,10 @@ resource "aws_lambda_function" "strategies" {
 
   environment {
     variables = {
-      STRATEGIES_TABLE                 = aws_dynamodb_table.strategies.name
-      STRATEGY_ARTIFACTS_TABLE         = aws_dynamodb_table.strategy_artifacts.name
-      STRATEGY_ARTIFACT_VERSIONS_TABLE = aws_dynamodb_table.strategy_artifact_versions.name
-      ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket
+      STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+      STRATEGY_ARTIFACTS_TABLE           = aws_dynamodb_table.strategy_artifacts.name
+      STRATEGY_ARTIFACT_VERSIONS_TABLE   = aws_dynamodb_table.strategy_artifact_versions.name
+      ARTIFACT_BUCKET                    = aws_s3_bucket.strategy_artifacts.bucket
       STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
     }
@@ -1068,10 +1068,10 @@ resource "aws_lambda_function" "strategy_artifacts" {
 
   environment {
     variables = {
-      STRATEGIES_TABLE                 = aws_dynamodb_table.strategies.name
-      STRATEGY_ARTIFACTS_TABLE         = aws_dynamodb_table.strategy_artifacts.name
-      STRATEGY_ARTIFACT_VERSIONS_TABLE = aws_dynamodb_table.strategy_artifact_versions.name
-      ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket
+      STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+      STRATEGY_ARTIFACTS_TABLE           = aws_dynamodb_table.strategy_artifacts.name
+      STRATEGY_ARTIFACT_VERSIONS_TABLE   = aws_dynamodb_table.strategy_artifact_versions.name
+      ARTIFACT_BUCKET                    = aws_s3_bucket.strategy_artifacts.bucket
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
     }
   }
@@ -1227,8 +1227,8 @@ resource "aws_lambda_function" "backtest_metrics" {
 
   environment {
     variables = {
-      BACKTEST_METRICS_TABLE = aws_dynamodb_table.backtest_metrics.name
-      BACKTESTS_BUCKET       = aws_s3_bucket.backtest_metrics.bucket
+      BACKTEST_METRICS_TABLE             = aws_dynamodb_table.backtest_metrics.name
+      BACKTESTS_BUCKET                   = aws_s3_bucket.backtest_metrics.bucket
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
       STRATEGIES_TABLE       = aws_dynamodb_table.strategies.name
     }

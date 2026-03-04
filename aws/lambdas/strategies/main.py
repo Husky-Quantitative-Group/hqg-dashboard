@@ -129,6 +129,7 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
     if not netid:
         return _json(401, {"message": "unauthorized"})
     owner = netid
+    owner_display = _get_display_name_from_event(event) or netid
 
     source = _get_strategy_by_id(source_id)
     if not source:
@@ -158,6 +159,7 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
         "updated_at": now,
         "description": description,
         "owner": owner,
+        "owner_display": owner_display,
         "tags": tags,
     }
 
@@ -367,6 +369,21 @@ def _get_netid_from_event(event: Dict[str, Any]) -> Optional[str]:
 
     netid = netid.strip()
     return netid or None
+
+
+def _get_display_name_from_event(event: Dict[str, Any]) -> Optional[str]:
+    request_context = event.get("requestContext") or {}
+    authorizer = request_context.get("authorizer") or {}
+
+    display_name = authorizer.get("display_name")
+    if not display_name and isinstance(authorizer.get("lambda"), dict):
+        display_name = authorizer.get("lambda", {}).get("display_name")
+
+    if not isinstance(display_name, str):
+        return None
+
+    display_name = display_name.strip()
+    return display_name or None
 
 
 def _principal_for_user(netid: str) -> str:
