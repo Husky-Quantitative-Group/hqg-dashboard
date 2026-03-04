@@ -9,12 +9,11 @@
       },
       "Condition": {
         "StringEquals": {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:repository": "Husky-Quantitative-Group/hqg-dashboard"
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
           "token.actions.githubusercontent.com:sub": "repo:Husky-Quantitative-Group/hqg-dashboard:ref:refs/heads/prod",
-          "token.actions.githubusercontent.com:workflow_ref": "Husky-Quantitative-Group/hqg-dashboard/.github/workflows/terraform-apply.yml@*"
+          "token.actions.githubusercontent.com:job_workflow_ref": "Husky-Quantitative-Group/hqg-dashboard/.github/workflows/terraform-apply.yml@*"
         }
       }
     }
