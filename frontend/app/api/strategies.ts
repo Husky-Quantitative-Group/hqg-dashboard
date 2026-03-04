@@ -11,10 +11,10 @@ export type Strategy = {
   project_id: string;
   project_name: string;
   metrics?: {
-    sharpe?: number;
+    sharpe_ratio?: number;
     sortino?: number;
     max_drawdown?: number;
-    cagr?: number;
+    annualized_return?: number;
   };
   description?: string;
   tags?: string[];

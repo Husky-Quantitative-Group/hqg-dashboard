@@ -508,6 +508,7 @@ data "aws_iam_policy_document" "backtest_metrics_storage" {
 
     resources = [
       aws_dynamodb_table.backtest_metrics.arn,
+      aws_dynamodb_table.strategies.arn,
     ]
   }
 }
@@ -1149,6 +1150,7 @@ resource "aws_lambda_function" "backtest_metrics" {
     variables = {
       BACKTEST_METRICS_TABLE = aws_dynamodb_table.backtest_metrics.name
       BACKTESTS_BUCKET       = aws_s3_bucket.backtest_metrics.bucket
+      STRATEGIES_TABLE       = aws_dynamodb_table.strategies.name
     }
   }
 
