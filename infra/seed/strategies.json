@@ -1,0 +1,107 @@
+[
+  {
+    "id": "1",
+    "title": "Buy and Hold SPY",
+    "owner": "hqg",
+    "owner_display": "HQG",
+    "entrypoint": "main.py",
+    "files": [
+      "main.py",
+      "README.md"
+    ],
+    "backtests": [
+      {
+        "name": "Accurate Alteration",
+        "backtest_params": {
+          "start_date": "2020-01-03",
+          "end_date": "2024-12-31",
+          "initial_capital": 100000
+        }
+      }
+    ]
+  },
+  {
+    "id": "2",
+    "title": "Simple Momentum",
+    "owner": "hqg",
+    "owner_display": "HQG",
+    "entrypoint": "main.py",
+    "files": [
+      "main.py",
+      "README.md"
+    ],
+    "backtests": [
+      {
+        "name": "Animated Allegation",
+        "backtest_params": {
+          "start_date": "2020-01-03",
+          "end_date": "2024-12-31",
+          "initial_capital": 100000
+        }
+      }
+    ]
+  },
+  {
+    "id": "3",
+    "title": "SMA Crossover",
+    "owner": "hqg",
+    "owner_display": "HQG",
+    "entrypoint": "main.py",
+    "files": [
+      "main.py",
+      "README.md"
+    ],
+    "backtests": [
+      {
+        "name": "Accidental Antecedent",
+        "backtest_params": {
+          "start_date": "2020-01-03",
+          "end_date": "2024-12-31",
+          "initial_capital": 100000
+        }
+      }
+    ]
+  },
+  {
+    "id": "4",
+    "title": "Mean Reversion",
+    "owner": "hqg",
+    "owner_display": "HQG",
+    "entrypoint": "main.py",
+    "files": [
+      "main.py",
+      "README.md"
+    ],
+    "backtests": [
+      {
+        "name": "Anxious Accusation",
+        "backtest_params": {
+          "start_date": "2020-01-03",
+          "end_date": "2024-12-31",
+          "initial_capital": 100000
+        }
+      }
+    ]
+  },
+  {
+    "id": "5",
+    "title": "Mean Variance (Markowitz)",
+    "owner": "hqg",
+    "owner_display": "HQG",
+    "entrypoint": "main.py",
+    "files": [
+      "main.py",
+      "README.md"
+    ],
+    "backtests": [
+      {
+        "name": "Aquatic Azimuth",
+        "backtest_params": {
+          "start_date": "2020-01-03",
+          "end_date": "2024-12-31",
+          "initial_capital": 100000
+        }
+      }
+    ]
+  }
+]
