@@ -22,7 +22,7 @@ export default defineConfig(({ mode }) => {
           target: backtesterTarget,
           changeOrigin: true,
           secure: false,
-          rewrite: (path) => path.replace(/^\/backtester-api\/?$/, backtesterEndpoint),
+          rewrite: (path) => path.replace(/^\/backtester-api/, backtesterEndpoint),
         },
 
         "/engine-api": {
