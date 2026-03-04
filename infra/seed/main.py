@@ -273,7 +273,7 @@ def seed_backtests(
     backtests_bucket: str,
     backtest_metrics_table: str,
     strategy_id: str,
-    author: str,
+    owner: str,
     backtests: list[dict[str, object]],
 ) -> None:
     table = dynamo.Table(backtest_metrics_table)
@@ -309,7 +309,7 @@ def seed_backtests(
         user_value = backtest.get("user")
         user = str(user_value).strip() if user_value is not None else ""
         if not user:
-            user = author
+            user = owner
 
         name_value = backtest.get("name")
         name = str(name_value).strip() if name_value is not None else ""
@@ -364,7 +364,8 @@ def seed_tables(
     strategy_id: str,
     strategy_name: str,
     entrypoint: str,
-    author: str,
+    owner: str,
+    owner_display: str,
     s3_keys: dict[str, str],
 ) -> None:
     now = utcnow_iso()
@@ -375,7 +376,8 @@ def seed_tables(
     strategy_item = {
         "id": strategy_id,
         "name": strategy_name,
-        "author": author,
+        "owner": owner,
+        "owner_display": owner_display,
         "entrypoint": entrypoint,
         "current_version": VERSION,
         "created_at": now,
@@ -431,10 +433,15 @@ def seed_strategies(
         if not strategy_name:
             strategy_name = f"Strategy {strategy_id}"
 
-        author_value = entry.get("author")
-        author = str(author_value).strip() if author_value else ""
-        if not author:
-            raise ValueError(f"Strategy {strategy_id} missing author")
+        owner_value = entry.get("owner")
+        owner = str(owner_value).strip() if owner_value else ""
+        if not owner:
+            raise ValueError(f"Strategy {strategy_id} missing owner")
+
+        owner_display_value = entry.get("owner_display")
+        owner_display = str(owner_display_value).strip() if owner_display_value else ""
+        if not owner_display:
+            raise ValueError(f"Strategy {strategy_id} missing owner_display")
 
         files_value = entry.get("files")
         if not isinstance(files_value, list) or not files_value:
@@ -469,7 +476,8 @@ def seed_strategies(
             strategy_id=strategy_id,
             strategy_name=strategy_name,
             entrypoint=entrypoint,
-            author=author,
+            owner=owner,
+            owner_display=owner_display,
             s3_keys=keys,
         )
         if backtests:
@@ -479,7 +487,7 @@ def seed_strategies(
                 backtests_bucket=backtests_bucket,
                 backtest_metrics_table=backtest_metrics_table,
                 strategy_id=strategy_id,
-                author=author,
+                owner=owner,
                 backtests=backtests,
             )
 
