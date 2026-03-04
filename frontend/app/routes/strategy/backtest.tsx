@@ -10,7 +10,8 @@ import {
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
 import {
-  runBacktest,
+  submitBacktest,
+  getBacktestJob,
   type BacktestCandle,
   type BacktestOrder,
   type BacktestResponse,
@@ -109,6 +110,7 @@ export default function StrategyBacktest() {
     savedEntrypointContent,
     lastBacktestParamValues,
     setLastBacktestParamValues,
+    savedBacktestRuns,
     refreshSavedBacktestRuns,
     activeBacktestSource,
     setActiveBacktestSource,
@@ -116,6 +118,13 @@ export default function StrategyBacktest() {
   } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [isSavingBacktest, setIsSavingBacktest] = useState(false);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current !== null) clearInterval(pollIntervalRef.current);
+    };
+  }, []);
   const backtestData = latestBacktestData;
   const currentEntrypointContent = typeof entrypoint?.content === "string" ? entrypoint.content : null;
   const lastRunParameters = useMemo(
@@ -151,26 +160,58 @@ export default function StrategyBacktest() {
     setLatestBacktestStrategyVersion(
       savedEntrypointContent !== null && strategyCode === savedEntrypointContent ? strategy.current_version ?? null : null
     );
-    addToast(`Queued backtest for ${values.name ?? "strategy"}`, "info");
+    addToast("Queued backtest", "info");
     setLastBacktestParamValues(values);
 
     try {
-      const response = await runBacktest({
+      const jobId = await submitBacktest({
         strategy_code: strategyCode,
         start_date: values.startDate,
         end_date: values.endDate,
         initial_capital: initialCapital,
       });
 
-      setLatestBacktestData(response);
-      addToast("Backtest finished", "success");
-    } catch {
+      const POLL_INTERVAL_MS = 2000;
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const job = await getBacktestJob(jobId);
+
+          if (job.status === "COMPLETED") {
+            clearInterval(pollIntervalRef.current!);
+            pollIntervalRef.current = null;
+            setLatestBacktestData(job.result!);
+            setIsRunningBacktest(false);
+            addToast("Backtest finished", "success");
+            console.log("[Backtest] Completed:", job);
+          } else if (job.status === "FAILED" || job.status === "CANCELLED") {
+            clearInterval(pollIntervalRef.current!);
+            pollIntervalRef.current = null;
+            setLatestBacktestData(null);
+            setLatestBacktestStrategyVersion(null);
+            setLatestBacktestStrategyCode(null);
+            setIsRunningBacktest(false);
+            addToast("Backtest failed", "warning");
+            console.error("[Backtest] Job failed:", job.error ?? "(no error details)", job);
+          }
+          // PENDING / RUNNING → keep polling
+        } catch (pollError) {
+          clearInterval(pollIntervalRef.current!);
+          pollIntervalRef.current = null;
+          setLatestBacktestData(null);
+          setLatestBacktestStrategyVersion(null);
+          setLatestBacktestStrategyCode(null);
+          setIsRunningBacktest(false);
+          addToast("Backtest failed", "warning");
+          console.error("[Backtest] Polling error:", pollError);
+        }
+      }, POLL_INTERVAL_MS);
+    } catch (submitError) {
       setLatestBacktestData(null);
       setLatestBacktestStrategyVersion(null);
       setLatestBacktestStrategyCode(null);
-      addToast("Backtest failed", "warning");
-    } finally {
       setIsRunningBacktest(false);
+      addToast("Backtest failed", "warning");
+      console.error("[Backtest] Submission error:", submitError);
     }
   };
 
@@ -205,6 +246,13 @@ export default function StrategyBacktest() {
       return;
     }
 
+    const responseInitialCapital = backtestData.parameters?.starting_equity;
+    const fallbackInitialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
+    const initialCapital = Number.isFinite(responseInitialCapital) ? responseInitialCapital : fallbackInitialCapital;
+    const normalizedInitialCapital = Number.isFinite(initialCapital) ? initialCapital : 0;
+    const startDate = normalizeDateValue(lastBacktestParamValues.startDate ?? backtestData.parameters?.start_date);
+    const endDate = normalizeDateValue(lastBacktestParamValues.endDate ?? backtestData.parameters?.end_date);
+
     setIsSavingBacktest(true);
     addToast("Preparing upload…", "info");
 
@@ -215,24 +263,13 @@ export default function StrategyBacktest() {
 
       await uploadPresignedPost(presign.s3.upload, gz, "run.json.gz");
 
-      const normalizeDateValue = (value?: string) => {
-        if (!value) return "";
-        return value.split("T")[0]?.trim() ?? "";
-      };
-      const responseInitialCapital = backtestData.parameters?.starting_equity;
-      const fallbackInitialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
-      const initialCapital = Number.isFinite(responseInitialCapital) ? responseInitialCapital : fallbackInitialCapital;
-      const startDate = normalizeDateValue(lastBacktestParamValues.startDate ?? backtestData.parameters?.start_date);
-      const endDate = normalizeDateValue(lastBacktestParamValues.endDate ?? backtestData.parameters?.end_date);
-
       const finalizePayload: Parameters<typeof finalizeBacktestRun>[1] = {
         run_id: presign.run_id,
         s3_key: presign.s3.key,
         backtest_params: {
-          name: lastBacktestParamValues.name ?? backtestData.parameters?.name ?? `Run ${presign.run_id}`,
           start_date: startDate,
           end_date: endDate,
-          initial_capital: Number.isFinite(initialCapital) ? initialCapital : 0,
+          initial_capital: normalizedInitialCapital,
         },
       };
 
@@ -273,12 +310,38 @@ export default function StrategyBacktest() {
     if (strategy.current_version === null || strategy.current_version === undefined) {
       return "Save a strategy version before saving results.";
     }
+    const responseInitialCapital = backtestData.parameters?.starting_equity;
+    const fallbackInitialCapital = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
+    const initialCapital = Number.isFinite(responseInitialCapital) ? responseInitialCapital : fallbackInitialCapital;
+    const normalizedInitialCapital = Number.isFinite(initialCapital) ? initialCapital : 0;
+    const startDate = normalizeDateValue(lastBacktestParamValues.startDate ?? backtestData.parameters?.start_date);
+    const endDate = normalizeDateValue(lastBacktestParamValues.endDate ?? backtestData.parameters?.end_date);
+    const strategyVersionKey = String(strategy.current_version);
+    const duplicateRun = savedBacktestRuns.find((run) => {
+      if (String(run.strategy_version ?? "") !== strategyVersionKey) return false;
+      const params = run.backtest_params;
+      if (!params) return false;
+      const runInitialCapital = toFiniteNumber(params.initial_capital);
+      return (
+        normalizeDateValue(params.start_date) === startDate &&
+        normalizeDateValue(params.end_date) === endDate &&
+        runInitialCapital !== null &&
+        runInitialCapital === normalizedInitialCapital
+      );
+    });
+    if (duplicateRun) {
+      return `Duplicate saved run exists (${duplicateRun.run_id.slice(0, 10)}).`;
+    }
     return undefined;
   }, [
     activeBacktestSource,
     backtestData,
     currentEntrypointContent,
+    lastBacktestParamValues.endDate,
+    lastBacktestParamValues.startDate,
+    lastBacktestParamValues.startingEquity,
     latestBacktestStrategyCode,
+    savedBacktestRuns,
     savedEntrypointContent,
     strategy.current_version,
   ]);
@@ -371,7 +434,7 @@ function BacktestParameters({ strategyName, parameters, isRunning, isDisabled, d
       </header>
       <form onSubmit={handleSubmit} className="mt-5 grid gap-4 md:grid-cols-2">
         {parameters.map((param) => (
-          <div key={param.id} className="space-y-1">
+          <div key={param.id} className={`space-y-1 ${param.id === "startingEquity" ? "md:col-span-2" : ""}`}>
             <label htmlFor={param.id} className="text-sm font-medium text-slate-200">
               {param.label}
             </label>
@@ -653,11 +716,20 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
 }
 
 const DEFAULT_PARAMETERS: BacktestParameter[] = [
-  { id: "name", label: "Name", value: "Backtest Trial 1", type: "text" },
   { id: "startingEquity", label: "Starting Equity", value: "100000", prefix: "$", type: "currency" },
   { id: "startDate", label: "Start Date", value: "2020-01-03", type: "date" },
   { id: "endDate", label: "End Date", value: "2024-01-03", type: "date" },
 ];
+
+const normalizeDateValue = (value?: string) => {
+  if (!value) return "";
+  return value.split("T")[0]?.trim() ?? "";
+};
+
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value;
+};
 
 const toDecimal = (value: number | undefined) => (Number.isFinite(value) ? (value as number) : null);
 

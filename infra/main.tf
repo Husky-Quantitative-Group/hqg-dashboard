@@ -508,6 +508,7 @@ data "aws_iam_policy_document" "backtest_metrics_storage" {
 
     resources = [
       aws_dynamodb_table.backtest_metrics.arn,
+      aws_dynamodb_table.strategies.arn,
     ]
   }
 }
@@ -946,6 +947,13 @@ resource "aws_lambda_layer_version" "cryptography" {
   compatible_runtimes = ["python3.12"]
 }
 
+resource "aws_lambda_layer_version" "wonderwords" {
+  layer_name          = "${local.name_prefix}-wonderwords"
+  filename            = "${path.module}/../aws/lambda_layers/wonderwords/build/wonderwords-layer.zip"
+  source_code_hash    = filebase64sha256("${path.module}/../aws/lambda_layers/wonderwords/build/wonderwords-layer.zip")
+  compatible_runtimes = ["python3.12"]
+}
+
 # ------------------------------
 # Lambda deployment definitions
 # ------------------------------
@@ -1130,16 +1138,19 @@ resource "aws_lambda_function" "admin" {
 resource "aws_lambda_function" "backtest_metrics" {
   function_name = "${local.name_prefix}-backtest-metrics"
   role          = aws_iam_role.backtest_metrics_lambda.arn
-  runtime       = "python3.11"
+  runtime       = "python3.12"
   handler       = "main.handler"
 
   filename         = data.archive_file.backtest_metrics_lambda.output_path
   source_code_hash = data.archive_file.backtest_metrics_lambda.output_base64sha256
 
+  layers = [aws_lambda_layer_version.wonderwords.arn]
+
   environment {
     variables = {
       BACKTEST_METRICS_TABLE = aws_dynamodb_table.backtest_metrics.name
       BACKTESTS_BUCKET       = aws_s3_bucket.backtest_metrics.bucket
+      STRATEGIES_TABLE       = aws_dynamodb_table.strategies.name
     }
   }
 
