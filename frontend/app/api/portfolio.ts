@@ -1,7 +1,10 @@
 import axios from "axios";
+import { engineApiOrigin, isProd } from "./runtime";
+
+const engineApiBaseUrl = isProd ? engineApiOrigin : engineApiOrigin;
 
 export const engineApi = axios.create({
-  baseURL: "/engine-api",
+  baseURL: engineApiBaseUrl,
   withCredentials: true,
 });
 
