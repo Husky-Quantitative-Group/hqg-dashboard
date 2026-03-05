@@ -131,7 +131,7 @@ export default function StrategyTable({
                   </div>
                 </td>
                 <td className="py-4 px-4 text-gray-200 font-mono text-sm">
-                  {formatNumber(strategy.metrics?.sharpe)}
+                  {formatNumber(strategy.metrics?.sharpe_ratio)}
                 </td>
                 <td className="py-4 px-4 text-gray-200 font-mono text-sm">
                   {formatNumber(strategy.metrics?.sortino)}
@@ -140,7 +140,7 @@ export default function StrategyTable({
                   {formatPercent(strategy.metrics?.max_drawdown)}
                 </td>
                 <td className="py-4 px-4 text-gray-200 font-mono text-sm">
-                  {formatPercent(strategy.metrics?.cagr)}
+                  {formatPercent(strategy.metrics?.annualized_return)}
                 </td>
                 </tr>
               );

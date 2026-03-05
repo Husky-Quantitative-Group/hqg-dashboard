@@ -19,6 +19,7 @@
     "react-dom": "^19.1.0",
     "react-loading-skeleton": "^3.5.0",
     "react-markdown": "^10.1.0",
+    "react-minimal-pie-chart": "^9.1.2",
     "react-router": "^7.7.1",
     "react-router-dom": "^7.9.0",
     "remark-gfm": "^4.0.1"

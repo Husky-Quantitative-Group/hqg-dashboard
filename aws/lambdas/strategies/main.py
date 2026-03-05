@@ -21,6 +21,13 @@ ARTIFACT_BUCKET = os.environ["ARTIFACT_BUCKET"]
 READ_PERMISSIONS_TABLE = os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"]
 WRITE_PERMISSIONS_TABLE = os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"]
 READ_PERMISSIONS_DDB = dynamo.Table(READ_PERMISSIONS_TABLE)
+STRATEGY_NAME_MAX_CHARS = 60
+DESCRIPTION_MAX_CHARS = 75
+README_MAX_CHARS = 10_000
+TAGS_MAX_COUNT = 5
+TAG_MAX_CHARS = 15
+
+
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     """
     Strategies service Lambda.
@@ -70,20 +77,64 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
     Branch from an existing strategy and create a new one.
     Body expects:
       - source_strategy_id (str)
-      - name (str)
-      - description (str, optional) -> becomes README.md content
-      - tags (list[str], optional)
+      - name (str, max 60 chars)
+      - description (str, optional, max 75 chars)
+      - readme_content (str, required; can be empty, max 10k chars)
+      - tags (list[str], optional; max 5 tags, max 15 chars each, no duplicates)
     """
     source_id = body.get("source_strategy_id") or body.get("sourceStrategyId")
     if not source_id:
         return _json(400, {"message": "source_strategy_id is required"})
 
-    name = (body.get("name") or "").strip()
+    name_raw = body.get("name", "")
+    if not isinstance(name_raw, str):
+        return _json(400, {"message": "name must be a string"})
+    name = name_raw.strip()
     if not name:
         return _json(400, {"message": "name is required"})
+    if len(name) > STRATEGY_NAME_MAX_CHARS:
+        return _json(400, {"message": f"name must be {STRATEGY_NAME_MAX_CHARS} characters or fewer"})
 
-    description = body.get("description") or ""
-    tags = body.get("tags") or []
+    description_raw = body.get("description", "")
+    if not isinstance(description_raw, str):
+        return _json(400, {"message": "description must be a string"})
+    description = description_raw.strip()
+    if len(description) > DESCRIPTION_MAX_CHARS:
+        return _json(400, {"message": f"description must be {DESCRIPTION_MAX_CHARS} characters or fewer"})
+
+    if "readme_content" not in body:
+        return _json(400, {"message": "readme_content is required"})
+    readme_content = body.get("readme_content")
+    if not isinstance(readme_content, str):
+        return _json(400, {"message": "readme_content must be a string"})
+    if len(readme_content) > README_MAX_CHARS:
+        return _json(400, {"message": f"readme_content must be {README_MAX_CHARS} characters or fewer"})
+
+    tags_raw = body.get("tags", [])
+    if tags_raw is None:
+        tags_raw = []
+    if not isinstance(tags_raw, list):
+        return _json(400, {"message": "tags must be a list of strings"})
+    if len(tags_raw) > TAGS_MAX_COUNT:
+        return _json(400, {"message": f"tags must contain at most {TAGS_MAX_COUNT} items"})
+
+    tags: List[str] = []
+    seen_tags = set()
+    for tag in tags_raw:
+        if not isinstance(tag, str):
+            return _json(400, {"message": "each tag must be a string"})
+        normalized_tag = tag.strip()
+        if not normalized_tag:
+            return _json(400, {"message": "tags cannot be empty"})
+        if len(normalized_tag) > TAG_MAX_CHARS:
+            return _json(400, {"message": f"each tag must be {TAG_MAX_CHARS} characters or fewer"})
+
+        normalized_tag_key = normalized_tag.lower()
+        if normalized_tag_key in seen_tags:
+            return _json(400, {"message": "duplicate tags are not allowed"})
+
+        seen_tags.add(normalized_tag_key)
+        tags.append(normalized_tag)
     netid = _get_netid_from_event(event)
     if not netid:
         return _json(401, {"message": "unauthorized"})
@@ -104,8 +155,7 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
             source_strategy_id=source_id,
             target_strategy_id=new_strategy_id,
             target_version=new_version,
-            description=description,
-            strategy_name=name,
+            readme_content=readme_content,
         )
     except Exception as exc:  # pragma: no cover
         return _json(500, {"message": f"Failed to copy artifacts: {exc}"})
@@ -200,8 +250,7 @@ def _copy_artifacts_from_source(
     source_strategy_id: str,
     target_strategy_id: str,
     target_version: int,
-    description: str,
-    strategy_name: str,
+    readme_content: str,
 ) -> None:
     # Get all artifacts for the source strategy.
     resp = ARTIFACTS_TABLE.query(
@@ -231,7 +280,7 @@ def _copy_artifacts_from_source(
 
         if artifact_id.lower() == "readme.md":
             readme_uploaded = True
-            _put_readme(target_key, description, strategy_name)
+            _put_readme(target_key, readme_content)
         else:
             s3.copy_object(
                 Bucket=ARTIFACT_BUCKET,
@@ -249,7 +298,7 @@ def _copy_artifacts_from_source(
     # If no README existed in source, create one.
     if not readme_uploaded:
         target_key = f"{target_strategy_id}/v{target_version}/README.md"
-        _put_readme(target_key, description, strategy_name)
+        _put_readme(target_key, readme_content)
         _write_artifact_metadata(
             strategy_id=target_strategy_id,
             artifact_id="README.md",
@@ -258,12 +307,11 @@ def _copy_artifacts_from_source(
         )
 
 
-def _put_readme(key: str, description: str, name: str) -> None:
-    content = f"# {name}\n\n{description}".strip() or f"# {name}\n\nTBD"
+def _put_readme(key: str, readme_content: str) -> None:
     s3.put_object(
         Bucket=ARTIFACT_BUCKET,
         Key=key,
-        Body=content.encode("utf-8"),
+        Body=readme_content.encode("utf-8"),
     )
 
 

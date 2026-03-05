@@ -12,10 +12,10 @@ export type Strategy = {
   project_id: string;
   project_name: string;
   metrics?: {
-    sharpe?: number;
+    sharpe_ratio?: number;
     sortino?: number;
     max_drawdown?: number;
-    cagr?: number;
+    annualized_return?: number;
   };
   description?: string;
   tags?: string[];
@@ -35,6 +35,7 @@ export type CreateStrategyRequest = {
   sourceStrategyId: string;
   name: string;
   description?: string;
+  readmeContent: string;
   tags?: string[];
 };
 
@@ -43,6 +44,7 @@ export const createStrategy = async (payload: CreateStrategyRequest): Promise<St
     source_strategy_id: payload.sourceStrategyId,
     name: payload.name,
     description: payload.description ?? "",
+    readme_content: payload.readmeContent,
     tags: payload.tags ?? [],
     // owner is inferred by the backend from the auth token
   });
