@@ -10,7 +10,10 @@ function trimToUndefined(value: unknown): string | undefined {
 export const isProd = import.meta.env.IS_PROD === "1";
 const coreApiUrl = trimToUndefined(import.meta.env.CORE_API_URL);
 const backtesterUrl = trimToUndefined(import.meta.env.BACKTESTER_URL);
+const engineUrl = trimToUndefined(import.meta.env.ENGINE_URL);
 
 export const coreApiBaseUrl = isProd && coreApiUrl ? coreApiUrl : "/api";
 export const backtesterApiOrigin =
   isProd && backtesterUrl ? backtesterUrl.replace(/\/+$/, "") : "/backtester-api";
+export const engineApiOrigin =
+  isProd && engineUrl ? engineUrl.replace(/\/+$/, "") : "/engine-api";

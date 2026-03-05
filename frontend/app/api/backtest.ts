@@ -1,6 +1,7 @@
 import axios from "axios";
 import { backtesterApiOrigin, isProd } from "./runtime";
 
+
 const BACKTESTER_ENDPOINT = "/api/v1/backtest";
 const backtesterApiBaseUrl = isProd
   ? `${backtesterApiOrigin}${BACKTESTER_ENDPOINT}`
@@ -75,7 +76,24 @@ export type BacktestRequest = {
   initial_capital: number;
 };
 
-export const runBacktest = async (payload: BacktestRequest): Promise<BacktestResponse> => {
-  const response = await backtesterApi.post<BacktestResponse>("", payload);
+export type JobStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+
+export type JobRecord = {
+  job_id: string;
+  status: JobStatus;
+  submitted_at: string;
+  started_at?: string;
+  completed_at?: string;
+  result?: BacktestResponse;
+  error?: string;
+};
+
+export const submitBacktest = async (payload: BacktestRequest): Promise<string> => {
+  const response = await backtesterApi.post<{ job_id: string }>("", payload);
+  return response.data.job_id;
+};
+
+export const getBacktestJob = async (jobId: string): Promise<JobRecord> => {
+  const response = await backtesterApi.get<JobRecord>(`/${jobId}`);
   return response.data;
 };

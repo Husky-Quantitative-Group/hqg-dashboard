@@ -69,6 +69,41 @@ function getEntrypointContent(items: StrategyFile[]): string | null {
   return typeof entrypoint?.content === "string" ? entrypoint.content : null;
 }
 
+function normalizeBacktestDate(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return trimmed.split("T")[0]?.trim() ?? "";
+}
+
+function normalizeBacktestStartingEquity(value: unknown): string {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : "";
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    const parsed = Number.parseFloat(trimmed.replace(/,/g, ""));
+    return Number.isFinite(parsed) ? String(parsed) : "";
+  }
+  return "";
+}
+
+function toLastBacktestParamValues(latestRun?: BacktestRunItem): Record<string, string> {
+  const params = latestRun?.backtest_params;
+  if (!params) return {};
+
+  const startDate = normalizeBacktestDate(params.start_date);
+  const endDate = normalizeBacktestDate(params.end_date);
+  const startingEquity = normalizeBacktestStartingEquity(params.initial_capital);
+
+  const values: Record<string, string> = {};
+  if (startingEquity) values.startingEquity = startingEquity;
+  if (startDate) values.startDate = startDate;
+  if (endDate) values.endDate = endDate;
+  return values;
+}
+
 export default function StrategyLayout() {
   const { strategyId = "1" } = useParams<{ strategyId?: string }>();
   const navigate = useNavigate();
@@ -107,14 +142,7 @@ export default function StrategyLayout() {
       setSavedBacktestRuns(savedRuns.items ?? []);
 
       const latest = savedRuns.items?.[0];
-      const params = latest?.backtest_params;
-      if (params) {
-        setLastBacktestParamValues({
-          startingEquity: params.initial_capital !== undefined ? String(params.initial_capital) : "",
-          startDate: params.start_date ?? "",
-          endDate: params.end_date ?? "",
-        });
-      }
+      setLastBacktestParamValues(toLastBacktestParamValues(latest));
     } catch (error) {
       console.error("Failed to load saved backtest runs", error);
     } finally {
@@ -171,15 +199,8 @@ export default function StrategyLayout() {
             return;
           }
           const latest = savedRuns.items?.[0];
-          const params = latest?.backtest_params;
           setSavedBacktestRuns(savedRuns.items ?? []);
-          if (params) {
-            setLastBacktestParamValues({
-              startingEquity: params.initial_capital !== undefined ? String(params.initial_capital) : "",
-              startDate: params.start_date ?? "",
-              endDate: params.end_date ?? "",
-            });
-          }
+          setLastBacktestParamValues(toLastBacktestParamValues(latest));
         } catch (error) {
           if (!cancelled) {
             console.error("Failed to load saved backtest params", error);

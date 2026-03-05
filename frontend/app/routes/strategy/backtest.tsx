@@ -10,7 +10,8 @@ import {
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
 import {
-  runBacktest,
+  submitBacktest,
+  getBacktestJob,
   type BacktestCandle,
   type BacktestOrder,
   type BacktestResponse,
@@ -119,13 +120,20 @@ export default function StrategyBacktest() {
   } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [isSavingBacktest, setIsSavingBacktest] = useState(false);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current !== null) clearInterval(pollIntervalRef.current);
+    };
+  }, []);
   const backtestData = latestBacktestData;
   const currentEntrypointContent = typeof entrypoint?.content === "string" ? entrypoint.content : null;
   const lastRunParameters = useMemo(
     () =>
       DEFAULT_PARAMETERS.map((param) => ({
         ...param,
-        value: lastBacktestParamValues[param.id] ?? param.value,
+        value: (lastBacktestParamValues[param.id] ?? "").trim() || param.value,
       })),
     [lastBacktestParamValues]
   );
@@ -158,22 +166,54 @@ export default function StrategyBacktest() {
     setLastBacktestParamValues(values);
 
     try {
-      const response = await runBacktest({
+      const jobId = await submitBacktest({
         strategy_code: strategyCode,
         start_date: values.startDate,
         end_date: values.endDate,
         initial_capital: initialCapital,
       });
 
-      setLatestBacktestData(response);
-      addToast("Backtest finished", "success");
-    } catch {
+      const POLL_INTERVAL_MS = 2000;
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const job = await getBacktestJob(jobId);
+
+          if (job.status === "COMPLETED") {
+            clearInterval(pollIntervalRef.current!);
+            pollIntervalRef.current = null;
+            setLatestBacktestData(job.result!);
+            setIsRunningBacktest(false);
+            addToast("Backtest finished", "success");
+            console.log("[Backtest] Completed:", job);
+          } else if (job.status === "FAILED" || job.status === "CANCELLED") {
+            clearInterval(pollIntervalRef.current!);
+            pollIntervalRef.current = null;
+            setLatestBacktestData(null);
+            setLatestBacktestStrategyVersion(null);
+            setLatestBacktestStrategyCode(null);
+            setIsRunningBacktest(false);
+            addToast("Backtest failed", "warning");
+            console.error("[Backtest] Job failed:", job.error ?? "(no error details)", job);
+          }
+          // PENDING / RUNNING → keep polling
+        } catch (pollError) {
+          clearInterval(pollIntervalRef.current!);
+          pollIntervalRef.current = null;
+          setLatestBacktestData(null);
+          setLatestBacktestStrategyVersion(null);
+          setLatestBacktestStrategyCode(null);
+          setIsRunningBacktest(false);
+          addToast("Backtest failed", "warning");
+          console.error("[Backtest] Polling error:", pollError);
+        }
+      }, POLL_INTERVAL_MS);
+    } catch (submitError) {
       setLatestBacktestData(null);
       setLatestBacktestStrategyVersion(null);
       setLatestBacktestStrategyCode(null);
-      addToast("Backtest failed", "warning");
-    } finally {
       setIsRunningBacktest(false);
+      addToast("Backtest failed", "warning");
+      console.error("[Backtest] Submission error:", submitError);
     }
   };
 
@@ -685,7 +725,7 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
 const DEFAULT_PARAMETERS: BacktestParameter[] = [
   { id: "startingEquity", label: "Starting Equity", value: "100000", prefix: "$", type: "currency" },
   { id: "startDate", label: "Start Date", value: "2020-01-03", type: "date" },
-  { id: "endDate", label: "End Date", value: "2024-01-03", type: "date" },
+  { id: "endDate", label: "End Date", value: "2024-12-31", type: "date" },
 ];
 
 const normalizeDateValue = (value?: string) => {
