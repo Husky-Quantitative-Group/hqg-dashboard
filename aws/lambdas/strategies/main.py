@@ -20,6 +20,7 @@ VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
 ARTIFACT_BUCKET = os.environ["ARTIFACT_BUCKET"]
 READ_PERMISSIONS_TABLE = os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"]
 WRITE_PERMISSIONS_TABLE = os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"]
+READ_PERMISSIONS_DDB = dynamo.Table(READ_PERMISSIONS_TABLE)
 STRATEGY_NAME_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 75
 README_MAX_CHARS = 10_000
@@ -38,7 +39,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     route_key = (event.get("requestContext") or {}).get("routeKey")
 
     if route_key == "GET /strategies":
-        return get_strategies()
+        return get_strategies(event)
 
     if route_key == "POST /strategies":
         body = json.loads(event.get("body") or "{}")
@@ -46,7 +47,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
 
     if route_key == "GET /strategies/{id}":
         strategy_id = (event.get("pathParameters") or {}).get("id")
-        return get_strategy(strategy_id)
+        return get_strategy(strategy_id, event)
 
     if route_key == "PATCH /strategies/{id}":
         strategy_id = (event.get("pathParameters") or {}).get("id")
@@ -56,9 +57,18 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     return {"statusCode": 404, "body": "Not found"}
 
 
-def get_strategies() -> Dict[str, Any]:
-    resp = STRATEGIES_TABLE.scan()
-    items: List[Dict[str, Any]] = resp.get("Items", [])
+def get_strategies(event: Dict[str, Any]) -> Dict[str, Any]:
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    strategy_ids = _list_readable_strategy_ids(netid)
+    if not strategy_ids:
+        return _json(200, [])
+
+    keys = [{"id": sid} for sid in strategy_ids]
+    items = _batch_get_strategies(keys)
+
     return _json(200, _clean_decimals(items))
 
 
@@ -185,7 +195,7 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
                     "Put": {
                         "TableName": READ_PERMISSIONS_TABLE,
                         "Item": _ddb_item(
-                            {"strategy_id": new_strategy_id, "principal": "PUBLIC#*"}
+                            {"strategy_id": new_strategy_id, "principal": "ROLE#PUBLIC"}
                         ),
                     }
                 },
@@ -205,9 +215,16 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
     return _json(201, item)
 
 
-def get_strategy(strategy_id: Optional[str]) -> Dict[str, Any]:
+def get_strategy(strategy_id: Optional[str], event: Dict[str, Any]) -> Dict[str, Any]:
     if not strategy_id:
         return _json(400, {"message": "strategy id is required"})
+
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    if not _has_read_permission(strategy_id, netid):
+        return _json(403, {"message": "forbidden"})
 
     item = _get_strategy_by_id(strategy_id)
     if not item:
@@ -371,6 +388,68 @@ def _get_netid_from_event(event: Dict[str, Any]) -> Optional[str]:
     return netid or None
 
 
+def _has_read_permission(strategy_id: str, netid: str) -> bool:
+    principal = _principal_for_user(netid)
+    resp = READ_PERMISSIONS_DDB.get_item(
+        Key={"strategy_id": strategy_id, "principal": principal}
+    )
+    if "Item" in resp:
+        return True
+    public_resp = READ_PERMISSIONS_DDB.get_item(
+        Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
+    )
+    return "Item" in public_resp
+
+
+def _list_readable_strategy_ids(netid: str) -> List[str]:
+    principals = [_principal_for_user(netid), "ROLE#PUBLIC"]
+    strategy_ids: List[str] = []
+    seen = set()
+
+    for principal in principals:
+        last_key = None
+        while True:
+            query_kwargs = {
+                "IndexName": "principal-strategy-index",
+                "KeyConditionExpression": Key("principal").eq(principal),
+                "ProjectionExpression": "strategy_id",
+            }
+            if last_key:
+                query_kwargs["ExclusiveStartKey"] = last_key
+
+            resp = READ_PERMISSIONS_DDB.query(**query_kwargs)
+            for item in resp.get("Items", []):
+                sid = item.get("strategy_id")
+                if isinstance(sid, str) and sid not in seen:
+                    seen.add(sid)
+                    strategy_ids.append(sid)
+
+            last_key = resp.get("LastEvaluatedKey")
+            if not last_key:
+                break
+
+    return strategy_ids
+
+
+def _chunk(items: List[Dict[str, Any]], size: int) -> List[List[Dict[str, Any]]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _batch_get_strategies(keys: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    if not keys:
+        return items
+
+    for batch in _chunk(keys, 100):
+        request_items = {STRATEGIES_TABLE.name: {"Keys": batch}}
+        while request_items:
+            resp = dynamo.batch_get_item(RequestItems=request_items)
+            items.extend(resp.get("Responses", {}).get(STRATEGIES_TABLE.name, []))
+            request_items = resp.get("UnprocessedKeys") or {}
+
+    return items
+  
+  
 def _get_display_name_from_event(event: Dict[str, Any]) -> Optional[str]:
     request_context = event.get("requestContext") or {}
     authorizer = request_context.get("authorizer") or {}
