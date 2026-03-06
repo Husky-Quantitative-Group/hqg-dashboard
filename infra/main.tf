@@ -447,6 +447,7 @@ data "aws_iam_policy_document" "strategy_storage" {
       "dynamodb:UpdateItem",
       "dynamodb:DeleteItem",
       "dynamodb:BatchWriteItem",
+      "dynamodb:BatchGetItem",
       "dynamodb:Query",
       "dynamodb:Scan",
       "dynamodb:DescribeTable",
