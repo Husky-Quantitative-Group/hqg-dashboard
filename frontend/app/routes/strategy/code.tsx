@@ -24,6 +24,15 @@ export default function StrategyCodeWorkspace() {
     [codeFiles, selectedFilePath]
   );
   const isLoadingFile = loadingFilePath !== null && loadingFilePath === selectedFilePath;
+  const editorLineCount = useMemo(() => {
+    const content = selectedFile?.content ?? "";
+    return Math.max(1, content.split("\n").length);
+  }, [selectedFile?.content]);
+  const editorHeight = useMemo(() => {
+    const lineHeight = 20;
+    const topBottomPadding = 32;
+    return Math.max(520, editorLineCount * lineHeight + topBottomPadding);
+  }, [editorLineCount]);
 
   useEffect(() => {
     setEditorReady(true);
@@ -90,7 +99,7 @@ export default function StrategyCodeWorkspace() {
         </div>
       </aside>
 
-      <section className={`flex min-h-[520px] flex-col rounded-2xl border ${editorSurface}`}>
+      <section className={`rounded-2xl border ${editorSurface}`}>
         <div className={`flex flex-wrap items-center justify-between gap-3 border-b ${dividerBorder} px-5 py-4 text-sm`}>
           <div className={`flex flex-wrap items-center gap-2 text-xs ${toolbarLabelColor}`}>
             <span className={`font-mono text-sm ${selectedFile ? filePathColor : placeholderClass}`}>
@@ -104,13 +113,13 @@ export default function StrategyCodeWorkspace() {
           </div>
         </div>
 
-        <div className="flex-1">
+        <div>
           {isLoadingFile ? (
-            <div className={`flex h-full items-center justify-center text-sm ${placeholderClass}`}>Loading file...</div>
+            <div className={`flex min-h-[520px] items-center justify-center text-sm ${placeholderClass}`}>Loading file...</div>
           ) : selectedFile && editorReady ? (
             <Editor
               key={selectedFile.path}
-              height="100%"
+              height={editorHeight}
               theme={editorTheme}
               defaultLanguage={selectedFile.language}
               language={selectedFile.language}
@@ -119,13 +128,20 @@ export default function StrategyCodeWorkspace() {
               options={{
                 minimap: { enabled: false },
                 fontSize: 14,
+                lineHeight: 20,
                 fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo",
                 scrollBeyondLastLine: false,
                 smoothScrolling: true,
+                wordWrap: "off",
+                scrollbar: {
+                  vertical: "hidden",
+                  horizontal: "auto",
+                  alwaysConsumeMouseWheel: false,
+                },
               }}
             />
           ) : (
-            <div className={`flex h-full items-center justify-center text-sm ${placeholderClass}`}>
+            <div className={`flex min-h-[520px] items-center justify-center text-sm ${placeholderClass}`}>
               {fileLoadError ? fileLoadError : "Select a file to start editing"}
             </div>
           )}
