@@ -7,6 +7,15 @@ import {
   type CandlestickData,
   type UTCTimestamp,
 } from "lightweight-charts";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
 import {
@@ -43,6 +52,11 @@ type EquityStat = {
 };
 
 type EquityCandle = CandlestickData;
+type EquityLinePoint = {
+  time: number;
+  equity: number;
+};
+type EquityChartType = "candles" | "line";
 
 type RunParameterState = Record<string, string>;
 
@@ -522,8 +536,13 @@ function StrategyEquityChart({
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const hoverLineRef = useRef<HTMLDivElement | null>(null);
   const hoverDotRef = useRef<HTMLDivElement | null>(null);
+  const [chartType, setChartType] = useState<EquityChartType>("candles");
+  const linePoints = useMemo(() => buildLinePoints(candles), [candles]);
 
   useEffect(() => {
+    if (chartType !== "candles") {
+      return;
+    }
     if (
       showPlaceholder ||
       !chartContainerRef.current ||
@@ -610,8 +629,8 @@ function StrategyEquityChart({
         return;
       }
 
-      const candle = param.seriesData.get(series) as BacktestCandle | undefined;
-      if (!candle) {
+      const seriesDatum = param.seriesData.get(series) as BacktestCandle | undefined;
+      if (!seriesDatum) {
         tooltip.style.opacity = "0";
         hoverLine.style.opacity = "0";
         hoverDot.style.opacity = "0";
@@ -621,10 +640,10 @@ function StrategyEquityChart({
       tooltip.innerHTML = [
         `<div class="text-xs uppercase tracking-[0.18em] text-slate-400">${formatTooltipDate(param.time)}</div>`,
         `<div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-200">`,
-        `<span class="text-slate-400">Open</span><span class="text-right font-mono">${currencyFormatter.format(candle.open)}</span>`,
-        `<span class="text-slate-400">High</span><span class="text-right font-mono">${currencyFormatter.format(candle.high)}</span>`,
-        `<span class="text-slate-400">Low</span><span class="text-right font-mono">${currencyFormatter.format(candle.low)}</span>`,
-        `<span class="text-slate-400">Close</span><span class="text-right font-mono">${currencyFormatter.format(candle.close)}</span>`,
+        `<span class="text-slate-400">Open</span><span class="text-right font-mono">${currencyFormatter.format(seriesDatum.open)}</span>`,
+        `<span class="text-slate-400">High</span><span class="text-right font-mono">${currencyFormatter.format(seriesDatum.high)}</span>`,
+        `<span class="text-slate-400">Low</span><span class="text-right font-mono">${currencyFormatter.format(seriesDatum.low)}</span>`,
+        `<span class="text-slate-400">Close</span><span class="text-right font-mono">${currencyFormatter.format(seriesDatum.close)}</span>`,
         `</div>`,
       ].join("");
 
@@ -644,7 +663,7 @@ function StrategyEquityChart({
       tooltip.style.opacity = "1";
 
       const hoverX = Math.max(0, Math.min(chartContainer.clientWidth, param.point.x));
-      const plottedHoverY = series.priceToCoordinate(candle.close);
+      const plottedHoverY = series.priceToCoordinate(seriesDatum.close);
 
       hoverLine.style.transform = `translateX(${hoverX}px)`;
       hoverLine.style.opacity = "1";
@@ -664,7 +683,7 @@ function StrategyEquityChart({
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
       chart.remove();
     };
-  }, [candles, showPlaceholder]);
+  }, [candles, chartType, showPlaceholder]);
 
   return (
     <article className="flex h-full min-h-[720px] flex-col rounded-3xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
@@ -672,33 +691,46 @@ function StrategyEquityChart({
         <div>
           <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Strategy Equity</p>
         </div>
-        <div
-          className="group relative self-start"
-          tabIndex={isSaveDisabled && saveDisabledReason ? 0 : -1}
-          aria-label={isSaveDisabled && saveDisabledReason ? saveDisabledReason : undefined}
-        >
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={isSaveDisabled}
-            aria-label={
-              isSaveDisabled && saveDisabledReason
-                ? `${isViewingSaved ? "Saved Run" : isSaving ? "Saving" : "Save to Results"}: ${saveDisabledReason}`
-                : undefined
-            }
-            className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
-              isSaveDisabled
-                ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
-                : "bg-fuchsia-500 hover:bg-fuchsia-400"
-            }`}
+        <div className="flex flex-wrap items-start justify-end gap-3">
+          <label className="flex items-center gap-2 text-sm text-slate-400">
+            <span>Graph</span>
+            <select
+              value={chartType}
+              onChange={(event) => setChartType(event.target.value as EquityChartType)}
+              className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+            >
+              <option value="candles">Candles</option>
+              <option value="line">Line</option>
+            </select>
+          </label>
+          <div
+            className="group relative self-start"
+            tabIndex={isSaveDisabled && saveDisabledReason ? 0 : -1}
+            aria-label={isSaveDisabled && saveDisabledReason ? saveDisabledReason : undefined}
           >
-            {isViewingSaved ? "Saved Run" : isSaving ? "Saving…" : "Save to Results"}
-          </button>
-          {isSaveDisabled && saveDisabledReason ? (
-            <div className="pointer-events-none absolute right-0 top-full z-10 mt-2 w-72 rounded-2xl border border-slate-700 bg-slate-900/95 px-3 py-2 text-sm text-slate-200 opacity-0 shadow-xl transition duration-150 group-hover:opacity-100 group-focus:opacity-100">
-              {saveDisabledReason}
-            </div>
-          ) : null}
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={isSaveDisabled}
+              aria-label={
+                isSaveDisabled && saveDisabledReason
+                  ? `${isViewingSaved ? "Saved Run" : isSaving ? "Saving" : "Save to Results"}: ${saveDisabledReason}`
+                  : undefined
+              }
+              className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
+                isSaveDisabled
+                  ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
+                  : "bg-fuchsia-500 hover:bg-fuchsia-400"
+              }`}
+            >
+              {isViewingSaved ? "Saved Run" : isSaving ? "Saving…" : "Save to Results"}
+            </button>
+            {isSaveDisabled && saveDisabledReason ? (
+              <div className="pointer-events-none absolute right-0 top-full z-10 mt-2 w-72 rounded-2xl border border-slate-700 bg-slate-900/95 px-3 py-2 text-sm text-slate-200 opacity-0 shadow-xl transition duration-150 group-hover:opacity-100 group-focus:opacity-100">
+                {saveDisabledReason}
+              </div>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -717,6 +749,10 @@ function StrategyEquityChart({
         <div className="mt-5 flex-1">
           <Skeleton width="30%" height={20} enableAnimation={animatePlaceholder} />
           <Skeleton height="100%" className="mt-4 min-h-[420px]" enableAnimation={animatePlaceholder} />
+        </div>
+      ) : chartType === "line" ? (
+        <div className="mt-5 min-h-[420px] flex-1 overflow-hidden rounded-2xl">
+          <RechartsEquityLineChart data={linePoints} />
         </div>
       ) : (
         <div ref={chartFrameRef} className="relative mt-5 min-h-[420px] flex-1 overflow-hidden rounded-2xl">
@@ -919,6 +955,17 @@ const buildCandles = (candles?: BacktestCandle[]): EquityCandle[] => {
     }));
 };
 
+const buildLinePoints = (candles?: EquityCandle[]): EquityLinePoint[] => {
+  if (!Array.isArray(candles) || candles.length === 0) return [];
+
+  return [...candles]
+    .sort((a, b) => Number(a.time) - Number(b.time))
+    .map((candle) => ({
+      time: Number(candle.time),
+      equity: candle.close,
+    }));
+};
+
 const buildOrders = (orders?: BacktestOrder[]): BacktestOrder[] => {
   if (!Array.isArray(orders)) return [];
 
@@ -962,6 +1009,97 @@ const formatTooltipDate = (value: unknown) => {
 
   return "Unknown date";
 };
+
+const axisDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  year: "numeric",
+});
+
+const axisValueFormatter = (value: number) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+
+function RechartsEquityLineTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: EquityLinePoint }>;
+  label?: number;
+}) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  const point = payload[0]?.payload;
+  if (!point) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-700 bg-slate-950/95 px-3 py-3 shadow-xl">
+      <div className="text-xs uppercase tracking-[0.18em] text-slate-400">{formatTooltipDate(label ?? point.time)}</div>
+      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-200">
+        <span className="text-slate-400">Equity</span>
+        <span className="text-right font-mono">{currencyFormatter.format(point.equity)}</span>
+      </div>
+    </div>
+  );
+}
+
+function RechartsEquityLineChart({ data }: { data: EquityLinePoint[] }) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+        <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical horizontal />
+        <XAxis
+          dataKey="time"
+          type="number"
+          domain={["dataMin", "dataMax"]}
+          tickFormatter={(value) => axisDateFormatter.format(new Date(Number(value) * 1000))}
+          tick={{ fill: "#cbd5f5", fontSize: 12 }}
+          tickLine={false}
+          axisLine={false}
+          minTickGap={28}
+        />
+        <YAxis
+          dataKey="equity"
+          type="number"
+          width={92}
+          tickFormatter={(value) => axisValueFormatter(Number(value))}
+          tick={{ fill: "#cbd5f5", fontSize: 12 }}
+          tickLine={false}
+          axisLine={false}
+          domain={["auto", "auto"]}
+        />
+        <RechartsTooltip
+          content={<RechartsEquityLineTooltip />}
+          cursor={{ stroke: "rgba(226,232,240,0.28)", strokeWidth: 1 }}
+          isAnimationActive={false}
+        />
+        <Line
+          type="linear"
+          dataKey="equity"
+          stroke="#7dd3fc"
+          strokeWidth={2}
+          dot={false}
+          activeDot={{
+            r: 4,
+            fill: "#d946ef",
+            stroke: "#020617",
+            strokeWidth: 2,
+          }}
+          isAnimationActive={false}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
 
 const buildEquityStats = (data: BacktestResponse | null): EquityStat[] => {
   if (!data) return [];
