@@ -18,6 +18,7 @@ Example:
     --artifacts-table "$(terraform output -raw strategy_artifacts_table_name)" \
     --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
     --backtest-metrics-table "$(terraform output -raw backtest_metrics_table_name)" \
+    --counters-table "$(terraform output -raw counters_table_name)" \
     --backtester-url "http://localhost:8005" \
     --users-table "$(terraform output -raw users_table_name)" \
     --admin-netid "YOUR_NETID" \
@@ -786,6 +787,27 @@ def seed_strategies(
     return summary
 
 
+def seed_counters(dynamo, counters_table: str, strategies_table: str) -> None:
+    strategies = dynamo.Table(strategies_table)
+    max_id = 0
+    scan_kwargs: dict = {"ProjectionExpression": "id"}
+    while True:
+        resp = strategies.scan(**scan_kwargs)
+        for item in resp.get("Items", []):
+            try:
+                max_id = max(max_id, int(item["id"]))
+            except (ValueError, KeyError):
+                pass
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        scan_kwargs["ExclusiveStartKey"] = last_key
+
+    table = dynamo.Table(counters_table)
+    table.put_item(Item={"counter_name": "strategies", "value": max_id})
+    print(f"Initialized strategies counter to {max_id} in {counters_table}")
+
+
 def seed_admin_user(dynamo, users_table: str, netid: str) -> None:
     now = utcnow_iso()
     users = dynamo.Table(users_table)
@@ -828,6 +850,7 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
         action="store_true",
         help="Skip generating and seeding backtests.",
     )
+    parser.add_argument("--counters-table", default=None, help="DynamoDB Counters table name.")
     parser.add_argument("--users-table", default=None, help="DynamoDB Users table name.")
     parser.add_argument("--admin-netid", default=None, help="NetID to seed as an admin user.")
     parser.add_argument("--region", default=None, help="AWS region (overrides default resolver).")
@@ -889,6 +912,8 @@ def main(argv: Iterable[str]) -> int:
             backtester_client=backtester_client,
             backtests_skip_reason=backtests_skip_reason,
         )
+        if args.counters_table:
+            seed_counters(dynamo=dynamo, counters_table=args.counters_table, strategies_table=args.strategies_table)
         admin_netid = args.admin_netid.strip() if args.admin_netid else None
         if admin_netid and args.users_table:
             seed_admin_user(dynamo=dynamo, users_table=args.users_table, netid=admin_netid)
