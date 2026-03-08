@@ -47,7 +47,6 @@ type EquityCandle = CandlestickData;
 type RunParameterState = Record<string, string>;
 
 type BacktestParametersProps = {
-  strategyName?: string;
   parameters: BacktestParameter[];
   isRunning: boolean;
   isDisabled: boolean;
@@ -62,7 +61,6 @@ type BacktestMetricsProps = {
 };
 
 type StrategyEquityChartProps = {
-  strategyName?: string;
   stats: EquityStat[];
   candles: EquityCandle[];
   onSave: () => void;
@@ -79,6 +77,8 @@ type BacktestOrdersTableProps = {
   showPlaceholder: boolean;
   animatePlaceholder: boolean;
 };
+
+const EXECUTION_LOG_PAGE_SIZE = 25;
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -357,18 +357,9 @@ export default function StrategyBacktest() {
   return (
     <SkeletonTheme baseColor={skeletonBaseColor} highlightColor={skeletonHighlightColor}>
       <div className="space-y-6">
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Backtest</p>
-            <h1 className="text-2xl font-semibold text-white">{strategy.name}</h1>
-          </div>
-          <p className="text-sm text-slate-400">Configure parameters, inspect metrics, and review orders.</p>
-        </header>
-
-        <div className="grid gap-6 lg:grid-cols-[360px_1fr] xl:grid-cols-[440px_1fr]">
+        <div className="grid gap-6 xl:grid-cols-[440px_minmax(0,1fr)]">
           <div className="space-y-6">
             <BacktestParameters
-              strategyName={strategy.name}
               parameters={lastRunParameters}
               isRunning={isRunningBacktest}
               isDisabled={isRunningBacktest || isWorkspaceSaving}
@@ -378,9 +369,8 @@ export default function StrategyBacktest() {
             <BacktestMetrics metrics={metrics} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
           </div>
 
-          <div className="space-y-6">
+          <div className="min-h-full">
             <StrategyEquityChart
-              strategyName={strategy.name}
               stats={equityStats}
               candles={candles}
               onSave={handleSaveResults}
@@ -391,15 +381,16 @@ export default function StrategyBacktest() {
               showPlaceholder={showPlaceholder}
               animatePlaceholder={animatePlaceholder}
             />
-            <BacktestOrdersTable orders={orders} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
           </div>
         </div>
+
+        <BacktestOrdersTable orders={orders} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
       </div>
     </SkeletonTheme>
   );
 }
 
-function BacktestParameters({ strategyName, parameters, isRunning, isDisabled, disabledReason, onRun }: BacktestParametersProps) {
+function BacktestParameters({ parameters, isRunning, isDisabled, disabledReason, onRun }: BacktestParametersProps) {
   const [formState, setFormState] = useState<RunParameterState>(() =>
     parameters.reduce<RunParameterState>((acc, param) => {
       acc[param.id] = param.value;
@@ -428,9 +419,7 @@ function BacktestParameters({ strategyName, parameters, isRunning, isDisabled, d
   return (
     <article className="rounded-2xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
       <header>
-        <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Parameters</p>
-        <h2 className="text-lg font-semibold text-white">Backtest Parameters</h2>
-        <p className="text-sm text-slate-400">{strategyName ? `Using ${strategyName}` : "Draft configuration"}</p>
+        <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Parameters</p>
       </header>
       <form onSubmit={handleSubmit} className="mt-5 grid gap-4 md:grid-cols-2">
         {parameters.map((param) => (
@@ -506,8 +495,7 @@ function BacktestMetrics({ metrics, showPlaceholder, animatePlaceholder }: Backt
     <article className="rounded-2xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
       <header className="flex items-center justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Metrics</p>
-          <h2 className="text-lg font-semibold text-white">Performance Metrics</h2>
+          <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Metrics</p>
         </div>
       </header>
       <dl className="mt-4 grid gap-6 md:grid-cols-2">
@@ -519,7 +507,6 @@ function BacktestMetrics({ metrics, showPlaceholder, animatePlaceholder }: Backt
 }
 
 function StrategyEquityChart({
-  strategyName,
   stats,
   candles,
   onSave,
@@ -531,9 +518,6 @@ function StrategyEquityChart({
   animatePlaceholder,
 }: StrategyEquityChartProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
-  const [benchmarkEnabled, setBenchmarkEnabled] = useState(true);
-  const [selectedBenchmark, setSelectedBenchmark] = useState("sp500");
-  const saveHelperTextId = "save-results-helper-text";
 
   useEffect(() => {
     if (showPlaceholder || !chartContainerRef.current) {
@@ -587,18 +571,25 @@ function StrategyEquityChart({
   }, [candles, showPlaceholder]);
 
   return (
-    <article className="rounded-3xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
-      <header className="flex flex-wrap items-center justify-between gap-4">
+    <article className="flex h-full min-h-[720px] flex-col rounded-3xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Strategy Equity</p>
-          <h2 className="text-xl font-semibold text-white">{strategyName ?? "Active strategy"}</h2>
+          <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Strategy Equity</p>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div
+          className="group relative self-start"
+          tabIndex={isSaveDisabled && saveDisabledReason ? 0 : -1}
+          aria-label={isSaveDisabled && saveDisabledReason ? saveDisabledReason : undefined}
+        >
           <button
             type="button"
             onClick={onSave}
             disabled={isSaveDisabled}
-            aria-describedby={isSaveDisabled && saveDisabledReason ? saveHelperTextId : undefined}
+            aria-label={
+              isSaveDisabled && saveDisabledReason
+                ? `${isViewingSaved ? "Saved Run" : isSaving ? "Saving" : "Save to Results"}: ${saveDisabledReason}`
+                : undefined
+            }
             className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
               isSaveDisabled
                 ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
@@ -608,18 +599,18 @@ function StrategyEquityChart({
             {isViewingSaved ? "Saved Run" : isSaving ? "Saving…" : "Save to Results"}
           </button>
           {isSaveDisabled && saveDisabledReason ? (
-            <p id={saveHelperTextId} className="max-w-xs text-right text-sm text-slate-400">
+            <div className="pointer-events-none absolute right-0 top-full z-10 mt-2 w-72 rounded-2xl border border-slate-700 bg-slate-900/95 px-3 py-2 text-sm text-slate-200 opacity-0 shadow-xl transition duration-150 group-hover:opacity-100 group-focus:opacity-100">
               {saveDisabledReason}
-            </p>
+            </div>
           ) : null}
         </div>
-	      </header>
+      </header>
 
-      <dl className="mt-6 grid gap-4 md:grid-cols-3 lg:grid-cols-5">
+      <dl className="mt-6 grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
         {stats.map((stat) => (
           <div key={stat.id} className="rounded-2xl border border-slate-800/60 bg-slate-900/40 p-4">
             <dt className="text-xs uppercase tracking-wide text-slate-400">{stat.label}</dt>
-            <dd className={`text-2xl font-semibold ${stat.accentClass}`}>
+            <dd className={`text-xl font-semibold leading-tight sm:text-2xl ${stat.accentClass}`}>
               {showPlaceholder ? <Skeleton width="80%" height={28} enableAnimation={animatePlaceholder} /> : stat.value}
             </dd>
           </div>
@@ -627,35 +618,13 @@ function StrategyEquityChart({
       </dl>
 
       {showPlaceholder ? (
-        <div className="mt-5">
+        <div className="mt-5 flex-1">
           <Skeleton width="30%" height={20} enableAnimation={animatePlaceholder} />
-          <Skeleton height={320} className="mt-4" enableAnimation={animatePlaceholder} />
+          <Skeleton height="100%" className="mt-4 min-h-[420px]" enableAnimation={animatePlaceholder} />
         </div>
       ) : (
         <>
-          <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-slate-300">
-            <label className="inline-flex items-center gap-2 text-slate-200">
-              <input
-                type="checkbox"
-                checked={benchmarkEnabled}
-                onChange={(event) => setBenchmarkEnabled(event.target.checked)}
-                className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-fuchsia-500 focus:ring-fuchsia-500"
-              />
-              Benchmark
-            </label>
-            <select
-              value={selectedBenchmark}
-              disabled={!benchmarkEnabled}
-              onChange={(event) => setSelectedBenchmark(event.target.value)}
-              className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
-            >
-              <option value="sp500">S&amp;P 500</option>
-              <option value="nasdaq">NASDAQ 100</option>
-              <option value="dow">Dow Jones</option>
-            </select>
-          </div>
-
-          <div ref={chartContainerRef} className="mt-4 h-80 w-full" />
+          <div ref={chartContainerRef} className="mt-5 min-h-[420px] flex-1 w-full" />
         </>
       )}
     </article>
@@ -663,13 +632,29 @@ function StrategyEquityChart({
 }
 
 function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: BacktestOrdersTableProps) {
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [orders]);
+
+  const totalPages = Math.max(1, Math.ceil(orders.length / EXECUTION_LOG_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * EXECUTION_LOG_PAGE_SIZE;
+  const pageEnd = Math.min(pageStart + EXECUTION_LOG_PAGE_SIZE, orders.length);
+  const visibleOrders = orders.slice(pageStart, pageEnd);
+
   return (
     <article className="rounded-3xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Orders</p>
-          <h2 className="text-xl font-semibold text-white">Execution Log</h2>
+          <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Orders</p>
         </div>
+        {!showPlaceholder ? (
+          <div className="text-sm text-slate-400">
+            {orders.length === 0 ? "0 entries" : `${pageStart + 1}-${pageEnd} of ${orders.length} entries`}
+          </div>
+        ) : null}
       </header>
       <div className="mt-4 overflow-x-auto">
         {showPlaceholder ? (
@@ -678,37 +663,69 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
               <Skeleton key={`order-skeleton-${index}`} height={32} enableAnimation={animatePlaceholder} />
             ))}
           </div>
+        ) : orders.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-4 py-8 text-center text-sm text-slate-400">
+            No execution log entries for this run.
+          </div>
         ) : (
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-3 py-2 font-medium">Date · Time</th>
-                <th className="px-3 py-2 font-medium">Ticker</th>
-                <th className="px-3 py-2 font-medium">Type</th>
-                <th className="px-3 py-2 font-medium">Price</th>
-                <th className="px-3 py-2 font-medium">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => {
-                const isBuy = String(order.action).toLowerCase() === "buy";
-                const orderType = isBuy ? "Buy" : "Sell";
-                return (
-                  <tr key={order.id} className="border-t border-slate-800 text-slate-200">
-                    <td className="px-3 py-3">{dateFormatter.format(new Date(order.timestamp))}</td>
-                    <td className="px-3 py-3 font-semibold">{order.symbol}</td>
-                    <td className="px-3 py-3">
-                      <span className={`font-semibold ${isBuy ? "text-emerald-400" : "text-rose-400"}`}>
-                        {orderType}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 font-mono">{currencyFormatter.format(order.price)}</td>
-                    <td className="px-3 py-3">{numberFormatter.format(order.shares)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="space-y-4">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-3 py-2 font-medium">Date · Time</th>
+                  <th className="px-3 py-2 font-medium">Ticker</th>
+                  <th className="px-3 py-2 font-medium">Type</th>
+                  <th className="px-3 py-2 font-medium">Price</th>
+                  <th className="px-3 py-2 font-medium">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleOrders.map((order) => {
+                  const isBuy = String(order.action).toLowerCase() === "buy";
+                  const orderType = isBuy ? "Buy" : "Sell";
+                  return (
+                    <tr key={order.id} className="border-t border-slate-800 text-slate-200">
+                      <td className="px-3 py-3">{dateFormatter.format(new Date(order.timestamp))}</td>
+                      <td className="px-3 py-3 font-semibold">{order.symbol}</td>
+                      <td className="px-3 py-3">
+                        <span className={`font-semibold ${isBuy ? "text-emerald-400" : "text-rose-400"}`}>
+                          {orderType}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 font-mono">{currencyFormatter.format(order.price)}</td>
+                      <td className="px-3 py-3">{numberFormatter.format(order.shares)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {totalPages > 1 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
+                <p className="text-sm text-slate-400">
+                  Page {currentPage} of {totalPages}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={currentPage === 1}
+                    className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                    disabled={currentPage === totalPages}
+                    className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         )}
       </div>
     </article>
