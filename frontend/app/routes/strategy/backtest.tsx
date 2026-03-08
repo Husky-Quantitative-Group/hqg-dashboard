@@ -118,6 +118,10 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
+const chartAxisFontFamily =
+  'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const chartAxisFontSize = 12;
+
 const numberFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -598,6 +602,11 @@ function StrategyEquityChart({
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#cbd5f5",
+        fontFamily: chartAxisFontFamily,
+        fontSize: chartAxisFontSize,
+      },
+      localization: {
+        priceFormatter: formatCompactAxisValue,
       },
       grid: {
         vertLines: { color: "rgba(148,163,184,0.08)" },
@@ -605,8 +614,15 @@ function StrategyEquityChart({
       },
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight,
-      rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: true },
+      rightPriceScale: {
+        borderVisible: false,
+        minimumWidth: 80,
+      },
+      timeScale: {
+        borderVisible: false,
+        timeVisible: true,
+        tickMarkFormatter: formatChartTickMark,
+      },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
@@ -1176,13 +1192,39 @@ const axisDateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-const axisValueFormatter = (value: number) =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
+const formatCompactAxisValue = (value: number) => {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) {
+    return `${trimTrailingZeros(value / 1_000_000)}m`;
+  }
+  if (abs >= 1_000) {
+    return `${trimTrailingZeros(value / 1_000)}k`;
+  }
+  return trimTrailingZeros(value);
+};
+
+const trimTrailingZeros = (value: number) =>
+  value.toFixed(1).replace(/\.0$/, "");
+
+const formatChartTickMark = (time: unknown) => {
+  if (typeof time === "number") {
+    return axisDateFormatter.format(new Date(time * 1000));
+  }
+  if (
+    time &&
+    typeof time === "object" &&
+    "year" in time &&
+    "month" in time &&
+    "day" in time
+  ) {
+    const businessDay = time as { year: number; month: number; day: number };
+    return axisDateFormatter.format(new Date(businessDay.year, businessDay.month - 1, businessDay.day));
+  }
+  if (typeof time === "string") {
+    return axisDateFormatter.format(new Date(time));
+  }
+  return null;
+};
 
 function RechartsEquityLineTooltip({
   active,
@@ -1223,17 +1265,18 @@ function RechartsEquityLineChart({ data }: { data: EquityLinePoint[] }) {
           type="number"
           domain={["dataMin", "dataMax"]}
           tickFormatter={(value) => axisDateFormatter.format(new Date(Number(value) * 1000))}
-          tick={{ fill: "#cbd5f5", fontSize: 12 }}
+          tick={{ fill: "#cbd5f5", fontSize: chartAxisFontSize, fontFamily: chartAxisFontFamily }}
           tickLine={false}
           axisLine={false}
-          minTickGap={28}
+          minTickGap={42}
         />
         <YAxis
           dataKey="equity"
           type="number"
-          width={92}
-          tickFormatter={(value) => axisValueFormatter(Number(value))}
-          tick={{ fill: "#cbd5f5", fontSize: 12 }}
+          orientation="right"
+          width={80}
+          tickFormatter={(value) => formatCompactAxisValue(Number(value))}
+          tick={{ fill: "#cbd5f5", fontSize: chartAxisFontSize, fontFamily: chartAxisFontFamily }}
           tickLine={false}
           axisLine={false}
           domain={["auto", "auto"]}
@@ -1322,16 +1365,16 @@ function RechartsAllocationChart({
               type="number"
               domain={["dataMin", "dataMax"]}
               tickFormatter={(value) => axisDateFormatter.format(new Date(Number(value) * 1000))}
-              tick={{ fill: "#cbd5f5", fontSize: 12 }}
+              tick={{ fill: "#cbd5f5", fontSize: chartAxisFontSize, fontFamily: chartAxisFontFamily }}
               tickLine={false}
               axisLine={false}
-              minTickGap={28}
+              minTickGap={42}
             />
             <YAxis
               type="number"
               width={64}
               tickFormatter={(value) => `${Number(value).toFixed(0)}%`}
-              tick={{ fill: "#cbd5f5", fontSize: 12 }}
+              tick={{ fill: "#cbd5f5", fontSize: chartAxisFontSize, fontFamily: chartAxisFontFamily }}
               tickLine={false}
               axisLine={false}
               domain={[0, 100]}
