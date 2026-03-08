@@ -517,14 +517,31 @@ function StrategyEquityChart({
   showPlaceholder,
   animatePlaceholder,
 }: StrategyEquityChartProps) {
+  const chartFrameRef = useRef<HTMLDivElement | null>(null);
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const hoverLineRef = useRef<HTMLDivElement | null>(null);
+  const hoverDotRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (showPlaceholder || !chartContainerRef.current) {
+    if (
+      showPlaceholder ||
+      !chartContainerRef.current ||
+      !chartFrameRef.current ||
+      !tooltipRef.current ||
+      !hoverLineRef.current ||
+      !hoverDotRef.current
+    ) {
       return;
     }
 
-    const chart = createChart(chartContainerRef.current, {
+    const chartContainer = chartContainerRef.current;
+    const chartFrame = chartFrameRef.current;
+    const tooltip = tooltipRef.current;
+    const hoverLine = hoverLineRef.current;
+    const hoverDot = hoverDotRef.current;
+
+    const chart = createChart(chartContainer, {
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#cbd5f5",
@@ -539,6 +556,14 @@ function StrategyEquityChart({
       timeScale: { borderVisible: false, timeVisible: true },
       crosshair: {
         mode: CrosshairMode.Normal,
+        vertLine: {
+          visible: false,
+          labelVisible: false,
+        },
+        horzLine: {
+          visible: false,
+          labelVisible: false,
+        },
       },
     });
 
@@ -548,6 +573,8 @@ function StrategyEquityChart({
       wickUpColor: "#34d399",
       wickDownColor: "#fb7185",
       borderVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
     });
 
     series.setData(candles);
@@ -562,10 +589,79 @@ function StrategyEquityChart({
       }
     });
 
-    observer.observe(chartContainerRef.current);
+    observer.observe(chartContainer);
+
+    const handleCrosshairMove = (param: {
+      point?: { x: number; y: number };
+      time?: unknown;
+      seriesData: Map<unknown, unknown>;
+    }) => {
+      if (
+        param.point === undefined ||
+        !param.time ||
+        param.point.x < 0 ||
+        param.point.x > chartContainer.clientWidth ||
+        param.point.y < 0 ||
+        param.point.y > chartContainer.clientHeight
+      ) {
+        tooltip.style.opacity = "0";
+        hoverLine.style.opacity = "0";
+        hoverDot.style.opacity = "0";
+        return;
+      }
+
+      const candle = param.seriesData.get(series) as BacktestCandle | undefined;
+      if (!candle) {
+        tooltip.style.opacity = "0";
+        hoverLine.style.opacity = "0";
+        hoverDot.style.opacity = "0";
+        return;
+      }
+
+      tooltip.innerHTML = [
+        `<div class="text-xs uppercase tracking-[0.18em] text-slate-400">${formatTooltipDate(param.time)}</div>`,
+        `<div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-200">`,
+        `<span class="text-slate-400">Open</span><span class="text-right font-mono">${currencyFormatter.format(candle.open)}</span>`,
+        `<span class="text-slate-400">High</span><span class="text-right font-mono">${currencyFormatter.format(candle.high)}</span>`,
+        `<span class="text-slate-400">Low</span><span class="text-right font-mono">${currencyFormatter.format(candle.low)}</span>`,
+        `<span class="text-slate-400">Close</span><span class="text-right font-mono">${currencyFormatter.format(candle.close)}</span>`,
+        `</div>`,
+      ].join("");
+
+      const tooltipWidth = tooltip.offsetWidth;
+      const tooltipHeight = tooltip.offsetHeight;
+      const offset = 12;
+      const left = Math.max(
+        8,
+        Math.min(chartFrame.clientWidth - tooltipWidth - 8, param.point.x + offset)
+      );
+      const top = Math.max(
+        8,
+        Math.min(chartFrame.clientHeight - tooltipHeight - 8, param.point.y + offset)
+      );
+
+      tooltip.style.transform = `translate(${left}px, ${top}px)`;
+      tooltip.style.opacity = "1";
+
+      const hoverX = Math.max(0, Math.min(chartContainer.clientWidth, param.point.x));
+      const plottedHoverY = series.priceToCoordinate(candle.close);
+
+      hoverLine.style.transform = `translateX(${hoverX}px)`;
+      hoverLine.style.opacity = "1";
+      const fallbackHoverY = Math.max(0, Math.min(chartContainer.clientHeight, param.point.y));
+      const clampedHoverY =
+        plottedHoverY === null
+          ? fallbackHoverY
+          : Math.max(0, Math.min(chartContainer.clientHeight, plottedHoverY));
+      hoverDot.style.transform = `translate(${hoverX}px, ${clampedHoverY}px)`;
+      hoverDot.style.opacity = "1";
+    };
+
+    chart.subscribeCrosshairMove(handleCrosshairMove);
 
     return () => {
       observer.disconnect();
+      chart.unsubscribeCrosshairMove(handleCrosshairMove);
       chart.remove();
     };
   }, [candles, showPlaceholder]);
@@ -623,9 +719,21 @@ function StrategyEquityChart({
           <Skeleton height="100%" className="mt-4 min-h-[420px]" enableAnimation={animatePlaceholder} />
         </div>
       ) : (
-        <>
-          <div ref={chartContainerRef} className="mt-5 min-h-[420px] flex-1 w-full" />
-        </>
+        <div ref={chartFrameRef} className="relative mt-5 min-h-[420px] flex-1 overflow-hidden rounded-2xl">
+          <div ref={chartContainerRef} className="h-full w-full" />
+          <div
+            ref={hoverLineRef}
+            className="pointer-events-none absolute bottom-0 top-0 z-[5] w-px -translate-x-1/2 bg-slate-200/20 opacity-0 transition-opacity duration-75"
+          />
+          <div
+            ref={hoverDotRef}
+            className="pointer-events-none absolute z-[6] h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-950 bg-fuchsia-400 opacity-0 shadow-[0_0_0_4px_rgba(217,70,239,0.18)] transition-opacity duration-75"
+          />
+          <div
+            ref={tooltipRef}
+            className="pointer-events-none absolute left-0 top-0 z-10 w-56 rounded-2xl border border-slate-700 bg-slate-950/95 px-3 py-3 opacity-0 shadow-xl transition-opacity duration-75"
+          />
+        </div>
       )}
     </article>
   );
@@ -818,6 +926,41 @@ const buildOrders = (orders?: BacktestOrder[]): BacktestOrder[] => {
     ...order,
     id: order.id || `${order.timestamp}-${order.symbol}-${index}`,
   }));
+};
+
+const formatTooltipDate = (value: unknown) => {
+  if (typeof value === "number") {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(value * 1000));
+  }
+
+  if (typeof value === "string") {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(value));
+  }
+
+  if (
+    value &&
+    typeof value === "object" &&
+    "year" in value &&
+    "month" in value &&
+    "day" in value
+  ) {
+    const businessDay = value as { year: number; month: number; day: number };
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(businessDay.year, businessDay.month - 1, businessDay.day));
+  }
+
+  return "Unknown date";
 };
 
 const buildEquityStats = (data: BacktestResponse | null): EquityStat[] => {
