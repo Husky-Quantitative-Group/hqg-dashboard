@@ -51,6 +51,7 @@ STRATEGIES_JSON = ROOT / "strategies.json"
 VERSION = 1
 SEED_STRATEGY_IDS = tuple(str(i) for i in range(1, 6))
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+DESCRIPTION_MAX_CHARS = 75
 
 DEFAULT_BACKTEST_START_DATE = "2020-01-03"
 DEFAULT_BACKTEST_END_DATE = "2024-12-31"
@@ -658,6 +659,7 @@ def seed_tables(
     versions_table: str,
     strategy_id: str,
     strategy_name: str,
+    description: str,
     entrypoint: str,
     owner: str,
     owner_display: str,
@@ -677,6 +679,7 @@ def seed_tables(
         "current_version": VERSION,
         "created_at": now,
         "updated_at": now,
+        "description": description,
     }
     strategies.put_item(Item=strategy_item)
     print(f"Upserted strategy {strategy_id} in {strategies_table}")
@@ -732,6 +735,19 @@ def seed_strategies(
         if not strategy_name:
             strategy_name = f"Strategy {strategy_id}"
 
+        description_value = entry.get("description")
+        if description_value is None:
+            description = ""
+        elif isinstance(description_value, str):
+            description = description_value.strip()
+        else:
+            raise ValueError(f"Strategy {strategy_id} description must be a string")
+
+        if len(description) > DESCRIPTION_MAX_CHARS:
+            raise ValueError(
+                f"Strategy {strategy_id} description must be {DESCRIPTION_MAX_CHARS} characters or fewer"
+            )
+
         owner_value = entry.get("owner")
         owner = str(owner_value).strip() if owner_value else ""
         if not owner:
@@ -774,6 +790,7 @@ def seed_strategies(
             versions_table=versions_table,
             strategy_id=strategy_id,
             strategy_name=strategy_name,
+            description=description,
             entrypoint=entrypoint,
             owner=owner,
             owner_display=owner_display,
