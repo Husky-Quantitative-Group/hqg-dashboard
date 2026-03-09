@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Strategy } from "../api/strategies";
 import { useUser } from "../context/UserConext";
@@ -14,6 +14,36 @@ export default function StrategyTable({
 }: StrategyTableProps) {
   const { user } = useUser();
   const [activeStrategy, setActiveStrategy] = useState<Strategy | null>(null);
+  const [publicRead, setPublicRead] = useState(false);
+  const [publicWrite, setPublicWrite] = useState(false);
+  const [readUsers, setReadUsers] = useState<string[]>([]);
+  const [writeUsers, setWriteUsers] = useState<string[]>([]);
+  const [readUserInput, setReadUserInput] = useState("");
+  const [writeUserInput, setWriteUserInput] = useState("");
+
+  useEffect(() => {
+    if (!activeStrategy) return;
+    setPublicRead(false);
+    setPublicWrite(false);
+    setReadUsers([]);
+    setWriteUsers([]);
+    setReadUserInput("");
+    setWriteUserInput("");
+  }, [activeStrategy]);
+
+  const addReadUser = () => {
+    const value = readUserInput.trim();
+    if (!value || readUsers.includes(value)) return;
+    setReadUsers((prev) => [...prev, value]);
+    setReadUserInput("");
+  };
+
+  const addWriteUser = () => {
+    const value = writeUserInput.trim();
+    if (!value || writeUsers.includes(value)) return;
+    setWriteUsers((prev) => [...prev, value]);
+    setWriteUserInput("");
+  };
 
   const formatDate = (value?: string) => {
     if (!value) return "—";
@@ -196,8 +226,134 @@ export default function StrategyTable({
               </button>
             </div>
 
-            <div className="mt-5 rounded-lg border border-slate-700/70 bg-slate-950/60 p-4 text-sm text-slate-300">
-              Permissions controls go here.
+            <div className="mt-5 space-y-4 text-sm text-slate-300">
+              <div className="rounded-lg border border-slate-700/70 bg-slate-950/60 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-white">Read permissions</div>
+                    <div className="text-xs text-slate-400">Who can view this strategy</div>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-xs text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={publicRead}
+                      onChange={(event) => setPublicRead(event.target.checked)}
+                      className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
+                    />
+                    Public
+                  </label>
+                </div>
+
+                {publicRead ? (
+                  <div className="mt-3 text-xs text-slate-400">Readable by anyone.</div>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {readUsers.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {readUsers.map((userId) => (
+                          <span
+                            key={userId}
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200"
+                          >
+                            {userId}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setReadUsers((prev) => prev.filter((entry) => entry !== userId))
+                              }
+                              className="text-slate-400 transition hover:text-white"
+                              aria-label={`Remove ${userId} from read permissions`}
+                            >
+                              &times;
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Add user (netid or email)"
+                        value={readUserInput}
+                        onChange={(event) => setReadUserInput(event.target.value)}
+                        className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={addReadUser}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-lg text-slate-100 transition hover:bg-slate-700"
+                        aria-label="Add read permission"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-slate-700/70 bg-slate-950/60 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-white">Write permissions</div>
+                    <div className="text-xs text-slate-400">Who can modify this strategy</div>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-xs text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={publicWrite}
+                      onChange={(event) => setPublicWrite(event.target.checked)}
+                      className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
+                    />
+                    Public
+                  </label>
+                </div>
+
+                {publicWrite ? (
+                  <div className="mt-3 text-xs text-slate-400">Writable by anyone.</div>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {writeUsers.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {writeUsers.map((userId) => (
+                          <span
+                            key={userId}
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200"
+                          >
+                            {userId}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setWriteUsers((prev) => prev.filter((entry) => entry !== userId))
+                              }
+                              className="text-slate-400 transition hover:text-white"
+                              aria-label={`Remove ${userId} from write permissions`}
+                            >
+                              &times;
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Add user (netid or email)"
+                        value={writeUserInput}
+                        onChange={(event) => setWriteUserInput(event.target.value)}
+                        className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={addWriteUser}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-lg text-slate-100 transition hover:bg-slate-700"
+                        aria-label="Add write permission"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="mt-6 flex justify-end gap-2">
