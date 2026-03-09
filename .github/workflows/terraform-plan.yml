@@ -62,6 +62,22 @@ jobs:
           role-to-assume: ${{ vars.AWS_PLAN_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Write Terraform backend config
+        run: |
+          cat > backend.tf <<'EOF'
+          terraform {
+            backend "s3" {}
+          }
+          EOF
+
+          cat > backend.hcl <<EOF
+          bucket         = "hqg-prod-terraform-state"
+          key            = "hqg-prod-dashboard/prod/terraform.tfstate"
+          region         = "us-east-1"
+          dynamodb_table = "hqg-prod-terraform-locks"
+          encrypt        = true
+          EOF
+
       - name: Terraform init (S3 backend)
         run: terraform init -input=false -backend-config=backend.hcl
 
