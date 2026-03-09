@@ -78,9 +78,11 @@ jobs:
         id: plan
         continue-on-error: true
         run: |
+          set +e
           set -o pipefail
           terraform plan -input=false -no-color -detailed-exitcode -var-file=prod.tfvars -out=tfplan 2>&1 | tee plan.txt
           ec=${PIPESTATUS[0]}
+          set -e
 
           if [ "$ec" -eq 0 ]; then
             echo "status=no_changes" >> "$GITHUB_OUTPUT"
