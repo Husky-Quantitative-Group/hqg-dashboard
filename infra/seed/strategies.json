@@ -2,6 +2,7 @@
   {
     "id": "1",
     "title": "Buy and Hold SPY",
+    "description": "Buy SPY once and stay fully invested for the long run.",
     "owner": "hqg",
     "owner_display": "HQG",
     "entrypoint": "main.py",
@@ -23,6 +24,7 @@
   {
     "id": "2",
     "title": "Simple Momentum",
+    "description": "Switch between SPY and BND based on 20-day momentum.",
     "owner": "hqg",
     "owner_display": "HQG",
     "entrypoint": "main.py",
@@ -44,6 +46,7 @@
   {
     "id": "3",
     "title": "SMA Crossover",
+    "description": "Rotate between QQQ and AGG using a 10/30-week SMA crossover.",
     "owner": "hqg",
     "owner_display": "HQG",
     "entrypoint": "main.py",
@@ -65,6 +68,7 @@
   {
     "id": "4",
     "title": "Mean Reversion",
+    "description": "Trade AAPL mean reversion with RSI and a defensive BND overlay.",
     "owner": "hqg",
     "owner_display": "HQG",
     "entrypoint": "main.py",
@@ -86,6 +90,7 @@
   {
     "id": "5",
     "title": "Mean Variance (Markowitz)",
+    "description": "Optimize a diversified portfolio with capped Markowitz weights.",
     "owner": "hqg",
     "owner_display": "HQG",
     "entrypoint": "main.py",
