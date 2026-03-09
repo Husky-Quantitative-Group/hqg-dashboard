@@ -166,14 +166,12 @@ export default function CreateStrategy() {
       navigate(`/strategies/${newStrategy.id}`);
     } catch (error) {
       console.error("Failed to create strategy", error);
-      const apiMessage =
         typeof error === "object" &&
         error !== null &&
         "response" in error &&
         typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === "string"
           ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
           : null;
-      setErrorMessage(apiMessage ?? "Failed to create strategy");
     } finally {
       setIsSubmitting(false);
     }

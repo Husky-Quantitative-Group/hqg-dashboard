@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Strategy } from "../api/strategies";
+import {
+  fetchStrategyReadPublic,
+  fetchStrategyWritePublic,
+  grantStrategyReadPublic,
+  grantStrategyWritePublic,
+  revokeStrategyReadPublic,
+  revokeStrategyWritePublic,
+} from "../api/strategies";
 import { useUser } from "../context/UserConext";
 
 type StrategyTableProps = {
@@ -16,6 +24,8 @@ export default function StrategyTable({
   const [activeStrategy, setActiveStrategy] = useState<Strategy | null>(null);
   const [publicRead, setPublicRead] = useState(false);
   const [publicWrite, setPublicWrite] = useState(false);
+  const [permissionsLoading, setPermissionsLoading] = useState(false);
+  const [permissionsError, setPermissionsError] = useState<string | null>(null);
   const [readUsers, setReadUsers] = useState<string[]>([]);
   const [writeUsers, setWriteUsers] = useState<string[]>([]);
   const [readUserInput, setReadUserInput] = useState("");
@@ -23,12 +33,36 @@ export default function StrategyTable({
 
   useEffect(() => {
     if (!activeStrategy) return;
-    setPublicRead(false);
-    setPublicWrite(false);
+    let isActive = true;
+    setPermissionsLoading(true);
+    setPermissionsError(null);
     setReadUsers([]);
     setWriteUsers([]);
     setReadUserInput("");
     setWriteUserInput("");
+    Promise.all([
+      fetchStrategyReadPublic(activeStrategy.id),
+      fetchStrategyWritePublic(activeStrategy.id),
+    ])
+      .then(([readPublic, writePublic]) => {
+        if (!isActive) return;
+        setPublicRead(readPublic);
+        setPublicWrite(writePublic);
+      })
+      .catch((error) => {
+        if (!isActive) return;
+        console.error("Failed to load permissions", error);
+        setPermissionsError("Failed to load permissions.");
+        setPublicRead(false);
+        setPublicWrite(false);
+      })
+      .finally(() => {
+        if (!isActive) return;
+        setPermissionsLoading(false);
+      });
+    return () => {
+      isActive = false;
+    };
   }, [activeStrategy]);
 
   const addReadUser = () => {
@@ -227,6 +261,11 @@ export default function StrategyTable({
             </div>
 
             <div className="mt-5 space-y-4 text-sm text-slate-300">
+              {permissionsError && (
+                <div className="rounded-lg border border-rose-500/40 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+                  {permissionsError}
+                </div>
+              )}
               <div className="rounded-lg border border-slate-700/70 bg-slate-950/60 p-4">
                 <div className="flex items-center justify-between">
                   <div>
@@ -237,7 +276,22 @@ export default function StrategyTable({
                     <input
                       type="checkbox"
                       checked={publicRead}
-                      onChange={(event) => setPublicRead(event.target.checked)}
+                      disabled={permissionsLoading}
+                      onChange={async (event) => {
+                        if (!activeStrategy) return;
+                        const nextValue = event.target.checked;
+                        setPublicRead(nextValue);
+                        try {
+                          if (nextValue) {
+                            await grantStrategyReadPublic(activeStrategy.id);
+                          } else {
+                            await revokeStrategyReadPublic(activeStrategy.id);
+                          }
+                        } catch (error) {
+                          console.error("Failed to update public read permission", error);
+                          setPublicRead(!nextValue);
+                        }
+                      }}
                       className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
                     />
                     Public
@@ -301,7 +355,22 @@ export default function StrategyTable({
                     <input
                       type="checkbox"
                       checked={publicWrite}
-                      onChange={(event) => setPublicWrite(event.target.checked)}
+                      disabled={permissionsLoading}
+                      onChange={async (event) => {
+                        if (!activeStrategy) return;
+                        const nextValue = event.target.checked;
+                        setPublicWrite(nextValue);
+                        try {
+                          if (nextValue) {
+                            await grantStrategyWritePublic(activeStrategy.id);
+                          } else {
+                            await revokeStrategyWritePublic(activeStrategy.id);
+                          }
+                        } catch (error) {
+                          console.error("Failed to update public write permission", error);
+                          setPublicWrite(!nextValue);
+                        }
+                      }}
                       className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
                     />
                     Public
