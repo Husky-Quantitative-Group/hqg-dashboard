@@ -1293,6 +1293,54 @@ resource "aws_apigatewayv2_route" "get_strategy_by_id" {
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
+resource "aws_apigatewayv2_route" "get_strategy_read_permissions_public" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /strategies/{id}/permissions/read/public"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "get_strategy_write_permissions_public" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /strategies/{id}/permissions/write/public"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "post_strategy_read_permissions" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "POST /strategies/{id}/permissions/read"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "delete_strategy_read_permissions" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "DELETE /strategies/{id}/permissions/read"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "post_strategy_write_permissions" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "POST /strategies/{id}/permissions/write"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "delete_strategy_write_permissions" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "DELETE /strategies/{id}/permissions/write"
+  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
 resource "aws_lambda_permission" "allow_apigw_invoke_strategies" {
   statement_id  = "AllowAPIGWInvokeStrategies"
   action        = "lambda:InvokeFunction"

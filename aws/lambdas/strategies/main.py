@@ -21,6 +21,7 @@ ARTIFACT_BUCKET = os.environ["ARTIFACT_BUCKET"]
 READ_PERMISSIONS_TABLE = os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"]
 WRITE_PERMISSIONS_TABLE = os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"]
 READ_PERMISSIONS_DDB = dynamo.Table(READ_PERMISSIONS_TABLE)
+WRITE_PERMISSIONS_DDB = dynamo.Table(WRITE_PERMISSIONS_TABLE)
 STRATEGY_NAME_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 75
 README_MAX_CHARS = 10_000
@@ -35,6 +36,12 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     - POST /strategies
     - GET /strategies/{id}
     - PATCH /strategies/{id}
+    - GET /strategies/{id}/permissions/read/public
+    - GET /strategies/{id}/permissions/write/public
+    - POST /strategies/{id}/permissions/read
+    - DELETE /strategies/{id}/permissions/read
+    - POST /strategies/{id}/permissions/write
+    - DELETE /strategies/{id}/permissions/write
     """
     route_key = (event.get("requestContext") or {}).get("routeKey")
 
@@ -53,6 +60,66 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         strategy_id = (event.get("pathParameters") or {}).get("id")
         body = json.loads(event.get("body") or "{}")
         return update_strategy(strategy_id, body)
+
+    if route_key == "GET /strategies/{id}/permissions/read/public":
+        strategy_id = (event.get("pathParameters") or {}).get("id")
+        return get_public_permission(
+            strategy_id=strategy_id,
+            event=event,
+            table=READ_PERMISSIONS_DDB,
+        )
+
+    if route_key == "GET /strategies/{id}/permissions/write/public":
+        strategy_id = (event.get("pathParameters") or {}).get("id")
+        return get_public_permission(
+            strategy_id=strategy_id,
+            event=event,
+            table=WRITE_PERMISSIONS_DDB,
+        )
+
+    if route_key == "POST /strategies/{id}/permissions/read":
+        strategy_id = (event.get("pathParameters") or {}).get("id")
+        body = json.loads(event.get("body") or "{}")
+        return update_public_permission(
+            strategy_id=strategy_id,
+            body=body,
+            event=event,
+            table=READ_PERMISSIONS_DDB,
+            action="grant",
+        )
+
+    if route_key == "DELETE /strategies/{id}/permissions/read":
+        strategy_id = (event.get("pathParameters") or {}).get("id")
+        body = json.loads(event.get("body") or "{}")
+        return update_public_permission(
+            strategy_id=strategy_id,
+            body=body,
+            event=event,
+            table=READ_PERMISSIONS_DDB,
+            action="revoke",
+        )
+
+    if route_key == "POST /strategies/{id}/permissions/write":
+        strategy_id = (event.get("pathParameters") or {}).get("id")
+        body = json.loads(event.get("body") or "{}")
+        return update_public_permission(
+            strategy_id=strategy_id,
+            body=body,
+            event=event,
+            table=WRITE_PERMISSIONS_DDB,
+            action="grant",
+        )
+
+    if route_key == "DELETE /strategies/{id}/permissions/write":
+        strategy_id = (event.get("pathParameters") or {}).get("id")
+        body = json.loads(event.get("body") or "{}")
+        return update_public_permission(
+            strategy_id=strategy_id,
+            body=body,
+            event=event,
+            table=WRITE_PERMISSIONS_DDB,
+            action="revoke",
+        )
 
     return {"statusCode": 404, "body": "Not found"}
 
@@ -240,6 +307,66 @@ def update_strategy(strategy_id: Optional[str], body: Dict[str, Any]) -> Dict[st
     item = {"id": strategy_id, **body, "updated_at": now}
     STRATEGIES_TABLE.put_item(Item=item)
     return _json(200, item)
+
+
+def update_public_permission(
+    strategy_id: Optional[str],
+    body: Dict[str, Any],
+    event: Dict[str, Any],
+    table,
+    action: str,
+) -> Dict[str, Any]:
+    if not strategy_id:
+        return _json(400, {"message": "strategy id is required"})
+
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    strategy = _get_strategy_by_id(strategy_id)
+    if not strategy:
+        return _json(404, {"message": "Strategy not found"})
+
+    owner = strategy.get("owner")
+    if not owner or owner != netid:
+        return _json(403, {"message": "forbidden"})
+
+    principal = body.get("principal")
+    if principal != "ROLE#PUBLIC":
+        return _json(400, {"message": "principal must be ROLE#PUBLIC"})
+
+    if action == "grant":
+        table.put_item(Item={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
+    elif action == "revoke":
+        table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
+    else:  # pragma: no cover
+        return _json(500, {"message": "invalid action"})
+
+    return _json(200, {"ok": True})
+
+
+def get_public_permission(
+    strategy_id: Optional[str],
+    event: Dict[str, Any],
+    table,
+) -> Dict[str, Any]:
+    if not strategy_id:
+        return _json(400, {"message": "strategy id is required"})
+
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    strategy = _get_strategy_by_id(strategy_id)
+    if not strategy:
+        return _json(404, {"message": "Strategy not found"})
+
+    owner = strategy.get("owner")
+    if not owner or owner != netid:
+        return _json(403, {"message": "forbidden"})
+
+    resp = table.get_item(Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
+    return _json(200, {"isPublic": "Item" in resp})
 
 
 # ----------------------------
