@@ -250,6 +250,19 @@ def clean_numbers(data: object) -> object:
     return data
 
 
+def strategy_metadata_metrics(metrics: object) -> dict[str, Decimal]:
+    if not isinstance(metrics, dict):
+        return {}
+
+    result: dict[str, Decimal] = {}
+    for key, raw_value in metrics.items():
+        value = to_decimal(raw_value)
+        if value is not None:
+            result[key] = value
+
+    return result
+
+
 def finite_number_or_none(value: object) -> float | None:
     if isinstance(value, bool):
         return None
@@ -467,6 +480,7 @@ def seed_backtests(
     dynamo,
     backtests_bucket: str,
     backtest_metrics_table: str,
+    strategies_table: str,
     backtester_client: BacktesterClient,
     strategy_id: str,
     strategy_code: str,
@@ -474,6 +488,7 @@ def seed_backtests(
     backtests: list[dict[str, object]],
 ) -> int:
     table = dynamo.Table(backtest_metrics_table)
+    strategies = dynamo.Table(strategies_table)
     seeded = 0
 
     for backtest_index, backtest in enumerate(backtests):
@@ -620,6 +635,17 @@ def seed_backtests(
         item = clean_numbers(item)  # DynamoDB requires Decimal for numeric values.
         table.put_item(Item=item)
         print(f"Upserted backtest run {run_id} for strategy {strategy_id} in {backtest_metrics_table}")
+
+        metadata_metrics = strategy_metadata_metrics(payload_metrics)
+        if metadata_metrics:
+            strategies.update_item(
+                Key={"id": strategy_id},
+                UpdateExpression="SET #metrics = :metrics",
+                ExpressionAttributeNames={"#metrics": "metrics"},
+                ExpressionAttributeValues={":metrics": metadata_metrics},
+            )
+            print(f"Updated strategy {strategy_id} metadata metrics in {strategies_table}")
+
         seeded += 1
 
     return seeded
@@ -777,6 +803,7 @@ def seed_strategies(
             dynamo=dynamo,
             backtests_bucket=backtests_bucket,
             backtest_metrics_table=backtest_metrics_table,
+            strategies_table=strategies_table,
             backtester_client=backtester_client,
             strategy_id=strategy_id,
             strategy_code=strategy_code,
