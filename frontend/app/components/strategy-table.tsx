@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Strategy } from "../api/strategies";
+import { useUser } from "../context/UserConext";
 
 type StrategyTableProps = {
   strategies: Strategy[];
@@ -11,6 +12,9 @@ export default function StrategyTable({
   strategies,
   isLoading = false,
 }: StrategyTableProps) {
+  const { user } = useUser();
+  const [activeStrategy, setActiveStrategy] = useState<Strategy | null>(null);
+
   const formatDate = (value?: string) => {
     if (!value) return "—";
     const date = new Date(value);
@@ -87,6 +91,10 @@ export default function StrategyTable({
           ) : (
             strategies.map((strategy, index) => {
               const ownerLabel = strategy.owner_display ?? strategy.owner ?? "—";
+              const isOwned =
+                Boolean(user?.netid) &&
+                Boolean(strategy.owner) &&
+                strategy.owner!.toLowerCase() === user!.netid.toLowerCase();
               return (
                 <tr
                   key={strategy.id}
@@ -98,10 +106,24 @@ export default function StrategyTable({
                   STR-{strategy.id}
                 </td>
                 <td className="py-4 px-4 align-middle">
-                  <div className="flex h-full flex-col items-center justify-center text-center">
+                  <div className="flex h-full items-center justify-center gap-2 text-center">
                     <Link to={`/strategies/${strategy.id}`} className="text-white font-medium hover:underline">
                       {strategy.name}
                     </Link>
+                    {isOwned && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveStrategy(strategy)}
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-full transition hover:bg-slate-700/60 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        aria-label={`Manage permissions for ${strategy.name}`}
+                      >
+                        <img
+                          src="/permissions-icon.png"
+                          alt=""
+                          className="h-4 w-4 opacity-90"
+                        />
+                      </button>
+                    )}
                   </div>
                 </td>
                 <td className="py-4 px-4">
@@ -148,6 +170,48 @@ export default function StrategyTable({
           )}
         </tbody>
       </table>
+      {activeStrategy && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+            onClick={() => setActiveStrategy(null)}
+            aria-label="Close permissions modal"
+          />
+          <div className="relative w-[50vw] max-w-[90vw] rounded-2xl border border-slate-700/70 bg-slate-900 p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Permissions</h3>
+                <p className="text-sm text-slate-400">
+                  Manage access for {activeStrategy.name}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveStrategy(null)}
+                className="rounded-full p-1 text-slate-300 transition hover:bg-slate-700/60 hover:text-white"
+                aria-label="Close"
+              >
+                <span className="text-xl leading-none">&times;</span>
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-lg border border-slate-700/70 bg-slate-950/60 p-4 text-sm text-slate-300">
+              Permissions controls go here.
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveStrategy(null)}
+                className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
