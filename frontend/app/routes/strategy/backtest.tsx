@@ -7,6 +7,17 @@ import {
   type CandlestickData,
   type UTCTimestamp,
 } from "lightweight-charts";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
 import {
@@ -43,11 +54,19 @@ type EquityStat = {
 };
 
 type EquityCandle = CandlestickData;
+type EquityLinePoint = {
+  time: number;
+  equity: number;
+};
+type AllocationPoint = {
+  time: number;
+  [symbol: string]: number;
+};
+type EquityChartType = "candles" | "line" | "allocation";
 
 type RunParameterState = Record<string, string>;
 
 type BacktestParametersProps = {
-  strategyName?: string;
   parameters: BacktestParameter[];
   isRunning: boolean;
   isDisabled: boolean;
@@ -62,9 +81,10 @@ type BacktestMetricsProps = {
 };
 
 type StrategyEquityChartProps = {
-  strategyName?: string;
   stats: EquityStat[];
   candles: EquityCandle[];
+  orders: BacktestOrder[];
+  startingEquity: number;
   onSave: () => void;
   isSaving: boolean;
   isSaveDisabled: boolean;
@@ -80,11 +100,30 @@ type BacktestOrdersTableProps = {
   animatePlaceholder: boolean;
 };
 
+type ExecutionPanelTab = "orders" | "logs" | "warnings";
+
+const DEFAULT_EXECUTION_LOG_PAGE_SIZE = 10;
+const EXECUTION_LOG_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const ALLOCATION_COLORS = [
+  "#60a5fa",
+  "#34d399",
+  "#fbbf24",
+  "#f472b6",
+  "#a78bfa",
+  "#fb7185",
+  "#22d3ee",
+  "#f59e0b",
+];
+
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 2,
 });
+
+const chartAxisFontFamily =
+  'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const chartAxisFontSize = 12;
 
 const numberFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
@@ -353,22 +392,21 @@ export default function StrategyBacktest() {
   const candles = useMemo(() => buildCandles(backtestData?.candles), [backtestData]);
   const orders = useMemo(() => buildOrders(backtestData?.orders), [backtestData]);
   const equityStats = useMemo(() => buildEquityStats(backtestData), [backtestData]);
+  const chartStartingEquity = useMemo(() => {
+    const responseEquity = backtestData?.parameters?.starting_equity;
+    if (typeof responseEquity === "number" && Number.isFinite(responseEquity)) {
+      return responseEquity;
+    }
+    const parsed = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }, [backtestData, lastBacktestParamValues.startingEquity]);
 
   return (
     <SkeletonTheme baseColor={skeletonBaseColor} highlightColor={skeletonHighlightColor}>
       <div className="space-y-6">
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Backtest</p>
-            <h1 className="text-2xl font-semibold text-white">{strategy.name}</h1>
-          </div>
-          <p className="text-sm text-slate-400">Configure parameters, inspect metrics, and review orders.</p>
-        </header>
-
-        <div className="grid gap-6 lg:grid-cols-[360px_1fr] xl:grid-cols-[440px_1fr]">
+        <div className="grid gap-6 xl:grid-cols-[440px_minmax(0,1fr)]">
           <div className="space-y-6">
             <BacktestParameters
-              strategyName={strategy.name}
               parameters={lastRunParameters}
               isRunning={isRunningBacktest}
               isDisabled={isRunningBacktest || isWorkspaceSaving}
@@ -378,11 +416,12 @@ export default function StrategyBacktest() {
             <BacktestMetrics metrics={metrics} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
           </div>
 
-          <div className="space-y-6">
+          <div className="min-h-full">
             <StrategyEquityChart
-              strategyName={strategy.name}
               stats={equityStats}
               candles={candles}
+              orders={orders}
+              startingEquity={chartStartingEquity}
               onSave={handleSaveResults}
               isSaving={isSavingBacktest}
               isSaveDisabled={isSaveDisabled}
@@ -391,15 +430,16 @@ export default function StrategyBacktest() {
               showPlaceholder={showPlaceholder}
               animatePlaceholder={animatePlaceholder}
             />
-            <BacktestOrdersTable orders={orders} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
           </div>
         </div>
+
+        <BacktestOrdersTable orders={orders} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
       </div>
     </SkeletonTheme>
   );
 }
 
-function BacktestParameters({ strategyName, parameters, isRunning, isDisabled, disabledReason, onRun }: BacktestParametersProps) {
+function BacktestParameters({ parameters, isRunning, isDisabled, disabledReason, onRun }: BacktestParametersProps) {
   const [formState, setFormState] = useState<RunParameterState>(() =>
     parameters.reduce<RunParameterState>((acc, param) => {
       acc[param.id] = param.value;
@@ -428,9 +468,7 @@ function BacktestParameters({ strategyName, parameters, isRunning, isDisabled, d
   return (
     <article className="rounded-2xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
       <header>
-        <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Parameters</p>
-        <h2 className="text-lg font-semibold text-white">Backtest Parameters</h2>
-        <p className="text-sm text-slate-400">{strategyName ? `Using ${strategyName}` : "Draft configuration"}</p>
+        <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Parameters</p>
       </header>
       <form onSubmit={handleSubmit} className="mt-5 grid gap-4 md:grid-cols-2">
         {parameters.map((param) => (
@@ -506,8 +544,7 @@ function BacktestMetrics({ metrics, showPlaceholder, animatePlaceholder }: Backt
     <article className="rounded-2xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
       <header className="flex items-center justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Metrics</p>
-          <h2 className="text-lg font-semibold text-white">Performance Metrics</h2>
+          <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Metrics</p>
         </div>
       </header>
       <dl className="mt-4 grid gap-6 md:grid-cols-2">
@@ -519,9 +556,10 @@ function BacktestMetrics({ metrics, showPlaceholder, animatePlaceholder }: Backt
 }
 
 function StrategyEquityChart({
-  strategyName,
   stats,
   candles,
+  orders,
+  startingEquity,
   onSave,
   isSaving,
   isSaveDisabled,
@@ -530,20 +568,48 @@ function StrategyEquityChart({
   showPlaceholder,
   animatePlaceholder,
 }: StrategyEquityChartProps) {
+  const chartFrameRef = useRef<HTMLDivElement | null>(null);
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
-  const [benchmarkEnabled, setBenchmarkEnabled] = useState(true);
-  const [selectedBenchmark, setSelectedBenchmark] = useState("sp500");
-  const saveHelperTextId = "save-results-helper-text";
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const hoverLineRef = useRef<HTMLDivElement | null>(null);
+  const hoverDotRef = useRef<HTMLDivElement | null>(null);
+  const [chartType, setChartType] = useState<EquityChartType>("candles");
+  const linePoints = useMemo(() => buildLinePoints(candles), [candles]);
+  const allocationSeries = useMemo(
+    () => buildAllocationSeries(candles, orders, startingEquity),
+    [candles, orders, startingEquity]
+  );
 
   useEffect(() => {
-    if (showPlaceholder || !chartContainerRef.current) {
+    if (chartType !== "candles") {
+      return;
+    }
+    if (
+      showPlaceholder ||
+      !chartContainerRef.current ||
+      !chartFrameRef.current ||
+      !tooltipRef.current ||
+      !hoverLineRef.current ||
+      !hoverDotRef.current
+    ) {
       return;
     }
 
-    const chart = createChart(chartContainerRef.current, {
+    const chartContainer = chartContainerRef.current;
+    const chartFrame = chartFrameRef.current;
+    const tooltip = tooltipRef.current;
+    const hoverLine = hoverLineRef.current;
+    const hoverDot = hoverDotRef.current;
+
+    const chart = createChart(chartContainer, {
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#cbd5f5",
+        fontFamily: chartAxisFontFamily,
+        fontSize: chartAxisFontSize,
+      },
+      localization: {
+        priceFormatter: formatCompactAxisValue,
       },
       grid: {
         vertLines: { color: "rgba(148,163,184,0.08)" },
@@ -551,10 +617,25 @@ function StrategyEquityChart({
       },
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight,
-      rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: true },
+      rightPriceScale: {
+        borderVisible: false,
+        minimumWidth: 80,
+      },
+      timeScale: {
+        borderVisible: false,
+        timeVisible: true,
+        tickMarkFormatter: formatChartTickMark,
+      },
       crosshair: {
         mode: CrosshairMode.Normal,
+        vertLine: {
+          visible: false,
+          labelVisible: false,
+        },
+        horzLine: {
+          visible: false,
+          labelVisible: false,
+        },
       },
     });
 
@@ -564,6 +645,8 @@ function StrategyEquityChart({
       wickUpColor: "#34d399",
       wickDownColor: "#fb7185",
       borderVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
     });
 
     series.setData(candles);
@@ -578,48 +661,140 @@ function StrategyEquityChart({
       }
     });
 
-    observer.observe(chartContainerRef.current);
+    observer.observe(chartContainer);
+
+    const handleCrosshairMove = (param: {
+      point?: { x: number; y: number };
+      time?: unknown;
+      seriesData: Map<unknown, unknown>;
+    }) => {
+      if (
+        param.point === undefined ||
+        !param.time ||
+        param.point.x < 0 ||
+        param.point.x > chartContainer.clientWidth ||
+        param.point.y < 0 ||
+        param.point.y > chartContainer.clientHeight
+      ) {
+        tooltip.style.opacity = "0";
+        hoverLine.style.opacity = "0";
+        hoverDot.style.opacity = "0";
+        return;
+      }
+
+      const seriesDatum = param.seriesData.get(series) as BacktestCandle | undefined;
+      if (!seriesDatum) {
+        tooltip.style.opacity = "0";
+        hoverLine.style.opacity = "0";
+        hoverDot.style.opacity = "0";
+        return;
+      }
+
+      tooltip.innerHTML = [
+        `<div class="text-xs uppercase tracking-[0.18em] text-slate-400">${formatTooltipDate(param.time)}</div>`,
+        `<div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-200">`,
+        `<span class="text-slate-400">Open</span><span class="text-right font-mono">${currencyFormatter.format(seriesDatum.open)}</span>`,
+        `<span class="text-slate-400">High</span><span class="text-right font-mono">${currencyFormatter.format(seriesDatum.high)}</span>`,
+        `<span class="text-slate-400">Low</span><span class="text-right font-mono">${currencyFormatter.format(seriesDatum.low)}</span>`,
+        `<span class="text-slate-400">Close</span><span class="text-right font-mono">${currencyFormatter.format(seriesDatum.close)}</span>`,
+        `</div>`,
+      ].join("");
+
+      const tooltipWidth = tooltip.offsetWidth;
+      const tooltipHeight = tooltip.offsetHeight;
+      const offset = 12;
+      const left = Math.max(
+        8,
+        Math.min(chartFrame.clientWidth - tooltipWidth - 8, param.point.x + offset)
+      );
+      const top = Math.max(
+        8,
+        Math.min(chartFrame.clientHeight - tooltipHeight - 8, param.point.y + offset)
+      );
+
+      tooltip.style.transform = `translate(${left}px, ${top}px)`;
+      tooltip.style.opacity = "1";
+
+      const hoverX = Math.max(0, Math.min(chartContainer.clientWidth, param.point.x));
+      const plottedHoverY = series.priceToCoordinate(seriesDatum.close);
+
+      hoverLine.style.transform = `translateX(${hoverX}px)`;
+      hoverLine.style.opacity = "1";
+      const fallbackHoverY = Math.max(0, Math.min(chartContainer.clientHeight, param.point.y));
+      const clampedHoverY =
+        plottedHoverY === null
+          ? fallbackHoverY
+          : Math.max(0, Math.min(chartContainer.clientHeight, plottedHoverY));
+      hoverDot.style.transform = `translate(${hoverX}px, ${clampedHoverY}px)`;
+      hoverDot.style.opacity = "1";
+    };
+
+    chart.subscribeCrosshairMove(handleCrosshairMove);
 
     return () => {
       observer.disconnect();
+      chart.unsubscribeCrosshairMove(handleCrosshairMove);
       chart.remove();
     };
-  }, [candles, showPlaceholder]);
+  }, [candles, chartType, showPlaceholder]);
 
   return (
-    <article className="rounded-3xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
-      <header className="flex flex-wrap items-center justify-between gap-4">
+    <article className="flex h-full min-h-[720px] flex-col rounded-3xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Strategy Equity</p>
-          <h2 className="text-xl font-semibold text-white">{strategyName ?? "Active strategy"}</h2>
+          <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Strategy Equity</p>
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={isSaveDisabled}
-            aria-describedby={isSaveDisabled && saveDisabledReason ? saveHelperTextId : undefined}
-            className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
-              isSaveDisabled
-                ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
-                : "bg-fuchsia-500 hover:bg-fuchsia-400"
-            }`}
+        <div className="flex flex-wrap items-start justify-end gap-3">
+          <label className="flex items-center gap-2 text-sm text-slate-400">
+            <span>Graph</span>
+            <select
+              value={chartType}
+              onChange={(event) => setChartType(event.target.value as EquityChartType)}
+              className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+            >
+              <option value="candles">Candles</option>
+              <option value="line">Line</option>
+              <option value="allocation">Allocation</option>
+            </select>
+          </label>
+          <div
+            className="group relative self-start"
+            tabIndex={isSaveDisabled && saveDisabledReason ? 0 : -1}
+            aria-label={isSaveDisabled && saveDisabledReason ? saveDisabledReason : undefined}
           >
-            {isViewingSaved ? "Saved Run" : isSaving ? "Saving…" : "Save to Results"}
-          </button>
-          {isSaveDisabled && saveDisabledReason ? (
-            <p id={saveHelperTextId} className="max-w-xs text-right text-sm text-slate-400">
-              {saveDisabledReason}
-            </p>
-          ) : null}
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={isSaveDisabled}
+              aria-label={
+                isSaveDisabled && saveDisabledReason
+                  ? `${isViewingSaved ? "Saved Run" : isSaving ? "Saving" : "Save to Results"}: ${saveDisabledReason}`
+                  : undefined
+              }
+              className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-500 ${
+                isSaveDisabled
+                  ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
+                  : "bg-fuchsia-500 hover:bg-fuchsia-400"
+              }`}
+            >
+              {isViewingSaved ? "Saved Run" : isSaving ? "Saving…" : "Save to Results"}
+            </button>
+            {isSaveDisabled && saveDisabledReason ? (
+              <div className="pointer-events-none absolute right-0 top-full z-10 mt-2 w-72 rounded-2xl border border-slate-700 bg-slate-900/95 px-3 py-2 text-sm text-slate-200 opacity-0 shadow-xl transition duration-150 group-hover:opacity-100 group-focus:opacity-100">
+                {saveDisabledReason}
+              </div>
+            ) : null}
+          </div>
         </div>
-	      </header>
+      </header>
 
-      <dl className="mt-6 grid gap-4 md:grid-cols-3 lg:grid-cols-5">
+      <dl className="mt-6 grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
         {stats.map((stat) => (
           <div key={stat.id} className="rounded-2xl border border-slate-800/60 bg-slate-900/40 p-4">
             <dt className="text-xs uppercase tracking-wide text-slate-400">{stat.label}</dt>
-            <dd className={`text-2xl font-semibold ${stat.accentClass}`}>
+            <dd
+              className={`${stat.id === "volume" ? "text-lg sm:text-xl" : "text-xl sm:text-2xl"} font-semibold leading-tight ${stat.accentClass}`}
+            >
               {showPlaceholder ? <Skeleton width="80%" height={28} enableAnimation={animatePlaceholder} /> : stat.value}
             </dd>
           </div>
@@ -627,91 +802,303 @@ function StrategyEquityChart({
       </dl>
 
       {showPlaceholder ? (
-        <div className="mt-5">
+        <div className="mt-5 flex-1">
           <Skeleton width="30%" height={20} enableAnimation={animatePlaceholder} />
-          <Skeleton height={320} className="mt-4" enableAnimation={animatePlaceholder} />
+          <Skeleton height="100%" className="mt-4 min-h-[420px]" enableAnimation={animatePlaceholder} />
+        </div>
+      ) : chartType === "allocation" ? (
+        <div className="mt-5 min-h-[420px] flex-1 overflow-hidden rounded-2xl">
+          <RechartsAllocationChart series={allocationSeries} />
+        </div>
+      ) : chartType === "line" ? (
+        <div className="mt-5 min-h-[420px] flex-1 overflow-hidden rounded-2xl">
+          <RechartsEquityLineChart data={linePoints} />
         </div>
       ) : (
-        <>
-          <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-slate-300">
-            <label className="inline-flex items-center gap-2 text-slate-200">
-              <input
-                type="checkbox"
-                checked={benchmarkEnabled}
-                onChange={(event) => setBenchmarkEnabled(event.target.checked)}
-                className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-fuchsia-500 focus:ring-fuchsia-500"
-              />
-              Benchmark
-            </label>
-            <select
-              value={selectedBenchmark}
-              disabled={!benchmarkEnabled}
-              onChange={(event) => setSelectedBenchmark(event.target.value)}
-              className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
-            >
-              <option value="sp500">S&amp;P 500</option>
-              <option value="nasdaq">NASDAQ 100</option>
-              <option value="dow">Dow Jones</option>
-            </select>
-          </div>
-
-          <div ref={chartContainerRef} className="mt-4 h-80 w-full" />
-        </>
+        <div ref={chartFrameRef} className="relative mt-5 min-h-[420px] flex-1 overflow-hidden rounded-2xl">
+          <div ref={chartContainerRef} className="h-full w-full" />
+          <div
+            ref={hoverLineRef}
+            className="pointer-events-none absolute bottom-0 top-0 z-[5] w-px -translate-x-1/2 bg-slate-200/20 opacity-0 transition-opacity duration-75"
+          />
+          <div
+            ref={hoverDotRef}
+            className="pointer-events-none absolute z-[6] h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-950 bg-fuchsia-400 opacity-0 shadow-[0_0_0_4px_rgba(217,70,239,0.18)] transition-opacity duration-75"
+          />
+          <div
+            ref={tooltipRef}
+            className="pointer-events-none absolute left-0 top-0 z-10 w-56 rounded-2xl border border-slate-700 bg-slate-950/95 px-3 py-3 opacity-0 shadow-xl transition-opacity duration-75"
+          />
+        </div>
       )}
     </article>
   );
 }
 
 function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: BacktestOrdersTableProps) {
+  const [activeTab, setActiveTab] = useState<ExecutionPanelTab>("orders");
+  const [page, setPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
+  const [pageSize, setPageSize] = useState(DEFAULT_EXECUTION_LOG_PAGE_SIZE);
+  const [symbolFilter, setSymbolFilter] = useState("");
+  const [actionFilter, setActionFilter] = useState<"all" | "buy" | "sell">("all");
+
+  useEffect(() => {
+    setPage(1);
+    setPageInput("1");
+  }, [orders, pageSize, symbolFilter, actionFilter, activeTab]);
+
+  const filteredOrders = useMemo(() => {
+    const normalizedSymbol = symbolFilter.trim().toLowerCase();
+    return orders.filter((order) => {
+      const matchesSymbol = !normalizedSymbol || order.symbol.toLowerCase().includes(normalizedSymbol);
+      const normalizedAction = String(order.action).toLowerCase();
+      const matchesAction = actionFilter === "all" || normalizedAction === actionFilter;
+      return matchesSymbol && matchesAction;
+    });
+  }, [actionFilter, orders, symbolFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageEnd = Math.min(pageStart + pageSize, filteredOrders.length);
+  const visibleOrders = filteredOrders.slice(pageStart, pageEnd);
+
+  useEffect(() => {
+    setPageInput(String(currentPage));
+  }, [currentPage]);
+
+  const applyPageInput = () => {
+    const parsed = Number.parseInt(pageInput, 10);
+    if (!Number.isFinite(parsed)) {
+      setPageInput(String(currentPage));
+      return;
+    }
+    setPage(Math.min(totalPages, Math.max(1, parsed)));
+  };
+
   return (
     <article className="rounded-3xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Orders</p>
-          <h2 className="text-xl font-semibold text-white">Execution Log</h2>
+          <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Execution</p>
         </div>
       </header>
-      <div className="mt-4 overflow-x-auto">
+
+      <div className="mt-5 space-y-5">
+        <div className="inline-flex rounded-2xl border border-slate-800 bg-slate-900/30 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          {[
+            { id: "orders" as const, label: "Orders" },
+            { id: "logs" as const, label: "Logs" },
+            { id: "warnings" as const, label: "Warnings" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                activeTab === tab.id
+                  ? "bg-[linear-gradient(135deg,rgba(14,165,233,0.18),rgba(168,85,247,0.16))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         {showPlaceholder ? (
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, index) => (
-              <Skeleton key={`order-skeleton-${index}`} height={32} enableAnimation={animatePlaceholder} />
-            ))}
+          <ExecutionPlaceholder animatePlaceholder={animatePlaceholder} />
+        ) : activeTab !== "orders" ? (
+          <ExecutionPlaceholder
+            animatePlaceholder={false}
+            label={activeTab === "logs" ? "Logs panel coming soon." : "Warnings panel coming soon."}
+          />
+        ) : filteredOrders.length === 0 ? (
+          <div className="space-y-4">
+            <ExecutionFilters
+              symbolFilter={symbolFilter}
+              actionFilter={actionFilter}
+              pageSize={pageSize}
+              onSymbolFilterChange={setSymbolFilter}
+              onActionFilterChange={setActionFilter}
+              onPageSizeChange={setPageSize}
+            />
+            <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-4 py-8 text-center text-sm text-slate-400">
+              {orders.length === 0 ? "No execution log entries for this run." : "No orders match the current filters."}
+            </div>
           </div>
         ) : (
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-3 py-2 font-medium">Date · Time</th>
-                <th className="px-3 py-2 font-medium">Ticker</th>
-                <th className="px-3 py-2 font-medium">Type</th>
-                <th className="px-3 py-2 font-medium">Price</th>
-                <th className="px-3 py-2 font-medium">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => {
-                const isBuy = String(order.action).toLowerCase() === "buy";
-                const orderType = isBuy ? "Buy" : "Sell";
-                return (
-                  <tr key={order.id} className="border-t border-slate-800 text-slate-200">
-                    <td className="px-3 py-3">{dateFormatter.format(new Date(order.timestamp))}</td>
-                    <td className="px-3 py-3 font-semibold">{order.symbol}</td>
-                    <td className="px-3 py-3">
-                      <span className={`font-semibold ${isBuy ? "text-emerald-400" : "text-rose-400"}`}>
-                        {orderType}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 font-mono">{currencyFormatter.format(order.price)}</td>
-                    <td className="px-3 py-3">{numberFormatter.format(order.shares)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="space-y-4">
+            <ExecutionFilters
+              symbolFilter={symbolFilter}
+              actionFilter={actionFilter}
+              pageSize={pageSize}
+              onSymbolFilterChange={setSymbolFilter}
+              onActionFilterChange={setActionFilter}
+              onPageSizeChange={setPageSize}
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
+              <div>{`${pageStart + 1}-${pageEnd} of ${filteredOrders.length} filtered orders`}</div>
+              <div>{`${orders.length} total entries`}</div>
+            </div>
+
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-3 py-2 font-medium">Date · Time</th>
+                  <th className="px-3 py-2 font-medium">Ticker</th>
+                  <th className="px-3 py-2 font-medium">Type</th>
+                  <th className="px-3 py-2 font-medium">Price</th>
+                  <th className="px-3 py-2 font-medium">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleOrders.map((order) => {
+                  const isBuy = String(order.action).toLowerCase() === "buy";
+                  const orderType = isBuy ? "Buy" : "Sell";
+                  return (
+                    <tr key={order.id} className="border-t border-slate-800 text-slate-200">
+                      <td className="px-3 py-3">{dateFormatter.format(new Date(order.timestamp))}</td>
+                      <td className="px-3 py-3 font-semibold">{order.symbol}</td>
+                      <td className="px-3 py-3">
+                        <span className={`font-semibold ${isBuy ? "text-emerald-400" : "text-rose-400"}`}>
+                          {orderType}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 font-mono">{currencyFormatter.format(order.price)}</td>
+                      <td className="px-3 py-3">{numberFormatter.format(order.shares)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+                <span>Page</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={pageInput}
+                  onChange={(event) => setPageInput(event.target.value.replace(/[^\d]/g, ""))}
+                  onBlur={applyPageInput}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      applyPageInput();
+                    }
+                  }}
+                  className="w-16 rounded-lg border border-slate-700 bg-slate-900/60 px-2 py-1.5 text-center text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+                />
+                <span>of {totalPages}</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={currentPage === 1}
+                  className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  disabled={currentPage === totalPages}
+                  className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </article>
+  );
+}
+
+type ExecutionFiltersProps = {
+  symbolFilter: string;
+  actionFilter: "all" | "buy" | "sell";
+  pageSize: number;
+  onSymbolFilterChange: (value: string) => void;
+  onActionFilterChange: (value: "all" | "buy" | "sell") => void;
+  onPageSizeChange: (value: number) => void;
+};
+
+function ExecutionFilters({
+  symbolFilter,
+  actionFilter,
+  pageSize,
+  onSymbolFilterChange,
+  onActionFilterChange,
+  onPageSizeChange,
+}: ExecutionFiltersProps) {
+  return (
+    <div className="flex flex-wrap items-end gap-3 border-y border-slate-800 py-4">
+      <label className="space-y-1">
+        <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Ticker</span>
+        <input
+          type="text"
+          value={symbolFilter}
+          onChange={(event) => onSymbolFilterChange(event.target.value)}
+          placeholder="Filter symbol"
+          className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-fuchsia-500 focus:outline-none"
+        />
+      </label>
+
+      <label className="space-y-1">
+        <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Side</span>
+        <select
+          value={actionFilter}
+          onChange={(event) => onActionFilterChange(event.target.value as "all" | "buy" | "sell")}
+          className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+        >
+          <option value="all">All</option>
+          <option value="buy">Buy</option>
+          <option value="sell">Sell</option>
+        </select>
+      </label>
+
+      <label className="space-y-1">
+        <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Show</span>
+        <select
+          value={pageSize}
+          onChange={(event) => onPageSizeChange(Number.parseInt(event.target.value, 10))}
+          className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+        >
+          {EXECUTION_LOG_PAGE_SIZE_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option} rows
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function ExecutionPlaceholder({
+  animatePlaceholder,
+  label = "Panel coming soon.",
+}: {
+  animatePlaceholder: boolean;
+  label?: string;
+}) {
+  return animatePlaceholder ? (
+    <div className="space-y-3">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <Skeleton key={`execution-skeleton-${index}`} height={32} enableAnimation={animatePlaceholder} />
+      ))}
+    </div>
+  ) : (
+    <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-4 py-10 text-center text-sm text-slate-400">
+      {label}
+    </div>
   );
 }
 
@@ -794,6 +1181,139 @@ const buildCandles = (candles?: BacktestCandle[]): EquityCandle[] => {
     }));
 };
 
+const buildLinePoints = (candles?: EquityCandle[]): EquityLinePoint[] => {
+  if (!Array.isArray(candles) || candles.length === 0) return [];
+
+  return [...candles]
+    .sort((a, b) => Number(a.time) - Number(b.time))
+    .map((candle) => ({
+      time: Number(candle.time),
+      equity: candle.close,
+    }));
+};
+
+const buildAllocationSeries = (
+  candles: EquityCandle[],
+  orders: BacktestOrder[],
+  startingEquity: number
+) => {
+  if (!Array.isArray(candles) || candles.length === 0 || !Number.isFinite(startingEquity) || startingEquity <= 0) {
+    return {
+      data: [] as AllocationPoint[],
+      keys: [] as string[],
+    };
+  }
+
+  const timeline = [...candles].sort((a, b) => Number(a.time) - Number(b.time)).map((candle) => Number(candle.time));
+  const initialSnapshot: AllocationPoint = {
+    time: timeline[0] ?? 0,
+    Cash: 100,
+  };
+
+  if (!Array.isArray(orders) || orders.length === 0) {
+    return {
+      data: timeline.map((time) => ({ time, Cash: 100 })),
+      keys: ["Cash"],
+    };
+  }
+
+  const sortedOrders = [...orders].sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
+  const holdings = new Map<string, number>();
+  const latestPrices = new Map<string, number>();
+  let cash = startingEquity;
+  const snapshots: AllocationPoint[] = [];
+
+  for (let index = 0; index < sortedOrders.length; ) {
+    const timestamp = sortedOrders[index].timestamp;
+
+    while (index < sortedOrders.length && sortedOrders[index].timestamp === timestamp) {
+      const order = sortedOrders[index];
+      const direction = String(order.action).toLowerCase() === "buy" ? 1 : -1;
+      const shares = direction * order.shares;
+      const nextQuantity = (holdings.get(order.symbol) ?? 0) + shares;
+
+      if (Math.abs(nextQuantity) < 1e-9) {
+        holdings.delete(order.symbol);
+      } else {
+        holdings.set(order.symbol, nextQuantity);
+      }
+
+      latestPrices.set(order.symbol, order.price);
+      cash -= shares * order.price;
+      index += 1;
+    }
+
+    const assetValues = new Map<string, number>();
+    let totalValue = Math.max(cash, 0);
+
+    for (const [symbol, quantity] of holdings.entries()) {
+      const price = latestPrices.get(symbol);
+      if (!price || !Number.isFinite(price)) continue;
+      const marketValue = Math.max(quantity * price, 0);
+      if (marketValue <= 0) continue;
+      assetValues.set(symbol, marketValue);
+      totalValue += marketValue;
+    }
+
+    if (totalValue <= 0) {
+      continue;
+    }
+
+    const point: AllocationPoint = { time: Math.floor(new Date(timestamp).getTime() / 1000) };
+    for (const [symbol, marketValue] of assetValues.entries()) {
+      point[symbol] = (marketValue / totalValue) * 100;
+    }
+    point.Cash = (Math.max(cash, 0) / totalValue) * 100;
+    snapshots.push(point);
+  }
+
+  const normalizedSnapshots = [initialSnapshot, ...snapshots]
+    .sort((a, b) => a.time - b.time)
+    .filter((point, index, items) => index === 0 || point.time !== items[index - 1]?.time);
+
+  const keys = Array.from(
+    normalizedSnapshots.reduce((acc, point) => {
+      Object.keys(point).forEach((key) => {
+        if (key !== "time") acc.add(key);
+      });
+      return acc;
+    }, new Set<string>())
+  ).sort((a, b) => {
+    if (a === "Cash") return 1;
+    if (b === "Cash") return -1;
+    return a.localeCompare(b);
+  });
+
+  const data: AllocationPoint[] = [];
+  let snapshotIndex = 0;
+  let activeSnapshot = normalizedSnapshots[0];
+
+  for (const time of timeline) {
+    while (
+      snapshotIndex + 1 < normalizedSnapshots.length &&
+      normalizedSnapshots[snapshotIndex + 1] &&
+      normalizedSnapshots[snapshotIndex + 1].time <= time
+    ) {
+      snapshotIndex += 1;
+      activeSnapshot = normalizedSnapshots[snapshotIndex];
+    }
+
+    data.push(allocationPointFromSnapshot(time, activeSnapshot, keys));
+  }
+
+  return { data, keys };
+};
+
+const allocationPointFromSnapshot = (time: number, snapshot: AllocationPoint, keys: string[]) => {
+  const point: AllocationPoint = { time };
+  for (const key of keys) {
+    point[key] = snapshot[key] ?? 0;
+  }
+  return point;
+};
+
 const buildOrders = (orders?: BacktestOrder[]): BacktestOrder[] => {
   if (!Array.isArray(orders)) return [];
 
@@ -802,6 +1322,271 @@ const buildOrders = (orders?: BacktestOrder[]): BacktestOrder[] => {
     id: order.id || `${order.timestamp}-${order.symbol}-${index}`,
   }));
 };
+
+const formatTooltipDate = (value: unknown) => {
+  if (typeof value === "number") {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(value * 1000));
+  }
+
+  if (typeof value === "string") {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(value));
+  }
+
+  if (
+    value &&
+    typeof value === "object" &&
+    "year" in value &&
+    "month" in value &&
+    "day" in value
+  ) {
+    const businessDay = value as { year: number; month: number; day: number };
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(businessDay.year, businessDay.month - 1, businessDay.day));
+  }
+
+  return "Unknown date";
+};
+
+const axisDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  year: "numeric",
+});
+
+const formatCompactAxisValue = (value: number) => {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) {
+    return `${trimTrailingZeros(value / 1_000_000)}m`;
+  }
+  if (abs >= 1_000) {
+    return `${trimTrailingZeros(value / 1_000)}k`;
+  }
+  return trimTrailingZeros(value);
+};
+
+const trimTrailingZeros = (value: number) =>
+  value.toFixed(1).replace(/\.0$/, "");
+
+const formatChartTickMark = (time: unknown) => {
+  if (typeof time === "number") {
+    return axisDateFormatter.format(new Date(time * 1000));
+  }
+  if (
+    time &&
+    typeof time === "object" &&
+    "year" in time &&
+    "month" in time &&
+    "day" in time
+  ) {
+    const businessDay = time as { year: number; month: number; day: number };
+    return axisDateFormatter.format(new Date(businessDay.year, businessDay.month - 1, businessDay.day));
+  }
+  if (typeof time === "string") {
+    return axisDateFormatter.format(new Date(time));
+  }
+  return null;
+};
+
+function RechartsEquityLineTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: EquityLinePoint }>;
+  label?: number;
+}) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  const point = payload[0]?.payload;
+  if (!point) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-700 bg-slate-950/95 px-3 py-3 shadow-xl">
+      <div className="text-xs uppercase tracking-[0.18em] text-slate-400">{formatTooltipDate(label ?? point.time)}</div>
+      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-200">
+        <span className="text-slate-400">Equity</span>
+        <span className="text-right font-mono">{currencyFormatter.format(point.equity)}</span>
+      </div>
+    </div>
+  );
+}
+
+function RechartsEquityLineChart({ data }: { data: EquityLinePoint[] }) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+        <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical horizontal />
+        <XAxis
+          dataKey="time"
+          type="number"
+          domain={["dataMin", "dataMax"]}
+          tickFormatter={(value) => axisDateFormatter.format(new Date(Number(value) * 1000))}
+          tick={{ fill: "#cbd5f5", fontSize: chartAxisFontSize, fontFamily: chartAxisFontFamily }}
+          tickLine={false}
+          axisLine={false}
+          minTickGap={42}
+        />
+        <YAxis
+          dataKey="equity"
+          type="number"
+          orientation="right"
+          width={80}
+          tickFormatter={(value) => formatCompactAxisValue(Number(value))}
+          tick={{ fill: "#cbd5f5", fontSize: chartAxisFontSize, fontFamily: chartAxisFontFamily }}
+          tickLine={false}
+          axisLine={false}
+          domain={["auto", "auto"]}
+        />
+        <RechartsTooltip
+          content={<RechartsEquityLineTooltip />}
+          cursor={{ stroke: "rgba(226,232,240,0.28)", strokeWidth: 1 }}
+          isAnimationActive={false}
+        />
+        <Line
+          type="linear"
+          dataKey="equity"
+          stroke="#7dd3fc"
+          strokeWidth={2}
+          dot={false}
+          activeDot={{
+            r: 4,
+            fill: "#d946ef",
+            stroke: "#020617",
+            strokeWidth: 2,
+          }}
+          isAnimationActive={false}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function RechartsAllocationTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ dataKey?: string | number; value?: number }>;
+  label?: number;
+}) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  const rows = payload
+    .map((entry) => ({
+      key: String(entry.dataKey ?? ""),
+      value: typeof entry.value === "number" ? entry.value : 0,
+    }))
+    .filter((entry) => entry.key && entry.value > 0.01)
+    .sort((a, b) => b.value - a.value);
+
+  return (
+    <div className="rounded-2xl border border-slate-700 bg-slate-950/95 px-3 py-3 shadow-xl">
+      <div className="text-xs uppercase tracking-[0.18em] text-slate-400">{formatTooltipDate(label)}</div>
+      <div className="mt-2 space-y-1 text-sm text-slate-200">
+        {rows.map((row) => (
+          <div key={row.key} className="flex items-center justify-between gap-4">
+            <span className="text-slate-400">{row.key}</span>
+            <span className="font-mono">{row.value.toFixed(1)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RechartsAllocationChart({
+  series,
+}: {
+  series: { data: AllocationPoint[]; keys: string[] };
+}) {
+  if (!series.data.length || !series.keys.length) {
+    return (
+      <div className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-4 text-sm text-slate-400">
+        No allocation snapshots could be derived from this run&apos;s orders.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid h-full min-h-[420px] gap-4 lg:grid-cols-[minmax(0,1fr)_180px]">
+      <div className="min-h-[420px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={series.data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+            <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical horizontal />
+            <XAxis
+              dataKey="time"
+              type="number"
+              domain={["dataMin", "dataMax"]}
+              tickFormatter={(value) => axisDateFormatter.format(new Date(Number(value) * 1000))}
+              tick={{ fill: "#cbd5f5", fontSize: chartAxisFontSize, fontFamily: chartAxisFontFamily }}
+              tickLine={false}
+              axisLine={false}
+              minTickGap={42}
+            />
+            <YAxis
+              type="number"
+              width={64}
+              tickFormatter={(value) => `${Number(value).toFixed(0)}%`}
+              tick={{ fill: "#cbd5f5", fontSize: chartAxisFontSize, fontFamily: chartAxisFontFamily }}
+              tickLine={false}
+              axisLine={false}
+              domain={[0, 100]}
+            />
+            <RechartsTooltip
+              content={<RechartsAllocationTooltip />}
+              cursor={{ stroke: "rgba(226,232,240,0.28)", strokeWidth: 1 }}
+              isAnimationActive={false}
+            />
+            {series.keys.map((key, index) => (
+              <Area
+                key={key}
+                type="stepAfter"
+                dataKey={key}
+                stackId="allocation"
+                stroke={ALLOCATION_COLORS[index % ALLOCATION_COLORS.length]}
+                fill={ALLOCATION_COLORS[index % ALLOCATION_COLORS.length]}
+                fillOpacity={0.72}
+                isAnimationActive={false}
+              />
+            ))}
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <aside className="rounded-2xl border border-slate-800/60 bg-slate-900/30 p-4">
+        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Legend</p>
+        <div className="mt-3 space-y-2">
+          {series.keys.map((key, index) => (
+            <div key={key} className="flex items-center gap-3 text-sm text-slate-200">
+              <span
+                className="h-3 w-3 rounded-full"
+                style={{ backgroundColor: ALLOCATION_COLORS[index % ALLOCATION_COLORS.length] }}
+              />
+              <span>{key}</span>
+            </div>
+          ))}
+        </div>
+      </aside>
+    </div>
+  );
+}
 
 const buildEquityStats = (data: BacktestResponse | null): EquityStat[] => {
   if (!data) return [];

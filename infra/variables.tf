@@ -67,6 +67,12 @@ variable "backtest_metrics_table_name" {
   default     = null
 }
 
+variable "counters_table_name" {
+  description = "Optional explicit name for the Counters table. Defaults to \"<project>-<env>-counters\"."
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "Additional tags to apply to resources."
   type        = map(string)

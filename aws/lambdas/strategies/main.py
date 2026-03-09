@@ -13,6 +13,7 @@ s3 = boto3.client("s3")
 STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
 VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
+COUNTERS_TABLE = dynamo.Table(os.environ["COUNTERS_TABLE"])
 ARTIFACT_BUCKET = os.environ["ARTIFACT_BUCKET"]
 STRATEGY_NAME_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 75
@@ -128,7 +129,7 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
     if not source:
         return _json(404, {"message": f"Source strategy {source_id} not found"})
 
-    new_strategy_id = str(_count_strategies() + 1)
+    new_strategy_id = str(_next_strategy_id())
     new_version = 1
     now = _now()
     entrypoint = source.get("entrypoint", "main.py")
@@ -270,17 +271,15 @@ def _write_artifact_metadata(strategy_id: str, artifact_id: str, version: int, s
     )
 
 
-def _count_strategies() -> int:
-    count = 0
-    scan_kwargs: Dict[str, Any] = {"ProjectionExpression": "id"}
-    while True:
-        resp = STRATEGIES_TABLE.scan(**scan_kwargs)
-        count += resp.get("Count", 0)
-        last_key = resp.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        scan_kwargs["ExclusiveStartKey"] = last_key
-    return count
+def _next_strategy_id() -> int:
+    resp = COUNTERS_TABLE.update_item(
+        Key={"counter_name": "strategies"},
+        UpdateExpression="ADD #val :inc",
+        ExpressionAttributeNames={"#val": "value"},
+        ExpressionAttributeValues={":inc": 1},
+        ReturnValues="UPDATED_NEW",
+    )
+    return int(resp["Attributes"]["value"])
 
 
 def _get_strategy_by_id(strategy_id: str) -> Optional[Dict[str, Any]]:

@@ -2,38 +2,40 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import { useMemo } from "react";
-import { useNavigate } from "react-router-dom";
 import { useStrategyWorkspace } from "./layout";
 
-const CodeRenderer = ({ inline, className, children, ...props }: any) => {
-  if (inline) {
-    return (
-      <code className="rounded bg-slate-900/60 px-1 py-0.5 text-[0.85em] text-fuchsia-200" {...props}>
+const markdownComponents: Components = {
+  pre: ({ children }) => (
+    <pre className="overflow-x-auto rounded-2xl border border-white/10 bg-[#0a1220] px-5 py-4 text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+      {children}
+    </pre>
+  ),
+  code: ({ className, children, ...props }) =>
+    className ? (
+      <code className={`font-mono text-[0.92em] text-slate-100 ${className}`} {...props}>
         {children}
       </code>
-    );
-  }
-  return (
-    <pre className="rounded-xl bg-slate-900/80 p-4 text-slate-200">
-      <code className={className}>{children}</code>
-    </pre>
-  );
-};
-
-const markdownComponents: Components = {
-  code: CodeRenderer,
-  h1: ({ children }) => <h1 className="text-2xl font-semibold text-white">{children}</h1>,
-  h2: ({ children }) => <h2 className="text-xl font-semibold text-white">{children}</h2>,
-  h3: ({ children }) => <h3 className="text-lg font-semibold text-white">{children}</h3>,
-  p: ({ children }) => <p className="text-slate-300">{children}</p>,
-  ul: ({ children }) => <ul className="ml-5 list-disc text-slate-300">{children}</ul>,
-  ol: ({ children }) => <ol className="ml-5 list-decimal text-slate-300">{children}</ol>,
-  li: ({ children }) => <li className="mb-1">{children}</li>,
+    ) : (
+      <code
+        className="rounded-md bg-white/[0.06] px-1.5 py-0.5 font-mono text-[0.9em] text-cyan-200"
+        {...props}
+      >
+        {children}
+      </code>
+    ),
+  hr: () => <hr className="border-white/10" />,
+  h1: ({ children }) => <h1 className="text-3xl font-semibold tracking-tight text-white">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-2xl font-semibold tracking-tight text-white">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-xl font-semibold tracking-tight text-white">{children}</h3>,
+  p: ({ children }) => <p className="leading-8 text-slate-300">{children}</p>,
+  ul: ({ children }) => <ul className="ml-6 list-disc space-y-2 text-slate-300 marker:text-slate-500">{children}</ul>,
+  ol: ({ children }) => <ol className="ml-6 list-decimal space-y-2 text-slate-300 marker:text-slate-500">{children}</ol>,
+  li: ({ children }) => <li>{children}</li>,
+  strong: ({ children }) => <strong className="font-semibold text-slate-100">{children}</strong>,
 };
 
 export default function StrategyOverview() {
-  const { strategy, handleRun, isRunning, files } = useStrategyWorkspace();
-  const navigate = useNavigate();
+  const { strategy, files } = useStrategyWorkspace();
 
   const formatter = useMemo(
     () =>
@@ -46,19 +48,15 @@ export default function StrategyOverview() {
       }),
     []
   );
-
-  const surface = "border border-slate-800 bg-slate-950/40";
   const labelColor = "text-slate-400";
   const mutedColor = "text-slate-400";
   const badgeClass = "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200";
-  const quickButtonClass =
-    "w-full rounded-xl border border-slate-600/60 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-900";
-  const previewSurface = "border border-slate-800/60 bg-slate-950/60 text-slate-200";
+  const previewSurface = "border border-white/10 bg-black/10 text-slate-200";
 
   return (
-    <div className="space-y-6">
-      <section className="grid gap-5">
-        <div className={`rounded-2xl ${surface} p-6`}>
+    <div className="divide-y divide-white/10">
+      <section className="pb-8">
+        <div className="px-1 py-1">
           <header className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Overview</p>
@@ -72,18 +70,6 @@ export default function StrategyOverview() {
               <div>
                 <dt className={labelColor}>Owner</dt>
                 <dd className="text-base font-medium">{strategy.owner}</dd>
-              </div>
-              <div>
-                <dt className={labelColor}>Project</dt>
-                <dd className="text-base font-medium">
-                  {strategy.project_id ? (
-                    <>
-                      PRJ {strategy.project_id} · {strategy.project_name}
-                    </>
-                  ) : (
-                    <span className="text-slate-500">Not assigned</span>
-                  )}
-                </dd>
               </div>
               <div>
                 <dt className={labelColor}>Created</dt>
@@ -124,14 +110,14 @@ export default function StrategyOverview() {
         </div>
       </section>
 
-      <section className="grid gap-5">
-        <article className={`rounded-2xl ${surface} p-6`}>
+      <section className="pt-8">
+        <article className="px-1">
           <header className="flex items-center justify-between">
             <h3 className="text-base font-semibold">README.md</h3>
             <span className={`text-xs ${mutedColor}`}>Preview</span>
           </header>
-          <div className={`mt-4 max-h-96 overflow-y-auto rounded-xl ${previewSurface} p-4`}>
-            <div className="space-y-4 text-sm leading-relaxed text-slate-300">
+          <div className={`mt-4 rounded-[24px] ${previewSurface} p-6`}>
+            <div className="space-y-6 text-sm text-slate-300">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {files.find((file) => file.path.toLowerCase() === "readme.md")?.content}
               </ReactMarkdown>
