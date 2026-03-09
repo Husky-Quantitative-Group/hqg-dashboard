@@ -789,7 +789,9 @@ function StrategyEquityChart({
         {stats.map((stat) => (
           <div key={stat.id} className="rounded-2xl border border-slate-800/60 bg-slate-900/40 p-4">
             <dt className="text-xs uppercase tracking-wide text-slate-400">{stat.label}</dt>
-            <dd className={`text-xl font-semibold leading-tight sm:text-2xl ${stat.accentClass}`}>
+            <dd
+              className={`${stat.id === "volume" ? "text-lg sm:text-xl" : "text-xl sm:text-2xl"} font-semibold leading-tight ${stat.accentClass}`}
+            >
               {showPlaceholder ? <Skeleton width="80%" height={28} enableAnimation={animatePlaceholder} /> : stat.value}
             </dd>
           </div>

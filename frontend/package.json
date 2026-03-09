@@ -15,6 +15,7 @@
     "axios": "^1.12.2",
     "isbot": "^5.1.27",
     "lightweight-charts": "^5.0.9",
+    "lucide-react": "^0.577.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-loading-skeleton": "^3.5.0",
