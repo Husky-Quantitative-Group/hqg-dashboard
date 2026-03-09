@@ -390,7 +390,12 @@ def _has_write_permission(strategy_id, netid):
     principal = f"USER#{netid}"
     table = dynamo.Table(WRITE_PERMISSIONS_TABLE)
     resp = table.get_item(Key={"strategy_id": strategy_id, "principal": principal})
-    return "Item" in resp
+    if "Item" in resp:
+        return True
+    public_resp = table.get_item(
+        Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
+    )
+    return "Item" in public_resp
 
 def _ulid():
     ts_ms = int(time.time() * 1000)

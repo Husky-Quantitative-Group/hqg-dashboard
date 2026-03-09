@@ -225,4 +225,9 @@ def _has_write_permission(strategy_id, netid):
     resp = WRITE_PERMISSIONS_TABLE.get_item(
         Key={"strategy_id": strategy_id, "principal": principal}
     )
-    return "Item" in resp
+    if "Item" in resp:
+        return True
+    public_resp = WRITE_PERMISSIONS_TABLE.get_item(
+        Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
+    )
+    return "Item" in public_resp
