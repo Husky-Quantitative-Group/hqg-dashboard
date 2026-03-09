@@ -17,6 +17,8 @@ Example:
     --strategies-table "$(terraform output -raw strategies_table_name)" \
     --artifacts-table "$(terraform output -raw strategy_artifacts_table_name)" \
     --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
+    --strategies-read-permissions-table "$(terraform output -raw strategies_read_permissions_table_name)" \
+    --strategies-write-permissions-table "$(terraform output -raw strategies_write_permissions_table_name)" \
     --backtest-metrics-table "$(terraform output -raw backtest_metrics_table_name)" \
     --backtester-url "http://localhost:8005" \
     --users-table "$(terraform output -raw users_table_name)" \
@@ -673,6 +675,26 @@ def seed_tables(
         print(f"Upserted artifact {filename} and version row for v{VERSION}")
 
 
+def seed_strategy_permissions(
+    dynamo,
+    read_permissions_table: str,
+    write_permissions_table: str,
+    strategy_id: str,
+) -> None:
+    read_table = dynamo.Table(read_permissions_table)
+
+    read_table.put_item(
+        Item={
+            "strategy_id": strategy_id,
+            "principal": "ROLE#PUBLIC",
+        }
+    )
+    print(
+        f"Upserted ROLE#PUBLIC read permissions for strategy {strategy_id} "
+        f"in {read_permissions_table}"
+    )
+
+
 def seed_strategies(
     s3_client,
     dynamo,
@@ -681,6 +703,8 @@ def seed_strategies(
     strategies_table: str,
     artifacts_table: str,
     versions_table: str,
+    strategies_read_permissions_table: str | None,
+    strategies_write_permissions_table: str | None,
     backtest_metrics_table: str,
     backtester_client: BacktesterClient | None,
     backtests_skip_reason: str,
@@ -752,6 +776,13 @@ def seed_strategies(
             owner_display=owner_display,
             s3_keys=keys,
         )
+        if strategies_read_permissions_table and strategies_write_permissions_table:
+            seed_strategy_permissions(
+                dynamo=dynamo,
+                read_permissions_table=strategies_read_permissions_table,
+                write_permissions_table=strategies_write_permissions_table,
+                strategy_id=strategy_id,
+            )
 
         if not backtests:
             continue
@@ -817,6 +848,16 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
         "--backtest-metrics-table",
         required=True,
         help="DynamoDB BacktestMetrics table name.",
+    )
+    parser.add_argument(
+        "--strategies-read-permissions-table",
+        default=None,
+        help="DynamoDB StrategiesReadPermissions table name.",
+    )
+    parser.add_argument(
+        "--strategies-write-permissions-table",
+        default=None,
+        help="DynamoDB StrategiesWritePermissions table name.",
     )
     parser.add_argument(
         "--backtester-url",
@@ -885,6 +926,8 @@ def main(argv: Iterable[str]) -> int:
             strategies_table=args.strategies_table,
             artifacts_table=args.artifacts_table,
             versions_table=args.artifact_versions_table,
+            strategies_read_permissions_table=args.strategies_read_permissions_table,
+            strategies_write_permissions_table=args.strategies_write_permissions_table,
             backtest_metrics_table=args.backtest_metrics_table,
             backtester_client=backtester_client,
             backtests_skip_reason=backtests_skip_reason,
