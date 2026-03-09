@@ -27,6 +27,7 @@ jobs:
       IS_PROD: "1"
       CORE_API_URL: ${{ vars.CORE_API_URL }}
       BACKTESTER_URL: ${{ vars.BACKTESTER_URL }}
+      ENGINE_URL: ${{ vars.ENGINE_URL }}
 
     steps:
       - name: Checkout
