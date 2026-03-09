@@ -100,7 +100,10 @@ type BacktestOrdersTableProps = {
   animatePlaceholder: boolean;
 };
 
-const EXECUTION_LOG_PAGE_SIZE = 25;
+type ExecutionPanelTab = "orders" | "logs" | "warnings";
+
+const DEFAULT_EXECUTION_LOG_PAGE_SIZE = 10;
+const EXECUTION_LOG_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const ALLOCATION_COLORS = [
   "#60a5fa",
   "#34d399",
@@ -833,43 +836,114 @@ function StrategyEquityChart({
 }
 
 function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: BacktestOrdersTableProps) {
+  const [activeTab, setActiveTab] = useState<ExecutionPanelTab>("orders");
   const [page, setPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
+  const [pageSize, setPageSize] = useState(DEFAULT_EXECUTION_LOG_PAGE_SIZE);
+  const [symbolFilter, setSymbolFilter] = useState("");
+  const [actionFilter, setActionFilter] = useState<"all" | "buy" | "sell">("all");
 
   useEffect(() => {
     setPage(1);
-  }, [orders]);
+    setPageInput("1");
+  }, [orders, pageSize, symbolFilter, actionFilter, activeTab]);
 
-  const totalPages = Math.max(1, Math.ceil(orders.length / EXECUTION_LOG_PAGE_SIZE));
+  const filteredOrders = useMemo(() => {
+    const normalizedSymbol = symbolFilter.trim().toLowerCase();
+    return orders.filter((order) => {
+      const matchesSymbol = !normalizedSymbol || order.symbol.toLowerCase().includes(normalizedSymbol);
+      const normalizedAction = String(order.action).toLowerCase();
+      const matchesAction = actionFilter === "all" || normalizedAction === actionFilter;
+      return matchesSymbol && matchesAction;
+    });
+  }, [actionFilter, orders, symbolFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const pageStart = (currentPage - 1) * EXECUTION_LOG_PAGE_SIZE;
-  const pageEnd = Math.min(pageStart + EXECUTION_LOG_PAGE_SIZE, orders.length);
-  const visibleOrders = orders.slice(pageStart, pageEnd);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageEnd = Math.min(pageStart + pageSize, filteredOrders.length);
+  const visibleOrders = filteredOrders.slice(pageStart, pageEnd);
+
+  useEffect(() => {
+    setPageInput(String(currentPage));
+  }, [currentPage]);
+
+  const applyPageInput = () => {
+    const parsed = Number.parseInt(pageInput, 10);
+    if (!Number.isFinite(parsed)) {
+      setPageInput(String(currentPage));
+      return;
+    }
+    setPage(Math.min(totalPages, Math.max(1, parsed)));
+  };
 
   return (
     <article className="rounded-3xl border border-slate-800 bg-slate-950/40 p-6 shadow-xl">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Orders</p>
+          <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Execution</p>
         </div>
-        {!showPlaceholder ? (
-          <div className="text-sm text-slate-400">
-            {orders.length === 0 ? "0 entries" : `${pageStart + 1}-${pageEnd} of ${orders.length} entries`}
-          </div>
-        ) : null}
       </header>
-      <div className="mt-4 overflow-x-auto">
+
+      <div className="mt-5 space-y-5">
+        <div className="inline-flex rounded-2xl border border-slate-800 bg-slate-900/30 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          {[
+            { id: "orders" as const, label: "Orders" },
+            { id: "logs" as const, label: "Logs" },
+            { id: "warnings" as const, label: "Warnings" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                activeTab === tab.id
+                  ? "bg-[linear-gradient(135deg,rgba(14,165,233,0.18),rgba(168,85,247,0.16))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         {showPlaceholder ? (
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, index) => (
-              <Skeleton key={`order-skeleton-${index}`} height={32} enableAnimation={animatePlaceholder} />
-            ))}
-          </div>
-        ) : orders.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-4 py-8 text-center text-sm text-slate-400">
-            No execution log entries for this run.
+          <ExecutionPlaceholder animatePlaceholder={animatePlaceholder} />
+        ) : activeTab !== "orders" ? (
+          <ExecutionPlaceholder
+            animatePlaceholder={false}
+            label={activeTab === "logs" ? "Logs panel coming soon." : "Warnings panel coming soon."}
+          />
+        ) : filteredOrders.length === 0 ? (
+          <div className="space-y-4">
+            <ExecutionFilters
+              symbolFilter={symbolFilter}
+              actionFilter={actionFilter}
+              pageSize={pageSize}
+              onSymbolFilterChange={setSymbolFilter}
+              onActionFilterChange={setActionFilter}
+              onPageSizeChange={setPageSize}
+            />
+            <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-4 py-8 text-center text-sm text-slate-400">
+              {orders.length === 0 ? "No execution log entries for this run." : "No orders match the current filters."}
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
+            <ExecutionFilters
+              symbolFilter={symbolFilter}
+              actionFilter={actionFilter}
+              pageSize={pageSize}
+              onSymbolFilterChange={setSymbolFilter}
+              onActionFilterChange={setActionFilter}
+              onPageSizeChange={setPageSize}
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
+              <div>{`${pageStart + 1}-${pageEnd} of ${filteredOrders.length} filtered orders`}</div>
+              <div>{`${orders.length} total entries`}</div>
+            </div>
+
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
@@ -901,35 +975,130 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
               </tbody>
             </table>
 
-            {totalPages > 1 ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
-                <p className="text-sm text-slate-400">
-                  Page {currentPage} of {totalPages}
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPage((current) => Math.max(1, current - 1))}
-                    disabled={currentPage === 1}
-                    className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                    disabled={currentPage === totalPages}
-                    className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
-                  >
-                    Next
-                  </button>
-                </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+                <span>Page</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={pageInput}
+                  onChange={(event) => setPageInput(event.target.value.replace(/[^\d]/g, ""))}
+                  onBlur={applyPageInput}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      applyPageInput();
+                    }
+                  }}
+                  className="w-16 rounded-lg border border-slate-700 bg-slate-900/60 px-2 py-1.5 text-center text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+                />
+                <span>of {totalPages}</span>
               </div>
-            ) : null}
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={currentPage === 1}
+                  className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  disabled={currentPage === totalPages}
+                  className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
     </article>
+  );
+}
+
+type ExecutionFiltersProps = {
+  symbolFilter: string;
+  actionFilter: "all" | "buy" | "sell";
+  pageSize: number;
+  onSymbolFilterChange: (value: string) => void;
+  onActionFilterChange: (value: "all" | "buy" | "sell") => void;
+  onPageSizeChange: (value: number) => void;
+};
+
+function ExecutionFilters({
+  symbolFilter,
+  actionFilter,
+  pageSize,
+  onSymbolFilterChange,
+  onActionFilterChange,
+  onPageSizeChange,
+}: ExecutionFiltersProps) {
+  return (
+    <div className="flex flex-wrap items-end gap-3 border-y border-slate-800 py-4">
+      <label className="space-y-1">
+        <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Ticker</span>
+        <input
+          type="text"
+          value={symbolFilter}
+          onChange={(event) => onSymbolFilterChange(event.target.value)}
+          placeholder="Filter symbol"
+          className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-fuchsia-500 focus:outline-none"
+        />
+      </label>
+
+      <label className="space-y-1">
+        <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Side</span>
+        <select
+          value={actionFilter}
+          onChange={(event) => onActionFilterChange(event.target.value as "all" | "buy" | "sell")}
+          className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+        >
+          <option value="all">All</option>
+          <option value="buy">Buy</option>
+          <option value="sell">Sell</option>
+        </select>
+      </label>
+
+      <label className="space-y-1">
+        <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Show</span>
+        <select
+          value={pageSize}
+          onChange={(event) => onPageSizeChange(Number.parseInt(event.target.value, 10))}
+          className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+        >
+          {EXECUTION_LOG_PAGE_SIZE_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option} rows
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function ExecutionPlaceholder({
+  animatePlaceholder,
+  label = "Panel coming soon.",
+}: {
+  animatePlaceholder: boolean;
+  label?: string;
+}) {
+  return animatePlaceholder ? (
+    <div className="space-y-3">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <Skeleton key={`execution-skeleton-${index}`} height={32} enableAnimation={animatePlaceholder} />
+      ))}
+    </div>
+  ) : (
+    <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-4 py-10 text-center text-sm text-slate-400">
+      {label}
+    </div>
   );
 }
 
