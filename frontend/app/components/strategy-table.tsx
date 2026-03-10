@@ -182,7 +182,7 @@ export default function StrategyTable({
                   STR-{strategy.id}
                 </td>
                 <td className="py-4 px-4 align-middle">
-                  <div className="flex h-full items-center justify-center gap-2 text-center">
+                  <div className="flex h-full items-center gap-2">
                     <Link to={`/strategies/${strategy.id}`} className="text-white font-medium hover:underline">
                       {strategy.name}
                     </Link>

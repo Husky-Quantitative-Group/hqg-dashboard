@@ -2,9 +2,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import StrategyTable from "../components/strategy-table";
 import { fetchStrategies, type Strategy } from "../api/strategies";
 import { useNavigate } from "react-router-dom";
+import { useUser } from "../context/UserConext";
 
 export default function Strategies() {
   const navigate = useNavigate();
+  const { user } = useUser();
 
   const [entriesCount, setEntriesCount] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
@@ -66,6 +68,7 @@ export default function Strategies() {
 
   const sortedStrategies = useMemo(() => {
     const sorted = [...filteredStrategies];
+    const currentNetid = user?.netid?.toLowerCase() ?? "";
     sorted.sort((a, b) => {
       const aId = Number(a.id);
       const bId = Number(b.id);
@@ -75,8 +78,13 @@ export default function Strategies() {
       const bUpdated = b.updated_at ? new Date(b.updated_at).getTime() : 0;
       const aName = a.name?.toLowerCase() ?? "";
       const bName = b.name?.toLowerCase() ?? "";
+      const aOwned = currentNetid && a.owner?.toLowerCase() === currentNetid ? 1 : 0;
+      const bOwned = currentNetid && b.owner?.toLowerCase() === currentNetid ? 1 : 0;
 
       switch (sortMode) {
+        case "owned_strategy":
+          if (aOwned !== bOwned) return bOwned - aOwned;
+          return bCreated - aCreated;
         case "created_asc":
           return aCreated - bCreated;
         case "updated_desc":
@@ -103,7 +111,7 @@ export default function Strategies() {
       }
     });
     return sorted;
-  }, [filteredStrategies, sortMode]);
+  }, [filteredStrategies, sortMode, user?.netid]);
 
   const totalPages = Math.max(1, Math.ceil(sortedStrategies.length / entriesCount));
   const startIndex = (currentPage - 1) * entriesCount;
@@ -172,6 +180,7 @@ export default function Strategies() {
               onChange={(e) => setSortMode(e.target.value)}
               className="bg-slate-700 text-white border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
             >
+              <option value="owned_strategy">Owned Strategy</option>
               <option value="created_desc">Created (newest)</option>
               <option value="created_asc">Created (oldest)</option>
               <option value="updated_desc">Updated (newest)</option>
