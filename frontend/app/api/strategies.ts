@@ -34,22 +34,26 @@ export const fetchStrategyById = async (strategyId: string | number): Promise<St
 export type StrategyPermissions = {
   read: {
     public: boolean;
-    users: string[];
+    fund?: boolean;
+    users: UserSearchResult[];
   };
   write: {
     public: boolean;
-    users: string[];
+    fund?: boolean;
+    users: UserSearchResult[];
   };
 };
 
 export type StrategyPermissionsPatch = {
   read?: {
     public?: boolean;
+    fund?: boolean;
     addUsers?: string[];
     removeUsers?: string[];
   };
   write?: {
     public?: boolean;
+    fund?: boolean;
     addUsers?: string[];
     removeUsers?: string[];
   };

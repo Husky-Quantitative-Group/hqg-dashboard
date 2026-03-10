@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { Strategy } from "../api/strategies";
+import type { Strategy, UserSearchResult } from "../api/strategies";
 import {
   deleteStrategyPermissions,
   fetchStrategyPermissions,
@@ -23,8 +23,8 @@ export default function StrategyTable({
   const [publicWrite, setPublicWrite] = useState(false);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
   const [permissionsError, setPermissionsError] = useState<string | null>(null);
-  const [readUsers, setReadUsers] = useState<string[]>([]);
-  const [writeUsers, setWriteUsers] = useState<string[]>([]);
+  const [readUsers, setReadUsers] = useState<UserSearchResult[]>([]);
+  const [writeUsers, setWriteUsers] = useState<UserSearchResult[]>([]);
   const [readUserInput, setReadUserInput] = useState("");
   const [writeUserInput, setWriteUserInput] = useState("");
 
@@ -64,12 +64,12 @@ export default function StrategyTable({
   const addReadUser = async () => {
     if (!activeStrategy) return;
     const value = readUserInput.trim();
-    if (!value || readUsers.includes(value)) return;
+    if (!value || readUsers.some((user) => user.netid === value)) return;
     try {
       await patchStrategyPermissions(activeStrategy.id, {
         read: { addUsers: [value] },
       });
-      setReadUsers((prev) => [...prev, value]);
+      setReadUsers((prev) => [...prev, { netid: value }]);
       setReadUserInput("");
     } catch (error) {
       console.error("Failed to add read permission", error);
@@ -79,12 +79,12 @@ export default function StrategyTable({
   const addWriteUser = async () => {
     if (!activeStrategy) return;
     const value = writeUserInput.trim();
-    if (!value || writeUsers.includes(value)) return;
+    if (!value || writeUsers.some((user) => user.netid === value)) return;
     try {
       await patchStrategyPermissions(activeStrategy.id, {
         write: { addUsers: [value] },
       });
-      setWriteUsers((prev) => [...prev, value]);
+      setWriteUsers((prev) => [...prev, { netid: value }]);
       setWriteUserInput("");
     } catch (error) {
       console.error("Failed to add write permission", error);
@@ -320,27 +320,29 @@ export default function StrategyTable({
                   <div className="mt-3 space-y-3">
                     {readUsers.length > 0 && (
                       <div className="flex flex-wrap gap-2">
-                        {readUsers.map((userId) => (
+                        {readUsers.map((userItem) => (
                           <span
-                            key={userId}
+                            key={userItem.netid}
                             className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200"
                           >
-                            {userId}
+                            {userItem.full_name || userItem.netid}
                             <button
                               type="button"
                               onClick={async () => {
                                 if (!activeStrategy) return;
                                 try {
                                   await deleteStrategyPermissions(activeStrategy.id, {
-                                    read: { removeUsers: [userId] },
+                                    read: { removeUsers: [userItem.netid] },
                                   });
-                                  setReadUsers((prev) => prev.filter((entry) => entry !== userId));
+                                  setReadUsers((prev) =>
+                                    prev.filter((entry) => entry.netid !== userItem.netid)
+                                  );
                                 } catch (error) {
                                   console.error("Failed to remove read permission", error);
                                 }
                               }}
                               className="text-slate-400 transition hover:text-white"
-                              aria-label={`Remove ${userId} from read permissions`}
+                              aria-label={`Remove ${userItem.netid} from read permissions`}
                             >
                               &times;
                             </button>
@@ -411,27 +413,29 @@ export default function StrategyTable({
                   <div className="mt-3 space-y-3">
                     {writeUsers.length > 0 && (
                       <div className="flex flex-wrap gap-2">
-                        {writeUsers.map((userId) => (
+                        {writeUsers.map((userItem) => (
                           <span
-                            key={userId}
+                            key={userItem.netid}
                             className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200"
                           >
-                            {userId}
+                            {userItem.full_name || userItem.netid}
                             <button
                               type="button"
                               onClick={async () => {
                                 if (!activeStrategy) return;
                                 try {
                                   await deleteStrategyPermissions(activeStrategy.id, {
-                                    write: { removeUsers: [userId] },
+                                    write: { removeUsers: [userItem.netid] },
                                   });
-                                  setWriteUsers((prev) => prev.filter((entry) => entry !== userId));
+                                  setWriteUsers((prev) =>
+                                    prev.filter((entry) => entry.netid !== userItem.netid)
+                                  );
                                 } catch (error) {
                                   console.error("Failed to remove write permission", error);
                                 }
                               }}
                               className="text-slate-400 transition hover:text-white"
-                              aria-label={`Remove ${userId} from write permissions`}
+                              aria-label={`Remove ${userItem.netid} from write permissions`}
                             >
                               &times;
                             </button>

@@ -53,10 +53,12 @@ export default function StrategyOverview() {
 
   const [publicRead, setPublicRead] = useState(false);
   const [publicWrite, setPublicWrite] = useState(false);
+  const [fundRead, setFundRead] = useState(false);
+  const [fundWrite, setFundWrite] = useState(false);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
   const [permissionsError, setPermissionsError] = useState<string | null>(null);
-  const [readUsers, setReadUsers] = useState<string[]>([]);
-  const [writeUsers, setWriteUsers] = useState<string[]>([]);
+  const [readUsers, setReadUsers] = useState<UserSearchResult[]>([]);
+  const [writeUsers, setWriteUsers] = useState<UserSearchResult[]>([]);
   const [readQuery, setReadQuery] = useState("");
   const [writeQuery, setWriteQuery] = useState("");
   const [readResults, setReadResults] = useState<UserSearchResult[]>([]);
@@ -108,11 +110,13 @@ export default function StrategyOverview() {
         if (!isActive) return;
         setPublicRead(data.read.public);
         setPublicWrite(data.write.public);
+        setFundRead(data.read.fund === true);
+        setFundWrite(data.write.fund === true);
         setReadUsers(
-          (data.read.users ?? []).filter((netid) => netid.toLowerCase() !== ownerNetid)
+          (data.read.users ?? []).filter((item) => item.netid.toLowerCase() !== ownerNetid)
         );
         setWriteUsers(
-          (data.write.users ?? []).filter((netid) => netid.toLowerCase() !== ownerNetid)
+          (data.write.users ?? []).filter((item) => item.netid.toLowerCase() !== ownerNetid)
         );
       } catch (error) {
         if (!isActive) return;
@@ -145,10 +149,11 @@ export default function StrategyOverview() {
       searchUsers(query)
         .then((items) => {
           if (!active) return;
+          const readUserIds = new Set(readUsers.map((item) => item.netid));
           const filtered = items.filter(
             (item) =>
               item.netid.toLowerCase() !== ownerNetid &&
-              !readUsers.includes(item.netid)
+              !readUserIds.has(item.netid)
           );
           filtered.sort((a, b) => {
             const rankDiff = rankUserSearch(query, a) - rankUserSearch(query, b);
@@ -186,10 +191,11 @@ export default function StrategyOverview() {
       searchUsers(query)
         .then((items) => {
           if (!active) return;
+          const writeUserIds = new Set(writeUsers.map((item) => item.netid));
           const filtered = items.filter(
             (item) =>
               item.netid.toLowerCase() !== ownerNetid &&
-              !writeUsers.includes(item.netid)
+              !writeUserIds.has(item.netid)
           );
           filtered.sort((a, b) => {
             const rankDiff = rankUserSearch(query, a) - rankUserSearch(query, b);
@@ -329,33 +335,61 @@ export default function StrategyOverview() {
                           className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
                         />
                       </label>
+                      <label className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-3 py-2">
+                        <span>Read access · FUND</span>
+                        <input
+                          type="checkbox"
+                          checked={fundRead}
+                          disabled={permissionsLoading || !canManagePermissions}
+                          onChange={async (event) => {
+                            if (!canManagePermissions) return;
+                            const nextValue = event.target.checked;
+                            setFundRead(nextValue);
+                            try {
+                              if (nextValue) {
+                                await patchStrategyPermissions(strategy.id, {
+                                  read: { fund: true },
+                                });
+                              } else {
+                                await deleteStrategyPermissions(strategy.id, {
+                                  read: { fund: true },
+                                });
+                              }
+                            } catch (error) {
+                              console.error("Failed to update FUND read permission", error);
+                              setFundRead(!nextValue);
+                            }
+                          }}
+                          className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-emerald-400 focus:ring-emerald-400"
+                        />
+                      </label>
                       {!publicRead && (
                         <div className="space-y-2">
                           {readUsers.length > 0 ? (
                             <div className="flex flex-wrap gap-2">
-                              {readUsers.map((netid) => (
+                              {readUsers.map((userItem) => (
                                 <span
-                                  key={netid}
+                                  key={userItem.netid}
                                   className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-xs"
                                 >
-                                  {netid}
+                                  {userItem.full_name || userItem.netid}
                                   <button
                                     type="button"
                                     onClick={async () => {
                                       if (!canManagePermissions) return;
                                       try {
                                         await deleteStrategyPermissions(strategy.id, {
-                                          read: { removeUsers: [netid] },
+                                          read: { removeUsers: [userItem.netid] },
                                         });
                                         setReadUsers((prev) =>
-                                          prev.filter((entry) => entry !== netid)
+                                          prev.filter((entry) => entry.netid !== userItem.netid)
                                         );
                                       } catch (error) {
                                         console.error("Failed to remove read user", error);
                                       }
                                     }}
                                     className="text-slate-400 transition hover:text-white"
-                                    aria-label={`Remove ${netid} from read permissions`}
+                                    aria-label={`Remove ${userItem.netid} from read permissions`}
                                   >
                                     &times;
                                   </button>
@@ -386,7 +420,7 @@ export default function StrategyOverview() {
                                         await patchStrategyPermissions(strategy.id, {
                                           read: { addUsers: [item.netid] },
                                         });
-                                        setReadUsers((prev) => [...prev, item.netid]);
+                                        setReadUsers((prev) => [...prev, item]);
                                         setReadQuery("");
                                         setReadResults([]);
                                       } catch (error) {
@@ -445,33 +479,61 @@ export default function StrategyOverview() {
                           className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
                         />
                       </label>
+                      <label className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-3 py-2">
+                        <span>Write access · FUND</span>
+                        <input
+                          type="checkbox"
+                          checked={fundWrite}
+                          disabled={permissionsLoading || !canManagePermissions}
+                          onChange={async (event) => {
+                            if (!canManagePermissions) return;
+                            const nextValue = event.target.checked;
+                            setFundWrite(nextValue);
+                            try {
+                              if (nextValue) {
+                                await patchStrategyPermissions(strategy.id, {
+                                  write: { fund: true },
+                                });
+                              } else {
+                                await deleteStrategyPermissions(strategy.id, {
+                                  write: { fund: true },
+                                });
+                              }
+                            } catch (error) {
+                              console.error("Failed to update FUND write permission", error);
+                              setFundWrite(!nextValue);
+                            }
+                          }}
+                          className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-emerald-400 focus:ring-emerald-400"
+                        />
+                      </label>
                       {!publicWrite && (
                         <div className="space-y-2">
                           {writeUsers.length > 0 ? (
                             <div className="flex flex-wrap gap-2">
-                              {writeUsers.map((netid) => (
+                              {writeUsers.map((userItem) => (
                                 <span
-                                  key={netid}
+                                  key={userItem.netid}
                                   className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-xs"
                                 >
-                                  {netid}
+                                  {userItem.full_name || userItem.netid}
                                   <button
                                     type="button"
                                     onClick={async () => {
                                       if (!canManagePermissions) return;
                                       try {
                                         await deleteStrategyPermissions(strategy.id, {
-                                          write: { removeUsers: [netid] },
+                                          write: { removeUsers: [userItem.netid] },
                                         });
                                         setWriteUsers((prev) =>
-                                          prev.filter((entry) => entry !== netid)
+                                          prev.filter((entry) => entry.netid !== userItem.netid)
                                         );
                                       } catch (error) {
                                         console.error("Failed to remove write user", error);
                                       }
                                     }}
                                     className="text-slate-400 transition hover:text-white"
-                                    aria-label={`Remove ${netid} from write permissions`}
+                                    aria-label={`Remove ${userItem.netid} from write permissions`}
                                   >
                                     &times;
                                   </button>
@@ -502,7 +564,7 @@ export default function StrategyOverview() {
                                         await patchStrategyPermissions(strategy.id, {
                                           write: { addUsers: [item.netid] },
                                         });
-                                        setWriteUsers((prev) => [...prev, item.netid]);
+                                        setWriteUsers((prev) => [...prev, item]);
                                         setWriteQuery("");
                                         setWriteResults([]);
                                       } catch (error) {
