@@ -494,6 +494,29 @@ resource "aws_iam_policy" "users_read" {
   tags = local.tags
 }
 
+data "aws_iam_policy_document" "users_search" {
+  statement {
+    sid    = "DynamoUsersSearch"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:Scan",
+    ]
+
+    resources = [
+      aws_dynamodb_table.users.arn,
+    ]
+  }
+}
+
+resource "aws_iam_policy" "users_search" {
+  name   = "${local.name_prefix}-users-search"
+  policy = data.aws_iam_policy_document.users_search.json
+
+  tags = local.tags
+}
+
 data "aws_iam_policy_document" "user_access_applications_write" {
   statement {
     sid    = "DynamoUserAccessApplicationsWrite"
@@ -931,6 +954,11 @@ resource "aws_iam_role_policy_attachment" "strategies_lambda_storage" {
   policy_arn = aws_iam_policy.strategy_storage.arn
 }
 
+resource "aws_iam_role_policy_attachment" "strategies_lambda_users_search" {
+  role       = aws_iam_role.strategies_lambda.name
+  policy_arn = aws_iam_policy.users_search.arn
+}
+
 resource "aws_iam_role_policy_attachment" "strategy_artifacts_lambda_basic_logs" {
   role       = aws_iam_role.strategy_artifacts_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -1052,6 +1080,7 @@ resource "aws_lambda_function" "strategies" {
       ARTIFACT_BUCKET                    = aws_s3_bucket.strategy_artifacts.bucket
       STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
+      USERS_TABLE                        = aws_dynamodb_table.users.name
     }
   }
 
@@ -1293,49 +1322,33 @@ resource "aws_apigatewayv2_route" "get_strategy_by_id" {
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
-resource "aws_apigatewayv2_route" "get_strategy_read_permissions_public" {
+resource "aws_apigatewayv2_route" "get_strategy_permissions" {
   api_id             = aws_apigatewayv2_api.api.id
-  route_key          = "GET /strategies/{id}/permissions/read/public"
+  route_key          = "GET /strategies/{id}/permissions"
   target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
-resource "aws_apigatewayv2_route" "get_strategy_write_permissions_public" {
+resource "aws_apigatewayv2_route" "patch_strategy_permissions" {
   api_id             = aws_apigatewayv2_api.api.id
-  route_key          = "GET /strategies/{id}/permissions/write/public"
+  route_key          = "PATCH /strategies/{id}/permissions"
   target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
-resource "aws_apigatewayv2_route" "post_strategy_read_permissions" {
+resource "aws_apigatewayv2_route" "delete_strategy_permissions" {
   api_id             = aws_apigatewayv2_api.api.id
-  route_key          = "POST /strategies/{id}/permissions/read"
+  route_key          = "DELETE /strategies/{id}/permissions"
   target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
-resource "aws_apigatewayv2_route" "delete_strategy_read_permissions" {
+resource "aws_apigatewayv2_route" "get_users_search" {
   api_id             = aws_apigatewayv2_api.api.id
-  route_key          = "DELETE /strategies/{id}/permissions/read"
-  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
-}
-
-resource "aws_apigatewayv2_route" "post_strategy_write_permissions" {
-  api_id             = aws_apigatewayv2_api.api.id
-  route_key          = "POST /strategies/{id}/permissions/write"
-  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
-}
-
-resource "aws_apigatewayv2_route" "delete_strategy_write_permissions" {
-  api_id             = aws_apigatewayv2_api.api.id
-  route_key          = "DELETE /strategies/{id}/permissions/write"
+  route_key          = "GET /users/search"
   target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id

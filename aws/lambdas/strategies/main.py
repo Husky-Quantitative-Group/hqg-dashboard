@@ -22,6 +22,7 @@ READ_PERMISSIONS_TABLE = os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"]
 WRITE_PERMISSIONS_TABLE = os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"]
 READ_PERMISSIONS_DDB = dynamo.Table(READ_PERMISSIONS_TABLE)
 WRITE_PERMISSIONS_DDB = dynamo.Table(WRITE_PERMISSIONS_TABLE)
+USERS_TABLE = dynamo.Table(os.environ["USERS_TABLE"])
 STRATEGY_NAME_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 75
 README_MAX_CHARS = 10_000
@@ -36,12 +37,10 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     - POST /strategies
     - GET /strategies/{id}
     - PATCH /strategies/{id}
-    - GET /strategies/{id}/permissions/read/public
-    - GET /strategies/{id}/permissions/write/public
-    - POST /strategies/{id}/permissions/read
-    - DELETE /strategies/{id}/permissions/read
-    - POST /strategies/{id}/permissions/write
-    - DELETE /strategies/{id}/permissions/write
+    - GET /strategies/{id}/permissions
+    - PATCH /strategies/{id}/permissions
+    - DELETE /strategies/{id}/permissions
+    - GET /users/search
     """
     route_key = (event.get("requestContext") or {}).get("routeKey")
 
@@ -61,65 +60,22 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         body = json.loads(event.get("body") or "{}")
         return update_strategy(strategy_id, body)
 
-    if route_key == "GET /strategies/{id}/permissions/read/public":
+    if route_key == "GET /strategies/{id}/permissions":
         strategy_id = (event.get("pathParameters") or {}).get("id")
-        return get_public_permission(
-            strategy_id=strategy_id,
-            event=event,
-            table=READ_PERMISSIONS_DDB,
-        )
+        return get_permissions(strategy_id, event)
 
-    if route_key == "GET /strategies/{id}/permissions/write/public":
-        strategy_id = (event.get("pathParameters") or {}).get("id")
-        return get_public_permission(
-            strategy_id=strategy_id,
-            event=event,
-            table=WRITE_PERMISSIONS_DDB,
-        )
-
-    if route_key == "POST /strategies/{id}/permissions/read":
+    if route_key == "PATCH /strategies/{id}/permissions":
         strategy_id = (event.get("pathParameters") or {}).get("id")
         body = json.loads(event.get("body") or "{}")
-        return update_public_permission(
-            strategy_id=strategy_id,
-            body=body,
-            event=event,
-            table=READ_PERMISSIONS_DDB,
-            action="grant",
-        )
+        return update_permissions(strategy_id, body, event, mode="patch")
 
-    if route_key == "DELETE /strategies/{id}/permissions/read":
+    if route_key == "DELETE /strategies/{id}/permissions":
         strategy_id = (event.get("pathParameters") or {}).get("id")
         body = json.loads(event.get("body") or "{}")
-        return update_public_permission(
-            strategy_id=strategy_id,
-            body=body,
-            event=event,
-            table=READ_PERMISSIONS_DDB,
-            action="revoke",
-        )
+        return update_permissions(strategy_id, body, event, mode="delete")
 
-    if route_key == "POST /strategies/{id}/permissions/write":
-        strategy_id = (event.get("pathParameters") or {}).get("id")
-        body = json.loads(event.get("body") or "{}")
-        return update_public_permission(
-            strategy_id=strategy_id,
-            body=body,
-            event=event,
-            table=WRITE_PERMISSIONS_DDB,
-            action="grant",
-        )
-
-    if route_key == "DELETE /strategies/{id}/permissions/write":
-        strategy_id = (event.get("pathParameters") or {}).get("id")
-        body = json.loads(event.get("body") or "{}")
-        return update_public_permission(
-            strategy_id=strategy_id,
-            body=body,
-            event=event,
-            table=WRITE_PERMISSIONS_DDB,
-            action="revoke",
-        )
+    if route_key == "GET /users/search":
+        return search_users(event)
 
     return {"statusCode": 404, "body": "Not found"}
 
@@ -309,12 +265,36 @@ def update_strategy(strategy_id: Optional[str], body: Dict[str, Any]) -> Dict[st
     return _json(200, item)
 
 
-def update_public_permission(
+def get_permissions(strategy_id: Optional[str], event: Dict[str, Any]) -> Dict[str, Any]:
+    if not strategy_id:
+        return _json(400, {"message": "strategy id is required"})
+
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    strategy = _get_strategy_by_id(strategy_id)
+    if not strategy:
+        return _json(404, {"message": "Strategy not found"})
+
+    owner = strategy.get("owner")
+    if not owner or owner != netid:
+        return _json(403, {"message": "forbidden"})
+
+    return _json(
+        200,
+        {
+            "read": _permission_snapshot(READ_PERMISSIONS_DDB, strategy_id),
+            "write": _permission_snapshot(WRITE_PERMISSIONS_DDB, strategy_id),
+        },
+    )
+
+
+def update_permissions(
     strategy_id: Optional[str],
     body: Dict[str, Any],
     event: Dict[str, Any],
-    table,
-    action: str,
+    mode: str,
 ) -> Dict[str, Any]:
     if not strategy_id:
         return _json(400, {"message": "strategy id is required"})
@@ -331,42 +311,124 @@ def update_public_permission(
     if not owner or owner != netid:
         return _json(403, {"message": "forbidden"})
 
-    principal = body.get("principal")
-    if principal != "ROLE#PUBLIC":
-        return _json(400, {"message": "principal must be ROLE#PUBLIC"})
+    if not isinstance(body, dict):
+        return _json(400, {"message": "body must be an object"})
 
-    if action == "grant":
-        table.put_item(Item={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
-    elif action == "revoke":
-        table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
-    else:  # pragma: no cover
-        return _json(500, {"message": "invalid action"})
+    for scope, table in (("read", READ_PERMISSIONS_DDB), ("write", WRITE_PERMISSIONS_DDB)):
+        if scope not in body:
+            continue
+        scope_body = body.get(scope)
+        if not isinstance(scope_body, dict):
+            return _json(400, {"message": f"{scope} must be an object"})
+        error = _apply_permission_changes(table, strategy_id, scope_body, mode)
+        if error:
+            return error
 
     return _json(200, {"ok": True})
 
 
-def get_public_permission(
-    strategy_id: Optional[str],
-    event: Dict[str, Any],
-    table,
-) -> Dict[str, Any]:
-    if not strategy_id:
-        return _json(400, {"message": "strategy id is required"})
+def _permission_snapshot(table, strategy_id: str) -> Dict[str, Any]:
+    resp = table.query(
+        KeyConditionExpression=Key("strategy_id").eq(strategy_id),
+        ProjectionExpression="principal",
+    )
+    principals = [item.get("principal") for item in resp.get("Items", [])]
+    public = any(principal == "ROLE#PUBLIC" for principal in principals)
+    users = [
+        principal.replace("USER#", "", 1)
+        for principal in principals
+        if isinstance(principal, str) and principal.startswith("USER#")
+    ]
+    return {"public": public, "users": users}
 
+
+def _apply_permission_changes(
+    table,
+    strategy_id: str,
+    scope_body: Dict[str, Any],
+    mode: str,
+) -> Optional[Dict[str, Any]]:
+    public = scope_body.get("public")
+    add_users = scope_body.get("addUsers", [])
+    remove_users = scope_body.get("removeUsers", [])
+
+    if public is not None and not isinstance(public, bool):
+        return _json(400, {"message": "public must be a boolean"})
+    if add_users is not None and not isinstance(add_users, list):
+        return _json(400, {"message": "addUsers must be a list"})
+    if remove_users is not None and not isinstance(remove_users, list):
+        return _json(400, {"message": "removeUsers must be a list"})
+
+    if mode == "patch":
+        if public is True:
+            table.put_item(Item={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
+        elif public is False:
+            table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
+        for netid in add_users or []:
+            if isinstance(netid, str) and netid.strip():
+                principal = _principal_for_user(netid.strip())
+                table.put_item(Item={"strategy_id": strategy_id, "principal": principal})
+    elif mode == "delete":
+        if public is True:
+            table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
+        for netid in remove_users or []:
+            if isinstance(netid, str) and netid.strip():
+                principal = _principal_for_user(netid.strip())
+                table.delete_item(Key={"strategy_id": strategy_id, "principal": principal})
+    else:
+        return _json(500, {"message": "invalid mode"})
+
+    return None
+
+
+def search_users(event: Dict[str, Any]) -> Dict[str, Any]:
     netid = _get_netid_from_event(event)
     if not netid:
         return _json(401, {"message": "unauthorized"})
 
-    strategy = _get_strategy_by_id(strategy_id)
-    if not strategy:
-        return _json(404, {"message": "Strategy not found"})
+    query_params = event.get("queryStringParameters") or {}
+    query = (query_params.get("q") or "").strip()
+    if len(query) < 2:
+        return _json(200, {"items": []})
 
-    owner = strategy.get("owner")
-    if not owner or owner != netid:
-        return _json(403, {"message": "forbidden"})
+    limit_raw = query_params.get("limit")
+    try:
+        limit = int(limit_raw) if limit_raw is not None else 8
+    except ValueError:
+        limit = 8
+    limit = max(1, min(limit, 20))
 
-    resp = table.get_item(Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
-    return _json(200, {"isPublic": "Item" in resp})
+    query_lower = query.lower()
+    items: List[Dict[str, Any]] = []
+    last_key = None
+
+    while True:
+        scan_kwargs = {
+            "ProjectionExpression": "netid, full_name, uconn_email",
+        }
+        if last_key:
+            scan_kwargs["ExclusiveStartKey"] = last_key
+        resp = USERS_TABLE.scan(**scan_kwargs)
+        for item in resp.get("Items", []):
+            netid_value = str(item.get("netid") or "")
+            full_name = str(item.get("full_name") or "")
+            email = str(item.get("uconn_email") or "")
+            haystack = " ".join([netid_value, full_name, email]).lower()
+            if query_lower in haystack:
+                items.append(
+                    {
+                        "netid": netid_value,
+                        "full_name": full_name,
+                        "uconn_email": email,
+                    }
+                )
+                if len(items) >= limit:
+                    return _json(200, {"items": _clean_decimals(items)})
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+
+    return _json(200, {"items": _clean_decimals(items)})
 
 
 # ----------------------------
