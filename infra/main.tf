@@ -280,6 +280,39 @@ resource "aws_dynamodb_table" "users" {
     type = "S"
   }
 
+  attribute {
+    name = "search_pk"
+    type = "S"
+  }
+
+  attribute {
+    name = "full_name_lower"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "users-netid-gsi"
+    hash_key        = "search_pk"
+    range_key       = "netid"
+    projection_type = "INCLUDE"
+    non_key_attributes = [
+      "full_name",
+      "uconn_email",
+    ]
+  }
+
+  global_secondary_index {
+    name            = "users-full-name-gsi"
+    hash_key        = "search_pk"
+    range_key       = "full_name_lower"
+    projection_type = "INCLUDE"
+    non_key_attributes = [
+      "netid",
+      "full_name",
+      "uconn_email",
+    ]
+  }
+
   point_in_time_recovery {
     enabled = true
   }
@@ -501,11 +534,13 @@ data "aws_iam_policy_document" "users_search" {
 
     actions = [
       "dynamodb:GetItem",
+      "dynamodb:Query",
       "dynamodb:Scan",
     ]
 
     resources = [
       aws_dynamodb_table.users.arn,
+      "${aws_dynamodb_table.users.arn}/index/*",
     ]
   }
 }

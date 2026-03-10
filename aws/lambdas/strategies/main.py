@@ -400,33 +400,49 @@ def search_users(event: Dict[str, Any]) -> Dict[str, Any]:
 
     query_lower = query.lower()
     items: List[Dict[str, Any]] = []
-    last_key = None
+    seen = set()
 
-    while True:
-        scan_kwargs = {
-            "ProjectionExpression": "netid, full_name, uconn_email",
-        }
-        if last_key:
-            scan_kwargs["ExclusiveStartKey"] = last_key
-        resp = USERS_TABLE.scan(**scan_kwargs)
-        for item in resp.get("Items", []):
+    def add_items(results: List[Dict[str, Any]]) -> None:
+        for item in results:
             netid_value = str(item.get("netid") or "")
-            full_name = str(item.get("full_name") or "")
-            email = str(item.get("uconn_email") or "")
-            haystack = " ".join([netid_value, full_name, email]).lower()
-            if query_lower in haystack:
-                items.append(
-                    {
-                        "netid": netid_value,
-                        "full_name": full_name,
-                        "uconn_email": email,
-                    }
-                )
-                if len(items) >= limit:
-                    return _json(200, {"items": _clean_decimals(items)})
-        last_key = resp.get("LastEvaluatedKey")
-        if not last_key:
-            break
+            if not netid_value or netid_value in seen:
+                continue
+            seen.add(netid_value)
+            items.append(
+                {
+                    "netid": netid_value,
+                    "full_name": item.get("full_name") or "",
+                    "uconn_email": item.get("uconn_email") or "",
+                }
+            )
+
+    pk_value = "USER"
+
+    try:
+        netid_resp = USERS_TABLE.query(
+            IndexName="users-netid-gsi",
+            KeyConditionExpression=Key("search_pk").eq(pk_value)
+            & Key("netid").begins_with(query_lower),
+            ProjectionExpression="netid, full_name, uconn_email",
+            Limit=limit,
+        )
+        add_items(netid_resp.get("Items", []))
+    except Exception:
+        pass
+
+    if len(items) < limit:
+        remaining = limit - len(items)
+        try:
+            name_resp = USERS_TABLE.query(
+                IndexName="users-full-name-gsi",
+                KeyConditionExpression=Key("search_pk").eq(pk_value)
+                & Key("full_name_lower").begins_with(query_lower),
+                ProjectionExpression="netid, full_name, uconn_email",
+                Limit=remaining,
+            )
+            add_items(name_resp.get("Items", []))
+        except Exception:
+            pass
 
     return _json(200, {"items": _clean_decimals(items)})
 
