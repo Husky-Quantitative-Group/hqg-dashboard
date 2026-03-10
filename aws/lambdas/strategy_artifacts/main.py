@@ -109,7 +109,8 @@ def upload_artifacts(strategy_id, body, event):
     if not netid:
         return _json(401, {"message": "unauthorized"})
 
-    if not _has_write_permission(strategy_id, netid):
+    roles = _get_roles_from_event(event)
+    if not _has_write_permission(strategy_id, netid, roles):
         return _json(403, {"message": "forbidden"})
 
     strategy = STRATEGIES_TABLE.get_item(Key={"id": strategy_id}).get("Item")
@@ -184,7 +185,8 @@ def get_write_permission(strategy_id, event):
     if not netid:
         return _json(401, {"message": "unauthorized"})
 
-    can_write = _has_write_permission(strategy_id, netid)
+    roles = _get_roles_from_event(event)
+    can_write = _has_write_permission(strategy_id, netid, roles)
     return _json(200, {"canWrite": can_write})
 
 def _clean_decimals(data):
@@ -220,7 +222,7 @@ def _get_netid_from_event(event):
     return netid or None
 
 
-def _has_write_permission(strategy_id, netid):
+def _has_write_permission(strategy_id, netid, roles):
     principal = f"USER#{netid}"
     resp = WRITE_PERMISSIONS_TABLE.get_item(
         Key={"strategy_id": strategy_id, "principal": principal}
@@ -230,4 +232,32 @@ def _has_write_permission(strategy_id, netid):
     public_resp = WRITE_PERMISSIONS_TABLE.get_item(
         Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
     )
-    return "Item" in public_resp
+    if "Item" in public_resp:
+        return True
+    if "FUND" in roles:
+        fund_resp = WRITE_PERMISSIONS_TABLE.get_item(
+            Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"}
+        )
+        return "Item" in fund_resp
+    return False
+
+
+def _get_roles_from_event(event):
+    request_context = event.get("requestContext") or {}
+    authorizer = request_context.get("authorizer") or {}
+
+    roles_raw = authorizer.get("roles")
+    if not roles_raw and isinstance(authorizer.get("lambda"), dict):
+        roles_raw = authorizer.get("lambda", {}).get("roles")
+
+    if isinstance(roles_raw, str):
+        try:
+            roles = json.loads(roles_raw)
+        except json.JSONDecodeError:
+            roles = []
+    elif isinstance(roles_raw, list):
+        roles = roles_raw
+    else:
+        roles = []
+
+    return [str(role) for role in roles if isinstance(role, (str, int))]

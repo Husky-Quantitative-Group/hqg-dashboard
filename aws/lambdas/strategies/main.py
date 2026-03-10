@@ -85,7 +85,8 @@ def get_strategies(event: Dict[str, Any]) -> Dict[str, Any]:
     if not netid:
         return _json(401, {"message": "unauthorized"})
 
-    strategy_ids = _list_readable_strategy_ids(netid)
+    roles = _get_roles_from_event(event)
+    strategy_ids = _list_readable_strategy_ids(netid, roles)
     if not strategy_ids:
         return _json(200, [])
 
@@ -246,7 +247,8 @@ def get_strategy(strategy_id: Optional[str], event: Dict[str, Any]) -> Dict[str,
     if not netid:
         return _json(401, {"message": "unauthorized"})
 
-    if not _has_read_permission(strategy_id, netid):
+    roles = _get_roles_from_event(event)
+    if not _has_read_permission(strategy_id, netid, roles):
         return _json(403, {"message": "forbidden"})
 
     item = _get_strategy_by_id(strategy_id)
@@ -334,12 +336,26 @@ def _permission_snapshot(table, strategy_id: str) -> Dict[str, Any]:
     )
     principals = [item.get("principal") for item in resp.get("Items", [])]
     public = any(principal == "ROLE#PUBLIC" for principal in principals)
-    users = [
+    fund = any(principal == "ROLE#FUND" for principal in principals)
+    netids = [
         principal.replace("USER#", "", 1)
         for principal in principals
         if isinstance(principal, str) and principal.startswith("USER#")
     ]
-    return {"public": public, "users": users}
+
+    users: List[Dict[str, Any]] = []
+    for netid in netids:
+        resp = USERS_TABLE.get_item(Key={"netid": netid})
+        item = resp.get("Item") or {}
+        users.append(
+            {
+                "netid": netid,
+                "full_name": item.get("full_name") or "",
+                "uconn_email": item.get("uconn_email") or "",
+            }
+        )
+
+    return {"public": public, "fund": fund, "users": users}
 
 
 def _apply_permission_changes(
@@ -349,11 +365,14 @@ def _apply_permission_changes(
     mode: str,
 ) -> Optional[Dict[str, Any]]:
     public = scope_body.get("public")
+    fund = scope_body.get("fund")
     add_users = scope_body.get("addUsers", [])
     remove_users = scope_body.get("removeUsers", [])
 
     if public is not None and not isinstance(public, bool):
         return _json(400, {"message": "public must be a boolean"})
+    if fund is not None and not isinstance(fund, bool):
+        return _json(400, {"message": "fund must be a boolean"})
     if add_users is not None and not isinstance(add_users, list):
         return _json(400, {"message": "addUsers must be a list"})
     if remove_users is not None and not isinstance(remove_users, list):
@@ -364,6 +383,10 @@ def _apply_permission_changes(
             table.put_item(Item={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
         elif public is False:
             table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
+        if fund is True:
+            table.put_item(Item={"strategy_id": strategy_id, "principal": "ROLE#FUND"})
+        elif fund is False:
+            table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"})
         for netid in add_users or []:
             if isinstance(netid, str) and netid.strip():
                 principal = _principal_for_user(netid.strip())
@@ -371,6 +394,8 @@ def _apply_permission_changes(
     elif mode == "delete":
         if public is True:
             table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
+        if fund is True:
+            table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"})
         for netid in remove_users or []:
             if isinstance(netid, str) and netid.strip():
                 principal = _principal_for_user(netid.strip())
@@ -593,7 +618,28 @@ def _get_netid_from_event(event: Dict[str, Any]) -> Optional[str]:
     return netid or None
 
 
-def _has_read_permission(strategy_id: str, netid: str) -> bool:
+def _get_roles_from_event(event: Dict[str, Any]) -> List[str]:
+    request_context = event.get("requestContext") or {}
+    authorizer = request_context.get("authorizer") or {}
+
+    roles_raw = authorizer.get("roles")
+    if not roles_raw and isinstance(authorizer.get("lambda"), dict):
+        roles_raw = authorizer.get("lambda", {}).get("roles")
+
+    if isinstance(roles_raw, str):
+        try:
+            roles = json.loads(roles_raw)
+        except json.JSONDecodeError:
+            roles = []
+    elif isinstance(roles_raw, list):
+        roles = roles_raw
+    else:
+        roles = []
+
+    return [str(role) for role in roles if isinstance(role, (str, int))]
+
+
+def _has_read_permission(strategy_id: str, netid: str, roles: List[str]) -> bool:
     principal = _principal_for_user(netid)
     resp = READ_PERMISSIONS_DDB.get_item(
         Key={"strategy_id": strategy_id, "principal": principal}
@@ -603,11 +649,20 @@ def _has_read_permission(strategy_id: str, netid: str) -> bool:
     public_resp = READ_PERMISSIONS_DDB.get_item(
         Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
     )
-    return "Item" in public_resp
+    if "Item" in public_resp:
+        return True
+    if "FUND" in roles:
+        fund_resp = READ_PERMISSIONS_DDB.get_item(
+            Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"}
+        )
+        return "Item" in fund_resp
+    return False
 
 
-def _list_readable_strategy_ids(netid: str) -> List[str]:
+def _list_readable_strategy_ids(netid: str, roles: List[str]) -> List[str]:
     principals = [_principal_for_user(netid), "ROLE#PUBLIC"]
+    if "FUND" in roles:
+        principals.append("ROLE#FUND")
     strategy_ids: List[str] = []
     seen = set()
 
