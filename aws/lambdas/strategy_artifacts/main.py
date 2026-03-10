@@ -223,6 +223,8 @@ def _get_netid_from_event(event):
 
 
 def _has_write_permission(strategy_id, netid, roles):
+    if "ADMIN" in roles:
+        return True
     principal = f"USER#{netid}"
     resp = WRITE_PERMISSIONS_TABLE.get_item(
         Key={"strategy_id": strategy_id, "principal": principal}

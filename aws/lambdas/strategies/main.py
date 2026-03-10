@@ -86,6 +86,12 @@ def get_strategies(event: Dict[str, Any]) -> Dict[str, Any]:
         return _json(401, {"message": "unauthorized"})
 
     roles = _get_roles_from_event(event)
+    if "ADMIN" in roles:
+        resp = STRATEGIES_TABLE.scan()
+        items = _clean_decimals(resp.get("Items", []))
+        _hydrate_owner_display(items)
+        return _json(200, items)
+
     strategy_ids = _list_readable_strategy_ids(netid, roles)
     if not strategy_ids:
         return _json(200, [])
@@ -250,7 +256,7 @@ def get_strategy(strategy_id: Optional[str], event: Dict[str, Any]) -> Dict[str,
         return _json(401, {"message": "unauthorized"})
 
     roles = _get_roles_from_event(event)
-    if not _has_read_permission(strategy_id, netid, roles):
+    if "ADMIN" not in roles and not _has_read_permission(strategy_id, netid, roles):
         return _json(403, {"message": "forbidden"})
 
     item = _get_strategy_by_id(strategy_id)
