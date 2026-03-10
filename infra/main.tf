@@ -533,6 +533,7 @@ data "aws_iam_policy_document" "users_search" {
     effect = "Allow"
 
     actions = [
+      "dynamodb:BatchGetItem",
       "dynamodb:GetItem",
       "dynamodb:Query",
       "dynamodb:Scan",

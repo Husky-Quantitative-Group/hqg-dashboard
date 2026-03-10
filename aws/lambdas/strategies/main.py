@@ -92,8 +92,10 @@ def get_strategies(event: Dict[str, Any]) -> Dict[str, Any]:
 
     keys = [{"id": sid} for sid in strategy_ids]
     items = _batch_get_strategies(keys)
+    cleaned_items = _clean_decimals(items)
+    _hydrate_owner_display(cleaned_items)
 
-    return _json(200, _clean_decimals(items))
+    return _json(200, cleaned_items)
 
 
 def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, Any]:
@@ -254,7 +256,9 @@ def get_strategy(strategy_id: Optional[str], event: Dict[str, Any]) -> Dict[str,
     item = _get_strategy_by_id(strategy_id)
     if not item:
         return _json(404, {"message": "Not found"})
-    return _json(200, _clean_decimals(item))
+    cleaned_item = _clean_decimals(item)
+    _hydrate_owner_display([cleaned_item])
+    return _json(200, cleaned_item)
 
 
 def update_strategy(strategy_id: Optional[str], body: Dict[str, Any]) -> Dict[str, Any]:
@@ -708,6 +712,48 @@ def _batch_get_strategies(keys: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             request_items = resp.get("UnprocessedKeys") or {}
 
     return items
+
+
+def _batch_get_users(netids: List[str]) -> Dict[str, Dict[str, Any]]:
+    if not netids:
+        return {}
+
+    keys = [{"netid": netid} for netid in netids if isinstance(netid, str) and netid]
+    items: List[Dict[str, Any]] = []
+
+    for batch in _chunk(keys, 100):
+        request_items = {USERS_TABLE.name: {"Keys": batch}}
+        while request_items:
+            resp = dynamo.batch_get_item(RequestItems=request_items)
+            items.extend(resp.get("Responses", {}).get(USERS_TABLE.name, []))
+            request_items = resp.get("UnprocessedKeys") or {}
+
+    user_map: Dict[str, Dict[str, Any]] = {}
+    for item in items:
+        netid = item.get("netid")
+        if isinstance(netid, str) and netid:
+            user_map[netid] = item
+    return user_map
+
+
+def _hydrate_owner_display(items: List[Dict[str, Any]]) -> None:
+    owner_netids = {
+        item.get("owner")
+        for item in items
+        if isinstance(item, dict)
+        and item.get("owner")
+        and (not item.get("owner_display") or item.get("owner_display") == item.get("owner"))
+    }
+    owner_netids = {netid for netid in owner_netids if isinstance(netid, str) and netid}
+    user_map = _batch_get_users(list(owner_netids))
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        owner = item.get("owner")
+        if isinstance(owner, str) and owner in user_map:
+            full_name = user_map[owner].get("full_name")
+            if isinstance(full_name, str) and full_name.strip():
+                item["owner_display"] = full_name.strip()
   
   
 def _get_display_name_from_event(event: Dict[str, Any]) -> Optional[str]:
