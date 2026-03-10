@@ -20,6 +20,7 @@ Example:
     --strategies-read-permissions-table "$(terraform output -raw strategies_read_permissions_table_name)" \
     --strategies-write-permissions-table "$(terraform output -raw strategies_write_permissions_table_name)" \
     --backtest-metrics-table "$(terraform output -raw backtest_metrics_table_name)" \
+    --counters-table "$(terraform output -raw counters_table_name)" \
     --backtester-url "http://localhost:8005" \
     --users-table "$(terraform output -raw users_table_name)" \
     --admin-netid "YOUR_NETID" \
@@ -52,6 +53,7 @@ STRATEGIES_JSON = ROOT / "strategies.json"
 VERSION = 1
 SEED_STRATEGY_IDS = tuple(str(i) for i in range(1, 6))
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+DESCRIPTION_MAX_CHARS = 75
 
 DEFAULT_BACKTEST_START_DATE = "2020-01-03"
 DEFAULT_BACKTEST_END_DATE = "2024-12-31"
@@ -249,6 +251,19 @@ def clean_numbers(data: object) -> object:
     if dec is not None:
         return dec
     return data
+
+
+def strategy_metadata_metrics(metrics: object) -> dict[str, Decimal]:
+    if not isinstance(metrics, dict):
+        return {}
+
+    result: dict[str, Decimal] = {}
+    for key, raw_value in metrics.items():
+        value = to_decimal(raw_value)
+        if value is not None:
+            result[key] = value
+
+    return result
 
 
 def finite_number_or_none(value: object) -> float | None:
@@ -468,6 +483,7 @@ def seed_backtests(
     dynamo,
     backtests_bucket: str,
     backtest_metrics_table: str,
+    strategies_table: str,
     backtester_client: BacktesterClient,
     strategy_id: str,
     strategy_code: str,
@@ -475,6 +491,7 @@ def seed_backtests(
     backtests: list[dict[str, object]],
 ) -> int:
     table = dynamo.Table(backtest_metrics_table)
+    strategies = dynamo.Table(strategies_table)
     seeded = 0
 
     for backtest_index, backtest in enumerate(backtests):
@@ -621,6 +638,17 @@ def seed_backtests(
         item = clean_numbers(item)  # DynamoDB requires Decimal for numeric values.
         table.put_item(Item=item)
         print(f"Upserted backtest run {run_id} for strategy {strategy_id} in {backtest_metrics_table}")
+
+        metadata_metrics = strategy_metadata_metrics(payload_metrics)
+        if metadata_metrics:
+            strategies.update_item(
+                Key={"id": strategy_id},
+                UpdateExpression="SET #metrics = :metrics",
+                ExpressionAttributeNames={"#metrics": "metrics"},
+                ExpressionAttributeValues={":metrics": metadata_metrics},
+            )
+            print(f"Updated strategy {strategy_id} metadata metrics in {strategies_table}")
+
         seeded += 1
 
     return seeded
@@ -633,6 +661,7 @@ def seed_tables(
     versions_table: str,
     strategy_id: str,
     strategy_name: str,
+    description: str,
     entrypoint: str,
     owner: str,
     owner_display: str,
@@ -652,6 +681,7 @@ def seed_tables(
         "current_version": VERSION,
         "created_at": now,
         "updated_at": now,
+        "description": description,
     }
     strategies.put_item(Item=strategy_item)
     print(f"Upserted strategy {strategy_id} in {strategies_table}")
@@ -729,6 +759,19 @@ def seed_strategies(
         if not strategy_name:
             strategy_name = f"Strategy {strategy_id}"
 
+        description_value = entry.get("description")
+        if description_value is None:
+            description = ""
+        elif isinstance(description_value, str):
+            description = description_value.strip()
+        else:
+            raise ValueError(f"Strategy {strategy_id} description must be a string")
+
+        if len(description) > DESCRIPTION_MAX_CHARS:
+            raise ValueError(
+                f"Strategy {strategy_id} description must be {DESCRIPTION_MAX_CHARS} characters or fewer"
+            )
+
         owner_value = entry.get("owner")
         owner = str(owner_value).strip() if owner_value else ""
         if not owner:
@@ -771,6 +814,7 @@ def seed_strategies(
             versions_table=versions_table,
             strategy_id=strategy_id,
             strategy_name=strategy_name,
+            description=description,
             entrypoint=entrypoint,
             owner=owner,
             owner_display=owner_display,
@@ -807,6 +851,7 @@ def seed_strategies(
             dynamo=dynamo,
             backtests_bucket=backtests_bucket,
             backtest_metrics_table=backtest_metrics_table,
+            strategies_table=strategies_table,
             backtester_client=backtester_client,
             strategy_id=strategy_id,
             strategy_code=strategy_code,
@@ -815,6 +860,27 @@ def seed_strategies(
         )
 
     return summary
+
+
+def seed_counters(dynamo, counters_table: str, strategies_table: str) -> None:
+    strategies = dynamo.Table(strategies_table)
+    max_id = 0
+    scan_kwargs: dict = {"ProjectionExpression": "id"}
+    while True:
+        resp = strategies.scan(**scan_kwargs)
+        for item in resp.get("Items", []):
+            try:
+                max_id = max(max_id, int(item["id"]))
+            except (ValueError, KeyError):
+                pass
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        scan_kwargs["ExclusiveStartKey"] = last_key
+
+    table = dynamo.Table(counters_table)
+    table.put_item(Item={"counter_name": "strategies", "value": max_id})
+    print(f"Initialized strategies counter to {max_id} in {counters_table}")
 
 
 def seed_admin_user(dynamo, users_table: str, netid: str) -> None:
@@ -869,6 +935,7 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
         action="store_true",
         help="Skip generating and seeding backtests.",
     )
+    parser.add_argument("--counters-table", default=None, help="DynamoDB Counters table name.")
     parser.add_argument("--users-table", default=None, help="DynamoDB Users table name.")
     parser.add_argument("--admin-netid", default=None, help="NetID to seed as an admin user.")
     parser.add_argument("--region", default=None, help="AWS region (overrides default resolver).")
@@ -932,6 +999,8 @@ def main(argv: Iterable[str]) -> int:
             backtester_client=backtester_client,
             backtests_skip_reason=backtests_skip_reason,
         )
+        if args.counters_table:
+            seed_counters(dynamo=dynamo, counters_table=args.counters_table, strategies_table=args.strategies_table)
         admin_netid = args.admin_netid.strip() if args.admin_netid else None
         if admin_netid and args.users_table:
             seed_admin_user(dynamo=dynamo, users_table=args.users_table, netid=admin_netid)

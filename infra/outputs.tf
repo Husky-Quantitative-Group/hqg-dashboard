@@ -103,6 +103,11 @@ output "strategies_write_permissions_table_arn" {
   description = "ARN of the StrategiesWritePermissions table."
 }
 
+output "counters_table_name" {
+  value       = aws_dynamodb_table.counters.name
+  description = "Name of the Counters table."
+}
+
 output "http_api_id" {
   value       = aws_apigatewayv2_api.api.id
   description = "ID of the HTTP API Gateway."

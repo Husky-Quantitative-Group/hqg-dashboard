@@ -43,6 +43,7 @@ locals {
   backtest_metrics_table_name             = coalesce(var.backtest_metrics_table_name, "${local.name_prefix}-backtest-metrics")
   strategies_read_permissions_table_name  = coalesce(var.strategies_read_permissions_table_name, "${local.name_prefix}-strategies-read-permissions")
   strategies_write_permissions_table_name = coalesce(var.strategies_write_permissions_table_name, "${local.name_prefix}-strategies-write-permissions")
+  counters_table_name                     = coalesce(var.counters_table_name, "${local.name_prefix}-counters")
 
   tags = merge(
     {
@@ -202,6 +203,27 @@ resource "aws_dynamodb_table" "strategies" {
 
   attribute {
     name = "id"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = local.tags
+}
+
+resource "aws_dynamodb_table" "counters" {
+  name         = local.counters_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "counter_name"
+
+  attribute {
+    name = "counter_name"
     type = "S"
   }
 
@@ -501,6 +523,28 @@ data "aws_iam_policy_document" "strategy_storage" {
 resource "aws_iam_policy" "strategy_storage" {
   name   = "${local.name_prefix}-strategy-storage"
   policy = data.aws_iam_policy_document.strategy_storage.json
+
+  tags = local.tags
+}
+
+data "aws_iam_policy_document" "counters_write" {
+  statement {
+    sid    = "DynamoCountersWrite"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:UpdateItem",
+    ]
+
+    resources = [
+      aws_dynamodb_table.counters.arn,
+    ]
+  }
+}
+
+resource "aws_iam_policy" "counters_write" {
+  name   = "${local.name_prefix}-counters-write"
+  policy = data.aws_iam_policy_document.counters_write.json
 
   tags = local.tags
 }
@@ -995,6 +1039,11 @@ resource "aws_iam_role_policy_attachment" "strategies_lambda_users_search" {
   policy_arn = aws_iam_policy.users_search.arn
 }
 
+resource "aws_iam_role_policy_attachment" "strategies_lambda_counters" {
+  role       = aws_iam_role.strategies_lambda.name
+  policy_arn = aws_iam_policy.counters_write.arn
+}
+
 resource "aws_iam_role_policy_attachment" "strategy_artifacts_lambda_basic_logs" {
   role       = aws_iam_role.strategy_artifacts_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -1117,6 +1166,7 @@ resource "aws_lambda_function" "strategies" {
       STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
       USERS_TABLE                        = aws_dynamodb_table.users.name
+      COUNTERS_TABLE                     = aws_dynamodb_table.counters.name
     }
   }
 
