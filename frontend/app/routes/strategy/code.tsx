@@ -70,6 +70,7 @@ export default function StrategyCodeWorkspace() {
     [sortedCodeFiles]
   );
   const strategyCode = useMemo(() => (typeof entrypoint?.content === "string" ? entrypoint.content : ""), [entrypoint?.content]);
+  const canEdit = !isWriteForbidden;
 
   useEffect(() => {
     setEditorReady(true);
@@ -193,6 +194,11 @@ export default function StrategyCodeWorkspace() {
           </div>
 
           <div className="min-w-0 bg-[#060d18]">
+            {isWriteForbidden && (
+              <div className="border-b border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-amber-200">
+                Read-only mode. You don&apos;t have write permission for this strategy.
+              </div>
+            )}
             {isLoadingFile ? (
               <div className="flex min-h-[620px] items-center justify-center text-sm text-slate-500">Loading file...</div>
             ) : selectedFile && editorReady ? (
@@ -203,12 +209,16 @@ export default function StrategyCodeWorkspace() {
                 defaultLanguage={selectedFile.language}
                 language={selectedFile.language}
                 value={selectedFile.content}
-                onChange={(nextValue) => updateFileContent(selectedFile.path, nextValue ?? "")}
+                onChange={(nextValue) => {
+                  if (!canEdit) return;
+                  updateFileContent(selectedFile.path, nextValue ?? "");
+                }}
                 options={{
                   minimap: { enabled: false },
                   fontSize: 14,
                   lineHeight: 21,
                   fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo",
+                  readOnly: !canEdit,
                   scrollBeyondLastLine: false,
                   smoothScrolling: true,
                   wordWrap: "off",
