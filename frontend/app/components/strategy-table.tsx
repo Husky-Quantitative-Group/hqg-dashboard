@@ -2,12 +2,9 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Strategy } from "../api/strategies";
 import {
-  fetchStrategyReadPublic,
-  fetchStrategyWritePublic,
-  grantStrategyReadPublic,
-  grantStrategyWritePublic,
-  revokeStrategyReadPublic,
-  revokeStrategyWritePublic,
+  deleteStrategyPermissions,
+  fetchStrategyPermissions,
+  patchStrategyPermissions,
 } from "../api/strategies";
 import { useUser } from "../context/UserConext";
 
@@ -40,14 +37,13 @@ export default function StrategyTable({
     setWriteUsers([]);
     setReadUserInput("");
     setWriteUserInput("");
-    Promise.all([
-      fetchStrategyReadPublic(activeStrategy.id),
-      fetchStrategyWritePublic(activeStrategy.id),
-    ])
-      .then(([readPublic, writePublic]) => {
+    fetchStrategyPermissions(activeStrategy.id)
+      .then((data) => {
         if (!isActive) return;
-        setPublicRead(readPublic);
-        setPublicWrite(writePublic);
+        setPublicRead(data.read.public);
+        setPublicWrite(data.write.public);
+        setReadUsers(data.read.users ?? []);
+        setWriteUsers(data.write.users ?? []);
       })
       .catch((error) => {
         if (!isActive) return;
@@ -65,18 +61,34 @@ export default function StrategyTable({
     };
   }, [activeStrategy]);
 
-  const addReadUser = () => {
+  const addReadUser = async () => {
+    if (!activeStrategy) return;
     const value = readUserInput.trim();
     if (!value || readUsers.includes(value)) return;
-    setReadUsers((prev) => [...prev, value]);
-    setReadUserInput("");
+    try {
+      await patchStrategyPermissions(activeStrategy.id, {
+        read: { addUsers: [value] },
+      });
+      setReadUsers((prev) => [...prev, value]);
+      setReadUserInput("");
+    } catch (error) {
+      console.error("Failed to add read permission", error);
+    }
   };
 
-  const addWriteUser = () => {
+  const addWriteUser = async () => {
+    if (!activeStrategy) return;
     const value = writeUserInput.trim();
     if (!value || writeUsers.includes(value)) return;
-    setWriteUsers((prev) => [...prev, value]);
-    setWriteUserInput("");
+    try {
+      await patchStrategyPermissions(activeStrategy.id, {
+        write: { addUsers: [value] },
+      });
+      setWriteUsers((prev) => [...prev, value]);
+      setWriteUserInput("");
+    } catch (error) {
+      console.error("Failed to add write permission", error);
+    }
   };
 
   const formatDate = (value?: string) => {
@@ -283,9 +295,13 @@ export default function StrategyTable({
                         setPublicRead(nextValue);
                         try {
                           if (nextValue) {
-                            await grantStrategyReadPublic(activeStrategy.id);
+                            await patchStrategyPermissions(activeStrategy.id, {
+                              read: { public: true },
+                            });
                           } else {
-                            await revokeStrategyReadPublic(activeStrategy.id);
+                            await deleteStrategyPermissions(activeStrategy.id, {
+                              read: { public: true },
+                            });
                           }
                         } catch (error) {
                           console.error("Failed to update public read permission", error);
@@ -312,9 +328,17 @@ export default function StrategyTable({
                             {userId}
                             <button
                               type="button"
-                              onClick={() =>
-                                setReadUsers((prev) => prev.filter((entry) => entry !== userId))
-                              }
+                              onClick={async () => {
+                                if (!activeStrategy) return;
+                                try {
+                                  await deleteStrategyPermissions(activeStrategy.id, {
+                                    read: { removeUsers: [userId] },
+                                  });
+                                  setReadUsers((prev) => prev.filter((entry) => entry !== userId));
+                                } catch (error) {
+                                  console.error("Failed to remove read permission", error);
+                                }
+                              }}
                               className="text-slate-400 transition hover:text-white"
                               aria-label={`Remove ${userId} from read permissions`}
                             >
@@ -362,9 +386,13 @@ export default function StrategyTable({
                         setPublicWrite(nextValue);
                         try {
                           if (nextValue) {
-                            await grantStrategyWritePublic(activeStrategy.id);
+                            await patchStrategyPermissions(activeStrategy.id, {
+                              write: { public: true },
+                            });
                           } else {
-                            await revokeStrategyWritePublic(activeStrategy.id);
+                            await deleteStrategyPermissions(activeStrategy.id, {
+                              write: { public: true },
+                            });
                           }
                         } catch (error) {
                           console.error("Failed to update public write permission", error);
@@ -391,9 +419,17 @@ export default function StrategyTable({
                             {userId}
                             <button
                               type="button"
-                              onClick={() =>
-                                setWriteUsers((prev) => prev.filter((entry) => entry !== userId))
-                              }
+                              onClick={async () => {
+                                if (!activeStrategy) return;
+                                try {
+                                  await deleteStrategyPermissions(activeStrategy.id, {
+                                    write: { removeUsers: [userId] },
+                                  });
+                                  setWriteUsers((prev) => prev.filter((entry) => entry !== userId));
+                                } catch (error) {
+                                  console.error("Failed to remove write permission", error);
+                                }
+                              }}
                               className="text-slate-400 transition hover:text-white"
                               aria-label={`Remove ${userId} from write permissions`}
                             >

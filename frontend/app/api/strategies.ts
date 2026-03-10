@@ -31,58 +31,71 @@ export const fetchStrategyById = async (strategyId: string | number): Promise<St
   return response.data;
 };
 
-export const grantStrategyReadPublic = async (
-  strategyId: string | number
-): Promise<{ ok?: boolean }> => {
-  const response = await coreApi.post(`/strategies/${strategyId}/permissions/read`, {
-    principal: "ROLE#PUBLIC",
-  });
-  return response.data;
+export type StrategyPermissions = {
+  read: {
+    public: boolean;
+    users: string[];
+  };
+  write: {
+    public: boolean;
+    users: string[];
+  };
 };
 
-export const fetchStrategyReadPublic = async (
+export type StrategyPermissionsPatch = {
+  read?: {
+    public?: boolean;
+    addUsers?: string[];
+    removeUsers?: string[];
+  };
+  write?: {
+    public?: boolean;
+    addUsers?: string[];
+    removeUsers?: string[];
+  };
+};
+
+export const fetchStrategyPermissions = async (
   strategyId: string | number
-): Promise<boolean> => {
-  const response = await coreApi.get<{ isPublic?: boolean }>(
-    `/strategies/${strategyId}/permissions/read/public`
+): Promise<StrategyPermissions> => {
+  const response = await coreApi.get<StrategyPermissions>(
+    `/strategies/${strategyId}/permissions`
   );
-  return response.data.isPublic === true;
+  return response.data;
 };
 
-export const revokeStrategyReadPublic = async (
-  strategyId: string | number
+export const patchStrategyPermissions = async (
+  strategyId: string | number,
+  payload: StrategyPermissionsPatch
 ): Promise<{ ok?: boolean }> => {
-  const response = await coreApi.delete(`/strategies/${strategyId}/permissions/read`, {
-    data: { principal: "ROLE#PUBLIC" },
+  const response = await coreApi.patch(`/strategies/${strategyId}/permissions`, payload);
+  return response.data;
+};
+
+export const deleteStrategyPermissions = async (
+  strategyId: string | number,
+  payload: StrategyPermissionsPatch
+): Promise<{ ok?: boolean }> => {
+  const response = await coreApi.delete(`/strategies/${strategyId}/permissions`, {
+    data: payload,
   });
   return response.data;
 };
 
-export const fetchStrategyWritePublic = async (
-  strategyId: string | number
-): Promise<boolean> => {
-  const response = await coreApi.get<{ isPublic?: boolean }>(
-    `/strategies/${strategyId}/permissions/write/public`
+export type UserSearchResult = {
+  netid: string;
+  full_name?: string;
+  uconn_email?: string;
+};
+
+export const searchUsers = async (query: string): Promise<UserSearchResult[]> => {
+  const response = await coreApi.get<{ items?: UserSearchResult[] }>(
+    `/users/search`,
+    {
+      params: { q: query },
+    }
   );
-  return response.data.isPublic === true;
-};
-
-export const grantStrategyWritePublic = async (
-  strategyId: string | number
-): Promise<{ ok?: boolean }> => {
-  const response = await coreApi.post(`/strategies/${strategyId}/permissions/write`, {
-    principal: "ROLE#PUBLIC",
-  });
-  return response.data;
-};
-
-export const revokeStrategyWritePublic = async (
-  strategyId: string | number
-): Promise<{ ok?: boolean }> => {
-  const response = await coreApi.delete(`/strategies/${strategyId}/permissions/write`, {
-    data: { principal: "ROLE#PUBLIC" },
-  });
-  return response.data;
+  return response.data.items ?? [];
 };
 
 export type CreateStrategyRequest = {
