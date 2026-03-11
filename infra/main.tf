@@ -960,6 +960,12 @@ data "archive_file" "backtest_metrics_lambda" {
   output_path = "${path.module}/dist/backtest-metrics-lambda.zip"
 }
 
+data "archive_file" "users_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/users"
+  output_path = "${path.module}/dist/users-lambda.zip"
+}
+
 # ------------------------------
 # Lambda IAM roles and policies
 # ------------------------------
@@ -1019,6 +1025,13 @@ resource "aws_iam_role" "admin_lambda" {
 
 resource "aws_iam_role" "backtest_metrics_lambda" {
   name               = "${local.name_prefix}-backtest-metrics-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = local.tags
+}
+
+resource "aws_iam_role" "users_lambda" {
+  name               = "${local.name_prefix}-users-lambda"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 
   tags = local.tags
@@ -1117,6 +1130,16 @@ resource "aws_iam_role_policy_attachment" "backtest_metrics_lambda_basic_logs" {
 resource "aws_iam_role_policy_attachment" "backtest_metrics_lambda_storage" {
   role       = aws_iam_role.backtest_metrics_lambda.name
   policy_arn = aws_iam_policy.backtest_metrics_storage.arn
+}
+
+resource "aws_iam_role_policy_attachment" "users_lambda_basic_logs" {
+  role       = aws_iam_role.users_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "users_lambda_users_search" {
+  role       = aws_iam_role.users_lambda.name
+  policy_arn = aws_iam_policy.users_search.arn
 }
 
 # ------------------------------
@@ -1353,6 +1376,24 @@ resource "aws_lambda_function" "backtest_metrics" {
   tags = local.tags
 }
 
+resource "aws_lambda_function" "users_search" {
+  function_name = "${local.name_prefix}-users"
+  role          = aws_iam_role.users_lambda.arn
+  runtime       = "python3.12"
+  handler       = "main.handler"
+
+  filename         = data.archive_file.users_lambda.output_path
+  source_code_hash = data.archive_file.users_lambda.output_base64sha256
+
+  environment {
+    variables = {
+      USERS_TABLE = aws_dynamodb_table.users.name
+    }
+  }
+
+  tags = local.tags
+}
+
 # ------------------------------
 # API Gateway authorizer
 # ------------------------------
@@ -1380,6 +1421,14 @@ resource "aws_apigatewayv2_integration" "get_strategies" {
   api_id                 = aws_apigatewayv2_api.api.id
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.strategies.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_integration" "users_search" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.users_search.invoke_arn
   integration_method     = "POST"
   payload_format_version = "2.0"
 }
@@ -1435,7 +1484,7 @@ resource "aws_apigatewayv2_route" "delete_strategy_permissions" {
 resource "aws_apigatewayv2_route" "get_users_search" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /users/search"
-  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.users_search.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -1444,6 +1493,14 @@ resource "aws_lambda_permission" "allow_apigw_invoke_strategies" {
   statement_id  = "AllowAPIGWInvokeStrategies"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.strategies.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "allow_apigw_invoke_users" {
+  statement_id  = "AllowAPIGWInvokeUsers"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.users_search.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }
