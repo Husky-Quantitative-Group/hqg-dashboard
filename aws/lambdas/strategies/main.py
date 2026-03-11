@@ -290,8 +290,9 @@ def get_permissions(strategy_id: Optional[str], event: Dict[str, Any]) -> Dict[s
     if not strategy:
         return _json(404, {"message": "Strategy not found"})
 
+    roles = _get_roles_from_event(event)
     owner = strategy.get("owner")
-    if not owner or owner != netid:
+    if "ADMIN" not in roles and (not owner or owner != netid):
         return _json(403, {"message": "forbidden"})
 
     return _json(
@@ -320,8 +321,9 @@ def update_permissions(
     if not strategy:
         return _json(404, {"message": "Strategy not found"})
 
+    roles = _get_roles_from_event(event)
     owner = strategy.get("owner")
-    if not owner or owner != netid:
+    if "ADMIN" not in roles and (not owner or owner != netid):
         return _json(403, {"message": "forbidden"})
 
     if not isinstance(body, dict):

@@ -42,14 +42,14 @@ const markdownComponents: Components = {
 export default function StrategyOverview() {
   const { strategy, handleRun, isRunning, files } = useStrategyWorkspace();
   const navigate = useNavigate();
-  const { user } = useUser();
+  const { user, hasRole } = useUser();
 
   const isOwner =
     Boolean(user?.netid) &&
     Boolean(strategy.owner) &&
     strategy.owner!.toLowerCase() === user!.netid.toLowerCase();
   const ownerNetid = strategy.owner?.toLowerCase() ?? "";
-  const canManagePermissions = isOwner || !user;
+  const canManagePermissions = isOwner || hasRole("ADMIN") || !user;
 
   const [publicRead, setPublicRead] = useState(false);
   const [publicWrite, setPublicWrite] = useState(false);
@@ -284,16 +284,16 @@ export default function StrategyOverview() {
             </dl>
 
             <div>
-              {(isOwner || !user) && (
+              {canManagePermissions && (
                 <div className="space-y-3">
                   <div>
                     <dt className={labelColor}>Permissions</dt>
                     <dd className="text-xs text-slate-400">Set public access for this strategy</dd>
                   </div>
 
-                  {!isOwner && user && (
+                  {!isOwner && user && !hasRole("ADMIN") && (
                     <div className="text-xs text-slate-500">
-                      Only the owner can change permissions.
+                      Only the owner or an admin can change permissions.
                     </div>
                   )}
 
