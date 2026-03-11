@@ -1346,7 +1346,7 @@ resource "aws_lambda_function" "backtest_metrics" {
       BACKTEST_METRICS_TABLE             = aws_dynamodb_table.backtest_metrics.name
       BACKTESTS_BUCKET                   = aws_s3_bucket.backtest_metrics.bucket
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
-      STRATEGIES_TABLE       = aws_dynamodb_table.strategies.name
+      STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
     }
   }
 
