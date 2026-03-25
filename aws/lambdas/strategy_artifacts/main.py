@@ -13,6 +13,7 @@ ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
 STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
 WRITE_PERMISSIONS_TABLE = dynamo.Table(os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"])
+READ_PERMISSIONS_TABLE = dynamo.Table(os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"])
 def handler(event, context):
     route = event["requestContext"]["routeKey"]
 
@@ -32,7 +33,7 @@ def handler(event, context):
     if route == "GET /strategies/{id}/artifacts/{artifactId}":
         strategy_id = event["pathParameters"]["id"]
         artifact_id = event["pathParameters"]["artifactId"]
-        return download_artifact(strategy_id, artifact_id)
+        return download_artifact(strategy_id, artifact_id, event)
 
     return {"statusCode": 404, "body": "Not found"}
 
@@ -50,7 +51,15 @@ def list_artifacts(strategy_id):
     artifact_ids = [item.get("artifact_id") for item in items if "artifact_id" in item]
     return _json(200, {"artifacts": artifact_ids})
 
-def download_artifact(strategy_id, artifact_id, max_bytes=1_000_000):
+def download_artifact(strategy_id, artifact_id, event, max_bytes=1_000_000):
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    roles = _get_roles_from_event(event)
+    if "ADMIN" not in roles and not _has_read_permission(strategy_id, netid, roles):
+        return _json(403, {"message": "forbidden"})
+
     artifact = ARTIFACTS_TABLE.get_item(Key={"strategy_id": strategy_id, "artifact_id": artifact_id}).get("Item")
     if not artifact:
         return _json(404, {"message": "Artifact not found"})
@@ -238,6 +247,26 @@ def _has_write_permission(strategy_id, netid, roles):
         return True
     if "FUND" in roles:
         fund_resp = WRITE_PERMISSIONS_TABLE.get_item(
+            Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"}
+        )
+        return "Item" in fund_resp
+    return False
+
+
+def _has_read_permission(strategy_id, netid, roles):
+    principal = f"USER#{netid}"
+    resp = READ_PERMISSIONS_TABLE.get_item(
+        Key={"strategy_id": strategy_id, "principal": principal}
+    )
+    if "Item" in resp:
+        return True
+    public_resp = READ_PERMISSIONS_TABLE.get_item(
+        Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
+    )
+    if "Item" in public_resp:
+        return True
+    if "FUND" in roles:
+        fund_resp = READ_PERMISSIONS_TABLE.get_item(
             Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"}
         )
         return "Item" in fund_resp

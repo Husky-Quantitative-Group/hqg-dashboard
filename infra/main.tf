@@ -688,6 +688,8 @@ data "aws_iam_policy_document" "backtest_metrics_storage" {
       aws_dynamodb_table.backtest_metrics.arn,
       aws_dynamodb_table.strategies_write_permissions.arn,
       "${aws_dynamodb_table.strategies_write_permissions.arn}/index/*",
+      aws_dynamodb_table.strategies_read_permissions.arn,
+      "${aws_dynamodb_table.strategies_read_permissions.arn}/index/*",
       aws_dynamodb_table.strategies.arn,
     ]
   }
@@ -1211,6 +1213,7 @@ resource "aws_lambda_function" "strategy_artifacts" {
       STRATEGY_ARTIFACTS_TABLE           = aws_dynamodb_table.strategy_artifacts.name
       STRATEGY_ARTIFACT_VERSIONS_TABLE   = aws_dynamodb_table.strategy_artifact_versions.name
       ARTIFACT_BUCKET                    = aws_s3_bucket.strategy_artifacts.bucket
+      STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
     }
   }
@@ -1368,6 +1371,7 @@ resource "aws_lambda_function" "backtest_metrics" {
     variables = {
       BACKTEST_METRICS_TABLE             = aws_dynamodb_table.backtest_metrics.name
       BACKTESTS_BUCKET                   = aws_s3_bucket.backtest_metrics.bucket
+      STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
       STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
     }

@@ -19,6 +19,7 @@ _WORD_GENERATOR = RandomWord()
 BACKTESTS_BUCKET = os.environ.get("BACKTESTS_BUCKET", "")
 BACKTEST_METRICS_TABLE = os.environ.get("BACKTEST_METRICS_TABLE", "")
 WRITE_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_WRITE_PERMISSIONS_TABLE", "")
+READ_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_READ_PERMISSIONS_TABLE", "")
 STRATEGIES_TABLE = os.environ.get("STRATEGIES_TABLE", "")
 
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -93,7 +94,10 @@ def list_backtest_runs(event):
     ctx = _require_strategy_context(event, require_table=True)
     if isinstance(ctx, dict):
         return ctx
-    strategy_id, _netid = ctx
+    strategy_id, netid = ctx
+    roles = _get_roles_from_event(event)
+    if "ADMIN" not in roles and not _has_read_permission(strategy_id, netid, roles):
+        return _json(403, {"message": "forbidden"})
 
     query_params = event.get("queryStringParameters") or {}
     try:
@@ -141,7 +145,10 @@ def get_backtest_run(event):
     ctx = _require_strategy_context(event, require_table=True, require_bucket=True)
     if isinstance(ctx, dict):
         return ctx
-    strategy_id, _netid = ctx
+    strategy_id, netid = ctx
+    roles = _get_roles_from_event(event)
+    if "ADMIN" not in roles and not _has_read_permission(strategy_id, netid, roles):
+        return _json(403, {"message": "forbidden"})
 
     run_id = (event.get("pathParameters") or {}).get("backtestId")
     if not run_id:
@@ -400,6 +407,26 @@ def _has_write_permission(strategy_id, netid, roles):
         Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
     )
     return "Item" in public_resp
+
+def _has_read_permission(strategy_id, netid, roles):
+    if not READ_PERMISSIONS_TABLE:
+        return False
+    principal = f"USER#{netid}"
+    table = dynamo.Table(READ_PERMISSIONS_TABLE)
+    resp = table.get_item(Key={"strategy_id": strategy_id, "principal": principal})
+    if "Item" in resp:
+        return True
+    public_resp = table.get_item(
+        Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
+    )
+    if "Item" in public_resp:
+        return True
+    if "FUND" in roles:
+        fund_resp = table.get_item(
+            Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"}
+        )
+        return "Item" in fund_resp
+    return False
 
 def _get_roles_from_event(event):
     request_context = event.get("requestContext") or {}
