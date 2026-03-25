@@ -17,7 +17,7 @@ dynamo = boto3.resource("dynamodb")
 _WORD_GENERATOR = RandomWord()
 
 BACKTESTS_BUCKET = os.environ.get("BACKTESTS_BUCKET", "")
-BACKTEST_METRICS_TABLE = os.environ.get("BACKTEST_METRICS_TABLE", "")
+STRATEGY_BACKTESTS_TABLE = os.environ.get("STRATEGY_BACKTESTS_TABLE", "")
 WRITE_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_WRITE_PERMISSIONS_TABLE", "")
 READ_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_READ_PERMISSIONS_TABLE", "")
 STRATEGIES_TABLE = os.environ.get("STRATEGIES_TABLE", "")
@@ -114,7 +114,7 @@ def list_backtest_runs(event):
         except Exception:
             return _json(400, {"message": "invalid cursor"})
 
-    table = dynamo.Table(BACKTEST_METRICS_TABLE)
+    table = dynamo.Table(STRATEGY_BACKTESTS_TABLE)
     try:
         query_kwargs = {
             "KeyConditionExpression": Key("strategy_id").eq(strategy_id),
@@ -154,7 +154,7 @@ def get_backtest_run(event):
     if not run_id:
         return _json(400, {"message": "backtestId is required"})
 
-    table = dynamo.Table(BACKTEST_METRICS_TABLE)
+    table = dynamo.Table(STRATEGY_BACKTESTS_TABLE)
     try:
         resp = table.get_item(Key={"strategy_id": strategy_id, "run_id": run_id})
     except ClientError as exc:
@@ -242,7 +242,7 @@ def dynamo_backtest_write(event):
     if not normalized_start_date or not normalized_end_date:
         return _json(400, {"message": "backtest_params.start_date and end_date must be valid dates"})
 
-    table = dynamo.Table(BACKTEST_METRICS_TABLE)
+    table = dynamo.Table(STRATEGY_BACKTESTS_TABLE)
     try:
         strategy_runs = _list_strategy_runs(table, strategy_id)
         duplicate_item = _find_duplicate_run(
@@ -376,8 +376,8 @@ def _netid_from_authorizer(event):
     return None
 
 def _require_strategy_context(event, *, require_table=False, require_bucket=False, require_strategies_table=False):
-    if require_table and not BACKTEST_METRICS_TABLE:
-        return _json(500, {"message": "BACKTEST_METRICS_TABLE is not configured"})
+    if require_table and not STRATEGY_BACKTESTS_TABLE:
+        return _json(500, {"message": "STRATEGY_BACKTESTS_TABLE is not configured"})
     if require_bucket and not BACKTESTS_BUCKET:
         return _json(500, {"message": "BACKTESTS_BUCKET is not configured"})
     if require_strategies_table and not STRATEGIES_TABLE:

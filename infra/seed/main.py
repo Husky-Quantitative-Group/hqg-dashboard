@@ -19,7 +19,7 @@ Example:
     --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
     --strategies-read-permissions-table "$(terraform output -raw strategies_read_permissions_table_name)" \
     --strategies-write-permissions-table "$(terraform output -raw strategies_write_permissions_table_name)" \
-    --backtest-metrics-table "$(terraform output -raw backtest_metrics_table_name)" \
+    --strategy-backtests-table "$(terraform output -raw strategy_backtests_table_name)" \
     --counters-table "$(terraform output -raw counters_table_name)" \
     --backtester-url "http://localhost:8005" \
     --users-table "$(terraform output -raw users_table_name)" \
@@ -410,7 +410,7 @@ def purge_seed_strategies(
     strategies_table: str,
     artifacts_table: str,
     versions_table: str,
-    backtest_metrics_table: str,
+    strategy_backtests_table: str,
 ) -> None:
     print(f"Purging existing strategy data for IDs: {', '.join(SEED_STRATEGY_IDS)}")
 
@@ -431,14 +431,14 @@ def purge_seed_strategies(
         )
         print(f"Deleted {deleted} rows for strategy {strategy_id} from {artifacts_table}")
 
-    backtests = dynamo.Table(backtest_metrics_table)
+    backtests = dynamo.Table(strategy_backtests_table)
     for strategy_id in SEED_STRATEGY_IDS:
         deleted = _delete_items_for_strategy(
             table=backtests,
             strategy_id=strategy_id,
             sort_key_name="run_id",
         )
-        print(f"Deleted {deleted} rows for strategy {strategy_id} from {backtest_metrics_table}")
+        print(f"Deleted {deleted} rows for strategy {strategy_id} from {strategy_backtests_table}")
 
     versions = dynamo.Table(versions_table)
     version_filter = None
@@ -482,7 +482,7 @@ def seed_backtests(
     s3_client,
     dynamo,
     backtests_bucket: str,
-    backtest_metrics_table: str,
+    strategy_backtests_table: str,
     strategies_table: str,
     backtester_client: BacktesterClient,
     strategy_id: str,
@@ -490,7 +490,7 @@ def seed_backtests(
     owner: str,
     backtests: list[dict[str, object]],
 ) -> int:
-    table = dynamo.Table(backtest_metrics_table)
+    table = dynamo.Table(strategy_backtests_table)
     strategies = dynamo.Table(strategies_table)
     seeded = 0
 
@@ -637,7 +637,7 @@ def seed_backtests(
 
         item = clean_numbers(item)  # DynamoDB requires Decimal for numeric values.
         table.put_item(Item=item)
-        print(f"Upserted backtest run {run_id} for strategy {strategy_id} in {backtest_metrics_table}")
+        print(f"Upserted backtest run {run_id} for strategy {strategy_id} in {strategy_backtests_table}")
 
         metadata_metrics = strategy_metadata_metrics(payload_metrics)
         if metadata_metrics:
@@ -735,7 +735,7 @@ def seed_strategies(
     versions_table: str,
     strategies_read_permissions_table: str | None,
     strategies_write_permissions_table: str | None,
-    backtest_metrics_table: str,
+    strategy_backtests_table: str,
     backtester_client: BacktesterClient | None,
     backtests_skip_reason: str,
 ) -> BacktestSeedSummary:
@@ -850,7 +850,7 @@ def seed_strategies(
             s3_client=s3_client,
             dynamo=dynamo,
             backtests_bucket=backtests_bucket,
-            backtest_metrics_table=backtest_metrics_table,
+            strategy_backtests_table=strategy_backtests_table,
             strategies_table=strategies_table,
             backtester_client=backtester_client,
             strategy_id=strategy_id,
@@ -911,7 +911,7 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
         help="DynamoDB StrategyArtifactVersions table name.",
     )
     parser.add_argument(
-        "--backtest-metrics-table",
+        "--strategy-backtests-table",
         required=True,
         help="DynamoDB BacktestMetrics table name.",
     )
@@ -983,7 +983,7 @@ def main(argv: Iterable[str]) -> int:
             strategies_table=args.strategies_table,
             artifacts_table=args.artifacts_table,
             versions_table=args.artifact_versions_table,
-            backtest_metrics_table=args.backtest_metrics_table,
+            strategy_backtests_table=args.strategy_backtests_table,
         )
         summary = seed_strategies(
             s3_client=s3,
@@ -995,7 +995,7 @@ def main(argv: Iterable[str]) -> int:
             versions_table=args.artifact_versions_table,
             strategies_read_permissions_table=args.strategies_read_permissions_table,
             strategies_write_permissions_table=args.strategies_write_permissions_table,
-            backtest_metrics_table=args.backtest_metrics_table,
+            strategy_backtests_table=args.strategy_backtests_table,
             backtester_client=backtester_client,
             backtests_skip_reason=backtests_skip_reason,
         )

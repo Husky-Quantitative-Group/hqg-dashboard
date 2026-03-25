@@ -9,12 +9,12 @@ output "artifacts_bucket_arn" {
 }
 
 output "backtests_bucket_name" {
-  value       = aws_s3_bucket.backtest_metrics.bucket
+  value       = aws_s3_bucket.strategy_backtests.bucket
   description = "Name of the S3 bucket storing backtest metrics."
 }
 
 output "backtests_bucket_arn" {
-  value       = aws_s3_bucket.backtest_metrics.arn
+  value       = aws_s3_bucket.strategy_backtests.arn
   description = "ARN of the backtests bucket."
 }
 
@@ -73,13 +73,13 @@ output "user_access_applications_table_arn" {
   description = "ARN of the UserAccessApplications table."
 }
 
-output "backtest_metrics_table_name" {
-  value       = aws_dynamodb_table.backtest_metrics.name
+output "strategy_backtests_table_name" {
+  value       = aws_dynamodb_table.strategy_backtests.name
   description = "Name of the BacktestMetrics table."
 }
 
-output "backtest_metrics_table_arn" {
-  value       = aws_dynamodb_table.backtest_metrics.arn
+output "strategy_backtests_table_arn" {
+  value       = aws_dynamodb_table.strategy_backtests.arn
   description = "ARN of the BacktestMetrics table."
 }
 

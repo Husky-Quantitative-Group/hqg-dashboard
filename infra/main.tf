@@ -33,14 +33,14 @@ locals {
   api_custom_domain_requested             = local.is_prod && var.api_custom_domain_name != null
   api_custom_domain_activated             = local.api_custom_domain_requested && var.api_custom_domain_activate
   artifacts_bucket_name                   = coalesce(var.artifacts_bucket_name, "${local.name_prefix}-strategy-artifacts-${data.aws_caller_identity.current.account_id}")
-  backtests_bucket_name                   = coalesce(var.backtests_bucket_name, "${local.name_prefix}-backtest-metrics-${data.aws_caller_identity.current.account_id}")
+  backtests_bucket_name                   = coalesce(var.backtests_bucket_name, "${local.name_prefix}-strategy-backtests-${data.aws_caller_identity.current.account_id}")
   jwks_bucket_name                        = coalesce(var.jwks_bucket_name, "${local.name_prefix}-jwks-${random_id.jwks_bucket_suffix.hex}")
   strategies_table_name                   = coalesce(var.strategies_table_name, "${local.name_prefix}-strategies")
   strategy_artifacts_table_name           = coalesce(var.strategy_artifacts_table_name, "${local.name_prefix}-strategy-artifacts")
   strategy_artifact_versions_table        = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
   users_table_name                        = coalesce(var.users_table_name, "${local.name_prefix}-users")
   user_access_applications_table_name     = coalesce(var.user_access_applications_table_name, "${local.name_prefix}-user-access-applications")
-  backtest_metrics_table_name             = coalesce(var.backtest_metrics_table_name, "${local.name_prefix}-backtest-metrics")
+  strategy_backtests_table_name             = coalesce(var.strategy_backtests_table_name, "${local.name_prefix}-strategy-backtests")
   strategies_read_permissions_table_name  = coalesce(var.strategies_read_permissions_table_name, "${local.name_prefix}-strategies-read-permissions")
   strategies_write_permissions_table_name = coalesce(var.strategies_write_permissions_table_name, "${local.name_prefix}-strategies-write-permissions")
   counters_table_name                     = coalesce(var.counters_table_name, "${local.name_prefix}-counters")
@@ -96,23 +96,23 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "strategy_artifact
 # S3 bucket for backtest storage
 # ------------------------------
 
-resource "aws_s3_bucket" "backtest_metrics" {
+resource "aws_s3_bucket" "strategy_backtests" {
   bucket        = local.backtests_bucket_name
   force_destroy = lower(var.env) != "prod"
 
   tags = local.tags
 }
 
-resource "aws_s3_bucket_versioning" "backtest_metrics" {
-  bucket = aws_s3_bucket.backtest_metrics.id
+resource "aws_s3_bucket_versioning" "strategy_backtests" {
+  bucket = aws_s3_bucket.strategy_backtests.id
 
   versioning_configuration {
     status = "Enabled"
   }
 }
 
-resource "aws_s3_bucket_public_access_block" "backtest_metrics" {
-  bucket = aws_s3_bucket.backtest_metrics.id
+resource "aws_s3_bucket_public_access_block" "strategy_backtests" {
+  bucket = aws_s3_bucket.strategy_backtests.id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -120,8 +120,8 @@ resource "aws_s3_bucket_public_access_block" "backtest_metrics" {
   restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "backtest_metrics" {
-  bucket = aws_s3_bucket.backtest_metrics.id
+resource "aws_s3_bucket_server_side_encryption_configuration" "strategy_backtests" {
+  bucket = aws_s3_bucket.strategy_backtests.id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -130,8 +130,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "backtest_metrics"
   }
 }
 
-resource "aws_s3_bucket_cors_configuration" "backtest_metrics" {
-  bucket = aws_s3_bucket.backtest_metrics.id
+resource "aws_s3_bucket_cors_configuration" "strategy_backtests" {
+  bucket = aws_s3_bucket.strategy_backtests.id
 
   cors_rule {
     allowed_headers = ["*"]
@@ -373,8 +373,8 @@ resource "aws_dynamodb_table" "user_access_applications" {
   tags = local.tags
 }
 
-resource "aws_dynamodb_table" "backtest_metrics" {
-  name         = local.backtest_metrics_table_name
+resource "aws_dynamodb_table" "strategy_backtests" {
+  name         = local.strategy_backtests_table_name
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "strategy_id"
   range_key    = "run_id"
@@ -649,7 +649,7 @@ resource "aws_iam_policy" "admin_dynamodb" {
   tags = local.tags
 }
 
-data "aws_iam_policy_document" "backtest_metrics_storage" {
+data "aws_iam_policy_document" "strategy_backtests_storage" {
   statement {
     sid    = "S3BacktestMetricsAccess"
     effect = "Allow"
@@ -664,8 +664,8 @@ data "aws_iam_policy_document" "backtest_metrics_storage" {
     ]
 
     resources = [
-      aws_s3_bucket.backtest_metrics.arn,
-      "${aws_s3_bucket.backtest_metrics.arn}/*",
+      aws_s3_bucket.strategy_backtests.arn,
+      "${aws_s3_bucket.strategy_backtests.arn}/*",
     ]
   }
 
@@ -685,7 +685,7 @@ data "aws_iam_policy_document" "backtest_metrics_storage" {
     ]
 
     resources = [
-      aws_dynamodb_table.backtest_metrics.arn,
+      aws_dynamodb_table.strategy_backtests.arn,
       aws_dynamodb_table.strategies_write_permissions.arn,
       "${aws_dynamodb_table.strategies_write_permissions.arn}/index/*",
       aws_dynamodb_table.strategies_read_permissions.arn,
@@ -695,9 +695,9 @@ data "aws_iam_policy_document" "backtest_metrics_storage" {
   }
 }
 
-resource "aws_iam_policy" "backtest_metrics_storage" {
-  name   = "${local.name_prefix}-backtest-metrics-storage"
-  policy = data.aws_iam_policy_document.backtest_metrics_storage.json
+resource "aws_iam_policy" "strategy_backtests_storage" {
+  name   = "${local.name_prefix}-strategy-backtests-storage"
+  policy = data.aws_iam_policy_document.strategy_backtests_storage.json
 
   tags = local.tags
 }
@@ -956,10 +956,10 @@ data "archive_file" "admin_lambda" {
   output_path = "${path.module}/dist/admin-lambda.zip"
 }
 
-data "archive_file" "backtest_metrics_lambda" {
+data "archive_file" "strategy_backtests_lambda" {
   type        = "zip"
-  source_dir  = "${path.module}/../aws/lambdas/backtest-metrics"
-  output_path = "${path.module}/dist/backtest-metrics-lambda.zip"
+  source_dir  = "${path.module}/../aws/lambdas/strategy-backtests"
+  output_path = "${path.module}/dist/strategy-backtests-lambda.zip"
 }
 
 data "archive_file" "users_lambda" {
@@ -1025,8 +1025,8 @@ resource "aws_iam_role" "admin_lambda" {
   tags = local.tags
 }
 
-resource "aws_iam_role" "backtest_metrics_lambda" {
-  name               = "${local.name_prefix}-backtest-metrics-lambda"
+resource "aws_iam_role" "strategy_backtests_lambda" {
+  name               = "${local.name_prefix}-strategy-backtests-lambda"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 
   tags = local.tags
@@ -1124,14 +1124,14 @@ resource "aws_iam_role_policy_attachment" "admin_lambda_dynamodb" {
   policy_arn = aws_iam_policy.admin_dynamodb.arn
 }
 
-resource "aws_iam_role_policy_attachment" "backtest_metrics_lambda_basic_logs" {
-  role       = aws_iam_role.backtest_metrics_lambda.name
+resource "aws_iam_role_policy_attachment" "strategy_backtests_lambda_basic_logs" {
+  role       = aws_iam_role.strategy_backtests_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-resource "aws_iam_role_policy_attachment" "backtest_metrics_lambda_storage" {
-  role       = aws_iam_role.backtest_metrics_lambda.name
-  policy_arn = aws_iam_policy.backtest_metrics_storage.arn
+resource "aws_iam_role_policy_attachment" "strategy_backtests_lambda_storage" {
+  role       = aws_iam_role.strategy_backtests_lambda.name
+  policy_arn = aws_iam_policy.strategy_backtests_storage.arn
 }
 
 resource "aws_iam_role_policy_attachment" "users_lambda_basic_logs" {
@@ -1356,21 +1356,21 @@ resource "aws_lambda_function" "admin" {
   tags = local.tags
 }
 
-resource "aws_lambda_function" "backtest_metrics" {
-  function_name = "${local.name_prefix}-backtest-metrics"
-  role          = aws_iam_role.backtest_metrics_lambda.arn
+resource "aws_lambda_function" "strategy_backtests" {
+  function_name = "${local.name_prefix}-strategy-backtests"
+  role          = aws_iam_role.strategy_backtests_lambda.arn
   runtime       = "python3.12"
   handler       = "main.handler"
 
-  filename         = data.archive_file.backtest_metrics_lambda.output_path
-  source_code_hash = data.archive_file.backtest_metrics_lambda.output_base64sha256
+  filename         = data.archive_file.strategy_backtests_lambda.output_path
+  source_code_hash = data.archive_file.strategy_backtests_lambda.output_base64sha256
 
   layers = [aws_lambda_layer_version.wonderwords.arn]
 
   environment {
     variables = {
-      BACKTEST_METRICS_TABLE             = aws_dynamodb_table.backtest_metrics.name
-      BACKTESTS_BUCKET                   = aws_s3_bucket.backtest_metrics.bucket
+      STRATEGY_BACKTESTS_TABLE           = aws_dynamodb_table.strategy_backtests.name
+      BACKTESTS_BUCKET                   = aws_s3_bucket.strategy_backtests.bucket
       STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
       STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
@@ -1680,13 +1680,13 @@ resource "aws_lambda_permission" "allow_apigw_invoke_admin" {
 }
 
 # ------------------------------
-# API Gateway integration/routes for backtest_metrics lambda
+# API Gateway integration/routes for strategy_backtests lambda
 # ------------------------------
 
-resource "aws_apigatewayv2_integration" "backtest_metrics" {
+resource "aws_apigatewayv2_integration" "strategy_backtests" {
   api_id                 = aws_apigatewayv2_api.api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.backtest_metrics.invoke_arn
+  integration_uri        = aws_lambda_function.strategy_backtests.invoke_arn
   integration_method     = "POST"
   payload_format_version = "2.0"
 }
@@ -1694,7 +1694,7 @@ resource "aws_apigatewayv2_integration" "backtest_metrics" {
 resource "aws_apigatewayv2_route" "post_strategy_backtests_presign" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "POST /strategies/{id}/backtests/presign"
-  target             = "integrations/${aws_apigatewayv2_integration.backtest_metrics.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_backtests.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -1702,7 +1702,7 @@ resource "aws_apigatewayv2_route" "post_strategy_backtests_presign" {
 resource "aws_apigatewayv2_route" "get_strategy_backtests" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /strategies/{id}/backtests"
-  target             = "integrations/${aws_apigatewayv2_integration.backtest_metrics.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_backtests.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -1710,7 +1710,7 @@ resource "aws_apigatewayv2_route" "get_strategy_backtests" {
 resource "aws_apigatewayv2_route" "post_strategy_backtests" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "POST /strategies/{id}/backtests"
-  target             = "integrations/${aws_apigatewayv2_integration.backtest_metrics.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_backtests.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -1718,15 +1718,15 @@ resource "aws_apigatewayv2_route" "post_strategy_backtests" {
 resource "aws_apigatewayv2_route" "get_strategy_backtest_by_id" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /strategies/{id}/backtests/{backtestId}"
-  target             = "integrations/${aws_apigatewayv2_integration.backtest_metrics.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_backtests.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
-resource "aws_lambda_permission" "allow_apigw_invoke_backtest_metrics" {
+resource "aws_lambda_permission" "allow_apigw_invoke_strategy_backtests" {
   statement_id  = "AllowAPIGWInvokeBacktestMetrics"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.backtest_metrics.function_name
+  function_name = aws_lambda_function.strategy_backtests.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }

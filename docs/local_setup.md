@@ -51,7 +51,7 @@ python3 seed/main.py \
   --strategies-table "$(terraform output -raw strategies_table_name)" \
   --artifacts-table "$(terraform output -raw strategy_artifacts_table_name)" \
   --artifact-versions-table "$(terraform output -raw strategy_artifact_versions_table_name)" \
-  --backtest-metrics-table "$(terraform output -raw backtest_metrics_table_name)" \
+  --strategy-backtests-table "$(terraform output -raw strategy_backtests_table_name)" \
   --backtester-url "http://localhost:8005" \
   --users-table "$(terraform output -raw users_table_name)" \
   --admin-netid "YOUR_NETID" \

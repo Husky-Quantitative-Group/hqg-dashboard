@@ -20,7 +20,7 @@ variable "artifacts_bucket_name" {
 }
 
 variable "backtests_bucket_name" {
-  description = "Optional explicit name for the backtests bucket. Defaults to \"<project>-<env>-backtest-metrics\"."
+  description = "Optional explicit name for the backtests bucket. Defaults to \"<project>-<env>-strategy-backtests\"."
   type        = string
   default     = null
 }
@@ -61,8 +61,8 @@ variable "user_access_applications_table_name" {
   default     = null
 }
 
-variable "backtest_metrics_table_name" {
-  description = "Optional explicit name for the BacktestMetrics table. Defaults to \"<project>-<env>-backtest-metrics\"."
+variable "strategy_backtests_table_name" {
+  description = "Optional explicit name for the BacktestMetrics table. Defaults to \"<project>-<env>-strategy-backtests\"."
   type        = string
   default     = null
 }
