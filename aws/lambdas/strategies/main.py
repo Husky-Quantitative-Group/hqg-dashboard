@@ -334,6 +334,14 @@ def update_permissions(
         error = _apply_permission_changes(table, strategy_id, scope_body, mode)
         if error:
             return error
+        if scope == "write" and mode == "patch":
+            implied_read = _read_implied_changes(scope_body)
+            if implied_read:
+                error = _apply_permission_changes(
+                    READ_PERMISSIONS_DDB, strategy_id, implied_read, "patch"
+                )
+                if error:
+                    return error
 
     return _json(200, {"ok": True})
 
@@ -413,6 +421,18 @@ def _apply_permission_changes(
         return _json(500, {"message": "invalid mode"})
 
     return None
+
+
+def _read_implied_changes(scope_body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    implied: Dict[str, Any] = {}
+    if scope_body.get("public") is True:
+        implied["public"] = True
+    if scope_body.get("fund") is True:
+        implied["fund"] = True
+    add_users = scope_body.get("addUsers")
+    if isinstance(add_users, list) and add_users:
+        implied["addUsers"] = add_users
+    return implied or None
 
 
 # ----------------------------
@@ -582,21 +602,21 @@ def _get_roles_from_event(event: Dict[str, Any]) -> List[str]:
 
 def _has_read_permission(strategy_id: str, netid: str, roles: List[str]) -> bool:
     principal = _principal_for_user(netid)
-    resp = READ_PERMISSIONS_DDB.get_item(
-        Key={"strategy_id": strategy_id, "principal": principal}
-    )
-    if "Item" in resp:
-        return True
-    public_resp = READ_PERMISSIONS_DDB.get_item(
-        Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
-    )
-    if "Item" in public_resp:
-        return True
-    if "FUND" in roles:
-        fund_resp = READ_PERMISSIONS_DDB.get_item(
-            Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"}
+    for table in (READ_PERMISSIONS_DDB, WRITE_PERMISSIONS_DDB):
+        resp = table.get_item(Key={"strategy_id": strategy_id, "principal": principal})
+        if "Item" in resp:
+            return True
+        public_resp = table.get_item(
+            Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
         )
-        return "Item" in fund_resp
+        if "Item" in public_resp:
+            return True
+        if "FUND" in roles:
+            fund_resp = table.get_item(
+                Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"}
+            )
+            if "Item" in fund_resp:
+                return True
     return False
 
 
@@ -604,6 +624,17 @@ def _list_readable_strategy_ids(netid: str, roles: List[str]) -> List[str]:
     principals = [_principal_for_user(netid), "ROLE#PUBLIC"]
     if "FUND" in roles:
         principals.append("ROLE#FUND")
+    strategy_ids = _list_strategy_ids_for_principals(READ_PERMISSIONS_DDB, principals)
+    write_ids = _list_strategy_ids_for_principals(WRITE_PERMISSIONS_DDB, principals)
+    for sid in write_ids:
+        if sid not in strategy_ids:
+            strategy_ids.append(sid)
+    return strategy_ids
+
+
+def _list_strategy_ids_for_principals(
+    table, principals: List[str]
+) -> List[str]:
     strategy_ids: List[str] = []
     seen = set()
 
@@ -618,7 +649,7 @@ def _list_readable_strategy_ids(netid: str, roles: List[str]) -> List[str]:
             if last_key:
                 query_kwargs["ExclusiveStartKey"] = last_key
 
-            resp = READ_PERMISSIONS_DDB.query(**query_kwargs)
+            resp = table.query(**query_kwargs)
             for item in resp.get("Items", []):
                 sid = item.get("strategy_id")
                 if isinstance(sid, str) and sid not in seen:
