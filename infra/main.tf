@@ -1545,14 +1545,6 @@ resource "aws_apigatewayv2_route" "get_strategy_artifact_by_id" {
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
-resource "aws_apigatewayv2_route" "get_strategy_write_permissions" {
-  api_id             = aws_apigatewayv2_api.api.id
-  route_key          = "GET /strategies/{id}/permissions/write"
-  target             = "integrations/${aws_apigatewayv2_integration.get_strategy_artifacts.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
-}
-
 resource "aws_lambda_permission" "allow_apigw_invoke_strategy_artifacts" {
   statement_id  = "AllowAPIGWInvokeStrategyArtifacts"
   action        = "lambda:InvokeFunction"

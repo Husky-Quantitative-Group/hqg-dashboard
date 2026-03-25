@@ -26,10 +26,6 @@ def handler(event, context):
         body = json.loads(event.get("body") or "{}")
         return upload_artifacts(strategy_id, body, event)
 
-    if route == "GET /strategies/{id}/permissions/write":
-        strategy_id = event["pathParameters"]["id"]
-        return get_write_permission(strategy_id, event)
-
     if route == "GET /strategies/{id}/artifacts/{artifactId}":
         strategy_id = event["pathParameters"]["id"]
         artifact_id = event["pathParameters"]["artifactId"]
@@ -188,15 +184,6 @@ def upload_artifacts(strategy_id, body, event):
         return _json(500, {"message": f"Failed to upload artifacts: {exc}"})
 
     return _json(200, {"ok": True, "version": new_version, "artifacts": [f.get("artifactId") for f in files]})
-
-def get_write_permission(strategy_id, event):
-    netid = _get_netid_from_event(event)
-    if not netid:
-        return _json(401, {"message": "unauthorized"})
-
-    roles = _get_roles_from_event(event)
-    can_write = _has_write_permission(strategy_id, netid, roles)
-    return _json(200, {"canWrite": can_write})
 
 def _clean_decimals(data):
     if isinstance(data, list):
