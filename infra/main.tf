@@ -40,7 +40,7 @@ locals {
   strategy_artifact_versions_table        = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
   users_table_name                        = coalesce(var.users_table_name, "${local.name_prefix}-users")
   user_access_applications_table_name     = coalesce(var.user_access_applications_table_name, "${local.name_prefix}-user-access-applications")
-  strategy_backtests_table_name             = coalesce(var.strategy_backtests_table_name, "${local.name_prefix}-strategy-backtests")
+  strategy_backtests_table_name           = coalesce(var.strategy_backtests_table_name, "${local.name_prefix}-strategy-backtests")
   strategies_read_permissions_table_name  = coalesce(var.strategies_read_permissions_table_name, "${local.name_prefix}-strategies-read-permissions")
   strategies_write_permissions_table_name = coalesce(var.strategies_write_permissions_table_name, "${local.name_prefix}-strategies-write-permissions")
   counters_table_name                     = coalesce(var.counters_table_name, "${local.name_prefix}-counters")
