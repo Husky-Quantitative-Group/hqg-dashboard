@@ -229,7 +229,7 @@ export default function StrategyBacktest() {
             clearInterval(pollIntervalRef.current!);
             pollIntervalRef.current = null;
             setLatestBacktestData(null);
-            setLatestBacktestLogs([]);
+            setLatestBacktestLogs(job.logs ?? []);
             setLatestBacktestStrategyVersion(null);
             setLatestBacktestStrategyCode(null);
             setIsRunningBacktest(false);
@@ -918,10 +918,12 @@ function BacktestOrdersTable({ orders, logs, showPlaceholder, animatePlaceholder
           ))}
         </div>
 
-        {showPlaceholder ? (
+        {showPlaceholder && activeTab !== "logs" ? (
           <ExecutionPlaceholder animatePlaceholder={animatePlaceholder} />
         ) : activeTab === "logs" ? (
-          logs.length === 0 ? (
+          animatePlaceholder ? (
+            <ExecutionPlaceholder animatePlaceholder={true} />
+          ) : logs.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-4 py-8 text-center text-sm text-slate-400">
               No logs for this run.
             </div>
