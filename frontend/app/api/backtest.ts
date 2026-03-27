@@ -86,6 +86,7 @@ export type JobRecord = {
   completed_at?: string;
   result?: BacktestResponse;
   error?: string;
+  logs: string[];
 };
 
 export const submitBacktest = async (payload: BacktestRequest): Promise<string> => {
