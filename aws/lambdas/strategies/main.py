@@ -611,19 +611,18 @@ def _has_read_permission(strategy_id: str, netid: str, roles: List[str]) -> bool
         )
         if "Item" in public_resp:
             return True
-        if "FUND" in roles:
-            fund_resp = table.get_item(
-                Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"}
+        for role_principal in _role_principals(roles):
+            role_resp = table.get_item(
+                Key={"strategy_id": strategy_id, "principal": role_principal}
             )
-            if "Item" in fund_resp:
+            if "Item" in role_resp:
                 return True
     return False
 
 
 def _list_readable_strategy_ids(netid: str, roles: List[str]) -> List[str]:
     principals = [_principal_for_user(netid), "ROLE#PUBLIC"]
-    if "FUND" in roles:
-        principals.append("ROLE#FUND")
+    principals.extend(_role_principals(roles))
     strategy_ids = _list_strategy_ids_for_principals(READ_PERMISSIONS_DDB, principals)
     write_ids = _list_strategy_ids_for_principals(WRITE_PERMISSIONS_DDB, principals)
     for sid in write_ids:
@@ -661,6 +660,18 @@ def _list_strategy_ids_for_principals(
                 break
 
     return strategy_ids
+
+
+def _role_principals(roles: List[str]) -> List[str]:
+    principals: List[str] = []
+    for role in roles:
+        if not isinstance(role, str):
+            continue
+        role = role.strip()
+        if not role or role == "ADMIN":
+            continue
+        principals.append(f"ROLE#{role}")
+    return principals
 
 
 def _chunk(items: List[Dict[str, Any]], size: int) -> List[List[Dict[str, Any]]]:

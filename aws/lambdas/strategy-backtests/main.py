@@ -406,7 +406,15 @@ def _has_write_permission(strategy_id, netid, roles):
     public_resp = table.get_item(
         Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
     )
-    return "Item" in public_resp
+    if "Item" in public_resp:
+        return True
+    for role_principal in _role_principals(roles):
+        role_resp = table.get_item(
+            Key={"strategy_id": strategy_id, "principal": role_principal}
+        )
+        if "Item" in role_resp:
+            return True
+    return False
 
 def _has_read_permission(strategy_id, netid, roles):
     if not READ_PERMISSIONS_TABLE:
@@ -421,11 +429,12 @@ def _has_read_permission(strategy_id, netid, roles):
     )
     if "Item" in public_resp:
         return True
-    if "FUND" in roles:
-        fund_resp = table.get_item(
-            Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"}
+    for role_principal in _role_principals(roles):
+        role_resp = table.get_item(
+            Key={"strategy_id": strategy_id, "principal": role_principal}
         )
-        return "Item" in fund_resp
+        if "Item" in role_resp:
+            return True
     return False
 
 def _get_roles_from_event(event):
@@ -444,6 +453,18 @@ def _get_roles_from_event(event):
     else:
         roles = []
     return [str(role) for role in roles if isinstance(role, (str, int))]
+
+
+def _role_principals(roles):
+    principals = []
+    for role in roles:
+        if not isinstance(role, str):
+            continue
+        role = role.strip()
+        if not role or role == "ADMIN":
+            continue
+        principals.append(f"ROLE#{role}")
+    return principals
 
 def _ulid():
     ts_ms = int(time.time() * 1000)
