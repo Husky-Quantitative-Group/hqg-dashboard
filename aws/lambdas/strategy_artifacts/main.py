@@ -5,6 +5,12 @@ from decimal import Decimal
 import base64
 from datetime import datetime, timezone
 
+from hqg_permissions import (
+    get_roles_from_event,
+    has_read_permission,
+    has_write_permission,
+)
+
 s3 = boto3.client("s3")
 dynamo = boto3.resource("dynamodb")
 
@@ -19,7 +25,7 @@ def handler(event, context):
 
     if route == "GET /strategies/{id}/artifacts":
         strategy_id = event["pathParameters"]["id"]
-        return list_artifacts(strategy_id)
+        return list_artifacts(strategy_id, event)
 
     if route == "POST /strategies/{id}/artifacts":
         strategy_id = event["pathParameters"]["id"]
@@ -38,7 +44,17 @@ def handler(event, context):
 # Artifact operations
 # ----------------------------
 
-def list_artifacts(strategy_id):
+def list_artifacts(strategy_id, event):
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    roles = get_roles_from_event(event)
+    if "ADMIN" not in roles and not has_read_permission(
+        strategy_id, netid, roles, READ_PERMISSIONS_TABLE, WRITE_PERMISSIONS_TABLE
+    ):
+        return _json(403, {"message": "forbidden"})
+
     resp = ARTIFACTS_TABLE.query(
         KeyConditionExpression="strategy_id = :s",
         ExpressionAttributeValues={":s": strategy_id}
@@ -52,7 +68,7 @@ def download_artifact(strategy_id, artifact_id, event, max_bytes=1_000_000):
     if not netid:
         return _json(401, {"message": "unauthorized"})
 
-    roles = _get_roles_from_event(event)
+    roles = get_roles_from_event(event)
     if "ADMIN" not in roles and not _has_read_permission(strategy_id, netid, roles):
         return _json(403, {"message": "forbidden"})
 
@@ -114,8 +130,8 @@ def upload_artifacts(strategy_id, body, event):
     if not netid:
         return _json(401, {"message": "unauthorized"})
 
-    roles = _get_roles_from_event(event)
-    if not _has_write_permission(strategy_id, netid, roles):
+    roles = get_roles_from_event(event)
+    if not has_write_permission(strategy_id, netid, roles, WRITE_PERMISSIONS_TABLE):
         return _json(403, {"message": "forbidden"})
 
     strategy = STRATEGIES_TABLE.get_item(Key={"id": strategy_id}).get("Item")
@@ -218,78 +234,3 @@ def _get_netid_from_event(event):
     return netid or None
 
 
-def _has_write_permission(strategy_id, netid, roles):
-    if "ADMIN" in roles:
-        return True
-    principal = f"USER#{netid}"
-    resp = WRITE_PERMISSIONS_TABLE.get_item(
-        Key={"strategy_id": strategy_id, "principal": principal}
-    )
-    if "Item" in resp:
-        return True
-    public_resp = WRITE_PERMISSIONS_TABLE.get_item(
-        Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
-    )
-    if "Item" in public_resp:
-        return True
-    for role_principal in _role_principals(roles):
-        role_resp = WRITE_PERMISSIONS_TABLE.get_item(
-            Key={"strategy_id": strategy_id, "principal": role_principal}
-        )
-        if "Item" in role_resp:
-            return True
-    return False
-
-
-def _has_read_permission(strategy_id, netid, roles):
-    principal = f"USER#{netid}"
-    resp = READ_PERMISSIONS_TABLE.get_item(
-        Key={"strategy_id": strategy_id, "principal": principal}
-    )
-    if "Item" in resp:
-        return True
-    public_resp = READ_PERMISSIONS_TABLE.get_item(
-        Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
-    )
-    if "Item" in public_resp:
-        return True
-    for role_principal in _role_principals(roles):
-        role_resp = READ_PERMISSIONS_TABLE.get_item(
-            Key={"strategy_id": strategy_id, "principal": role_principal}
-        )
-        if "Item" in role_resp:
-            return True
-    return False
-
-
-def _get_roles_from_event(event):
-    request_context = event.get("requestContext") or {}
-    authorizer = request_context.get("authorizer") or {}
-
-    roles_raw = authorizer.get("roles")
-    if not roles_raw and isinstance(authorizer.get("lambda"), dict):
-        roles_raw = authorizer.get("lambda", {}).get("roles")
-
-    if isinstance(roles_raw, str):
-        try:
-            roles = json.loads(roles_raw)
-        except json.JSONDecodeError:
-            roles = []
-    elif isinstance(roles_raw, list):
-        roles = roles_raw
-    else:
-        roles = []
-
-    return [str(role) for role in roles if isinstance(role, (str, int))]
-
-
-def _role_principals(roles):
-    principals = []
-    for role in roles:
-        if not isinstance(role, str):
-            continue
-        role = role.strip()
-        if not role or role == "ADMIN":
-            continue
-        principals.append(f"ROLE#{role}")
-    return principals

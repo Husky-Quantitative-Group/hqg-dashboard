@@ -968,6 +968,12 @@ data "archive_file" "users_lambda" {
   output_path = "${path.module}/dist/users-lambda.zip"
 }
 
+data "archive_file" "strategy_permissions_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/strategy-permissions"
+  output_path = "${path.module}/dist/strategy-permissions-lambda.zip"
+}
+
 # ------------------------------
 # Lambda IAM roles and policies
 # ------------------------------
@@ -1034,6 +1040,13 @@ resource "aws_iam_role" "strategy_backtests_lambda" {
 
 resource "aws_iam_role" "users_lambda" {
   name               = "${local.name_prefix}-users-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = local.tags
+}
+
+resource "aws_iam_role" "strategy_permissions_lambda" {
+  name               = "${local.name_prefix}-strategy-permissions-lambda"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 
   tags = local.tags
@@ -1144,6 +1157,21 @@ resource "aws_iam_role_policy_attachment" "users_lambda_users_search" {
   policy_arn = aws_iam_policy.users_search.arn
 }
 
+resource "aws_iam_role_policy_attachment" "strategy_permissions_lambda_basic_logs" {
+  role       = aws_iam_role.strategy_permissions_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "strategy_permissions_lambda_storage" {
+  role       = aws_iam_role.strategy_permissions_lambda.name
+  policy_arn = aws_iam_policy.strategy_storage.arn
+}
+
+resource "aws_iam_role_policy_attachment" "strategy_permissions_lambda_users_search" {
+  role       = aws_iam_role.strategy_permissions_lambda.name
+  policy_arn = aws_iam_policy.users_search.arn
+}
+
 # ------------------------------
 # Lambda layers packaging
 # ------------------------------
@@ -1169,6 +1197,13 @@ resource "aws_lambda_layer_version" "wonderwords" {
   compatible_runtimes = ["python3.12"]
 }
 
+resource "aws_lambda_layer_version" "hqg_permissions" {
+  layer_name          = "${local.name_prefix}-hqg-permissions"
+  filename            = "${path.module}/../aws/lambda_layers/hqg_permissions/build/hqg-permissions-layer.zip"
+  source_code_hash    = filebase64sha256("${path.module}/../aws/lambda_layers/hqg_permissions/build/hqg-permissions-layer.zip")
+  compatible_runtimes = ["python3.12"]
+}
+
 # ------------------------------
 # Lambda deployment definitions
 # ------------------------------
@@ -1181,6 +1216,7 @@ resource "aws_lambda_function" "strategies" {
 
   filename         = data.archive_file.strategies_lambda.output_path
   source_code_hash = data.archive_file.strategies_lambda.output_base64sha256
+  layers           = [aws_lambda_layer_version.hqg_permissions.arn]
 
   environment {
     variables = {
@@ -1206,6 +1242,7 @@ resource "aws_lambda_function" "strategy_artifacts" {
 
   filename         = data.archive_file.strategy_artifacts_lambda.output_path
   source_code_hash = data.archive_file.strategy_artifacts_lambda.output_base64sha256
+  layers           = [aws_lambda_layer_version.hqg_permissions.arn]
 
   environment {
     variables = {
@@ -1365,7 +1402,10 @@ resource "aws_lambda_function" "strategy_backtests" {
   filename         = data.archive_file.strategy_backtests_lambda.output_path
   source_code_hash = data.archive_file.strategy_backtests_lambda.output_base64sha256
 
-  layers = [aws_lambda_layer_version.wonderwords.arn]
+  layers = [
+    aws_lambda_layer_version.wonderwords.arn,
+    aws_lambda_layer_version.hqg_permissions.arn,
+  ]
 
   environment {
     variables = {
@@ -1392,6 +1432,28 @@ resource "aws_lambda_function" "users_search" {
   environment {
     variables = {
       USERS_TABLE = aws_dynamodb_table.users.name
+    }
+  }
+
+  tags = local.tags
+}
+
+resource "aws_lambda_function" "strategy_permissions" {
+  function_name = "${local.name_prefix}-strategy-permissions"
+  role          = aws_iam_role.strategy_permissions_lambda.arn
+  runtime       = "python3.12"
+  handler       = "main.handler"
+
+  filename         = data.archive_file.strategy_permissions_lambda.output_path
+  source_code_hash = data.archive_file.strategy_permissions_lambda.output_base64sha256
+  layers           = [aws_lambda_layer_version.hqg_permissions.arn]
+
+  environment {
+    variables = {
+      STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+      STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
+      STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
+      USERS_TABLE                        = aws_dynamodb_table.users.name
     }
   }
 
@@ -1437,6 +1499,14 @@ resource "aws_apigatewayv2_integration" "users_search" {
   payload_format_version = "2.0"
 }
 
+resource "aws_apigatewayv2_integration" "strategy_permissions" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.strategy_permissions.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
 resource "aws_apigatewayv2_route" "get_strategies" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /strategies"
@@ -1464,7 +1534,7 @@ resource "aws_apigatewayv2_route" "get_strategy_by_id" {
 resource "aws_apigatewayv2_route" "get_strategy_permissions" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /strategies/{id}/permissions"
-  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_permissions.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -1472,7 +1542,7 @@ resource "aws_apigatewayv2_route" "get_strategy_permissions" {
 resource "aws_apigatewayv2_route" "patch_strategy_permissions" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "PATCH /strategies/{id}/permissions"
-  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_permissions.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -1480,7 +1550,7 @@ resource "aws_apigatewayv2_route" "patch_strategy_permissions" {
 resource "aws_apigatewayv2_route" "delete_strategy_permissions" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "DELETE /strategies/{id}/permissions"
-  target             = "integrations/${aws_apigatewayv2_integration.get_strategies.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_permissions.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -1505,6 +1575,14 @@ resource "aws_lambda_permission" "allow_apigw_invoke_users" {
   statement_id  = "AllowAPIGWInvokeUsers"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.users_search.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "allow_apigw_invoke_strategy_permissions" {
+  statement_id  = "AllowAPIGWInvokeStrategyPermissions"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.strategy_permissions.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }

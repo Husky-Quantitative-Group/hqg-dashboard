@@ -11,6 +11,11 @@ from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 
 from wonderwords import RandomWord
+from hqg_permissions import (
+    get_roles_from_event,
+    has_read_permission,
+    has_write_permission,
+)
 
 s3 = boto3.client("s3")
 dynamo = boto3.resource("dynamodb")
@@ -21,6 +26,8 @@ STRATEGY_BACKTESTS_TABLE = os.environ.get("STRATEGY_BACKTESTS_TABLE", "")
 WRITE_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_WRITE_PERMISSIONS_TABLE", "")
 READ_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_READ_PERMISSIONS_TABLE", "")
 STRATEGIES_TABLE = os.environ.get("STRATEGIES_TABLE", "")
+WRITE_PERMISSIONS_DDB = dynamo.Table(WRITE_PERMISSIONS_TABLE) if WRITE_PERMISSIONS_TABLE else None
+READ_PERMISSIONS_DDB = dynamo.Table(READ_PERMISSIONS_TABLE) if READ_PERMISSIONS_TABLE else None
 
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -47,7 +54,7 @@ def presign_backtest_upload(event):
     if isinstance(ctx, dict):
         return ctx
     strategy_id, netid = ctx
-    roles = _get_roles_from_event(event)
+    roles = get_roles_from_event(event)
     if not _has_write_permission(strategy_id, netid, roles):
         return _json(403, {"message": "forbidden"})
 
@@ -95,8 +102,10 @@ def list_backtest_runs(event):
     if isinstance(ctx, dict):
         return ctx
     strategy_id, netid = ctx
-    roles = _get_roles_from_event(event)
-    if "ADMIN" not in roles and not _has_read_permission(strategy_id, netid, roles):
+    roles = get_roles_from_event(event)
+    if "ADMIN" not in roles and not has_read_permission(
+        strategy_id, netid, roles, READ_PERMISSIONS_DDB, WRITE_PERMISSIONS_DDB
+    ):
         return _json(403, {"message": "forbidden"})
 
     query_params = event.get("queryStringParameters") or {}
@@ -146,8 +155,10 @@ def get_backtest_run(event):
     if isinstance(ctx, dict):
         return ctx
     strategy_id, netid = ctx
-    roles = _get_roles_from_event(event)
-    if "ADMIN" not in roles and not _has_read_permission(strategy_id, netid, roles):
+    roles = get_roles_from_event(event)
+    if "ADMIN" not in roles and not has_read_permission(
+        strategy_id, netid, roles, READ_PERMISSIONS_DDB, WRITE_PERMISSIONS_DDB
+    ):
         return _json(403, {"message": "forbidden"})
 
     run_id = (event.get("pathParameters") or {}).get("backtestId")
@@ -206,8 +217,10 @@ def dynamo_backtest_write(event):
     if isinstance(ctx, dict):
         return ctx
     strategy_id, netid = ctx
-    roles = _get_roles_from_event(event)
-    if not _has_write_permission(strategy_id, netid, roles):
+    roles = get_roles_from_event(event)
+    if not WRITE_PERMISSIONS_DDB or not has_write_permission(
+        strategy_id, netid, roles, WRITE_PERMISSIONS_DDB
+    ):
         return _json(403, {"message": "forbidden"})
 
     try:
@@ -393,78 +406,6 @@ def _require_strategy_context(event, *, require_table=False, require_bucket=Fals
 
     return strategy_id, netid
 
-def _has_write_permission(strategy_id, netid, roles):
-    if "ADMIN" in roles:
-        return True
-    if not WRITE_PERMISSIONS_TABLE:
-        return False
-    principal = f"USER#{netid}"
-    table = dynamo.Table(WRITE_PERMISSIONS_TABLE)
-    resp = table.get_item(Key={"strategy_id": strategy_id, "principal": principal})
-    if "Item" in resp:
-        return True
-    public_resp = table.get_item(
-        Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
-    )
-    if "Item" in public_resp:
-        return True
-    for role_principal in _role_principals(roles):
-        role_resp = table.get_item(
-            Key={"strategy_id": strategy_id, "principal": role_principal}
-        )
-        if "Item" in role_resp:
-            return True
-    return False
-
-def _has_read_permission(strategy_id, netid, roles):
-    if not READ_PERMISSIONS_TABLE:
-        return False
-    principal = f"USER#{netid}"
-    table = dynamo.Table(READ_PERMISSIONS_TABLE)
-    resp = table.get_item(Key={"strategy_id": strategy_id, "principal": principal})
-    if "Item" in resp:
-        return True
-    public_resp = table.get_item(
-        Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"}
-    )
-    if "Item" in public_resp:
-        return True
-    for role_principal in _role_principals(roles):
-        role_resp = table.get_item(
-            Key={"strategy_id": strategy_id, "principal": role_principal}
-        )
-        if "Item" in role_resp:
-            return True
-    return False
-
-def _get_roles_from_event(event):
-    request_context = event.get("requestContext") or {}
-    authorizer = request_context.get("authorizer") or {}
-    roles_raw = authorizer.get("roles")
-    if not roles_raw and isinstance(authorizer.get("lambda"), dict):
-        roles_raw = authorizer.get("lambda", {}).get("roles")
-    if isinstance(roles_raw, str):
-        try:
-            roles = json.loads(roles_raw)
-        except Exception:
-            roles = []
-    elif isinstance(roles_raw, list):
-        roles = roles_raw
-    else:
-        roles = []
-    return [str(role) for role in roles if isinstance(role, (str, int))]
-
-
-def _role_principals(roles):
-    principals = []
-    for role in roles:
-        if not isinstance(role, str):
-            continue
-        role = role.strip()
-        if not role or role == "ADMIN":
-            continue
-        principals.append(f"ROLE#{role}")
-    return principals
 
 def _ulid():
     ts_ms = int(time.time() * 1000)
