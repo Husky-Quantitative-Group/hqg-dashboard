@@ -6,8 +6,6 @@ LAYERS_ROOT="$REPO_ROOT/aws/lambda_layers"
 
 for layer_dir in "$LAYERS_ROOT"/*; do
   [ -d "$layer_dir" ] || continue
-  [ -f "$layer_dir/requirements.txt" ] || continue
-
   layer_name="$(basename "$layer_dir")"
   build_dir="$layer_dir/build"
   py_dir="$build_dir/python"
@@ -18,16 +16,23 @@ for layer_dir in "$LAYERS_ROOT"/*; do
   rm -rf "$build_dir"
   mkdir -p "$py_dir"
 
-  if [[ "$layer_name" == "cryptography" ]]; then
-    python3 -m pip install \
-      --platform manylinux2014_x86_64 \
-      --implementation cp \
-      --python-version 312 \
-      --only-binary=:all: \
-      -r "$layer_dir/requirements.txt" \
-      -t "$py_dir"
+  if [[ -f "$layer_dir/requirements.txt" ]]; then
+    if [[ "$layer_name" == "cryptography" ]]; then
+      python3 -m pip install \
+        --platform manylinux2014_x86_64 \
+        --implementation cp \
+        --python-version 312 \
+        --only-binary=:all: \
+        -r "$layer_dir/requirements.txt" \
+        -t "$py_dir"
+    else
+      python3 -m pip install -r "$layer_dir/requirements.txt" -t "$py_dir"
+    fi
+  elif [[ -d "$layer_dir/python" ]]; then
+    cp -R "$layer_dir/python/." "$py_dir/"
   else
-    python3 -m pip install -r "$layer_dir/requirements.txt" -t "$py_dir"
+    echo "Skipping layer without requirements.txt or python/: $layer_name"
+    continue
   fi
   (cd "$build_dir" && zip -r "${layer_name}-layer.zip" python >/dev/null)
 
