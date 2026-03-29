@@ -9,7 +9,8 @@ for layer_dir in "$LAYERS_ROOT"/*; do
   layer_name="$(basename "$layer_dir")"
   build_dir="$layer_dir/build"
   py_dir="$build_dir/python"
-  zip_path="$build_dir/${layer_name}-layer.zip"
+  zip_base="${layer_name//_/-}"
+  zip_path="$build_dir/${zip_base}-layer.zip"
 
   echo "Building layer: $layer_name"
 
@@ -34,7 +35,7 @@ for layer_dir in "$LAYERS_ROOT"/*; do
     echo "Skipping layer without requirements.txt or python/: $layer_name"
     continue
   fi
-  (cd "$build_dir" && zip -r "${layer_name}-layer.zip" python >/dev/null)
+  (cd "$build_dir" && zip -r "${zip_base}-layer.zip" python >/dev/null)
 
   echo "  -> $zip_path"
 done
