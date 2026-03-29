@@ -97,6 +97,7 @@ type StrategyEquityChartProps = {
 
 type BacktestOrdersTableProps = {
   orders: BacktestOrder[];
+  logs: string[];
   showPlaceholder: boolean;
   animatePlaceholder: boolean;
 };
@@ -159,6 +160,7 @@ export default function StrategyBacktest() {
   } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [isSavingBacktest, setIsSavingBacktest] = useState(false);
+  const [latestBacktestLogs, setLatestBacktestLogs] = useState<string[]>([]);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -197,6 +199,7 @@ export default function StrategyBacktest() {
     setActiveBacktestSource("live");
     setActiveSavedRunId(null);
     setLatestBacktestData(null);
+    setLatestBacktestLogs([]);
     setLatestBacktestStrategyCode(strategyCode);
     setLatestBacktestStrategyVersion(
       savedEntrypointContent !== null && strategyCode === savedEntrypointContent ? strategy.current_version ?? null : null
@@ -216,11 +219,11 @@ export default function StrategyBacktest() {
       pollIntervalRef.current = setInterval(async () => {
         try {
           const job = await getBacktestJob(jobId);
-
           if (job.status === "COMPLETED") {
             clearInterval(pollIntervalRef.current!);
             pollIntervalRef.current = null;
             setLatestBacktestData(job.result!);
+            setLatestBacktestLogs(job.logs ?? []);
             setIsRunningBacktest(false);
             addToast("Backtest finished", "success");
             console.log("[Backtest] Completed:", job);
@@ -228,6 +231,7 @@ export default function StrategyBacktest() {
             clearInterval(pollIntervalRef.current!);
             pollIntervalRef.current = null;
             setLatestBacktestData(null);
+            setLatestBacktestLogs(job.logs ?? []);
             setLatestBacktestStrategyVersion(null);
             setLatestBacktestStrategyCode(null);
             setIsRunningBacktest(false);
@@ -239,6 +243,7 @@ export default function StrategyBacktest() {
           clearInterval(pollIntervalRef.current!);
           pollIntervalRef.current = null;
           setLatestBacktestData(null);
+          setLatestBacktestLogs([]);
           setLatestBacktestStrategyVersion(null);
           setLatestBacktestStrategyCode(null);
           setIsRunningBacktest(false);
@@ -248,6 +253,7 @@ export default function StrategyBacktest() {
       }, POLL_INTERVAL_MS);
     } catch (submitError) {
       setLatestBacktestData(null);
+      setLatestBacktestLogs([]);
       setLatestBacktestStrategyVersion(null);
       setLatestBacktestStrategyCode(null);
       setIsRunningBacktest(false);
@@ -440,7 +446,7 @@ export default function StrategyBacktest() {
           </div>
         </div>
 
-        <BacktestOrdersTable orders={orders} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
+        <BacktestOrdersTable orders={orders} logs={latestBacktestLogs} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
       </div>
     </SkeletonTheme>
   );
@@ -842,7 +848,7 @@ function StrategyEquityChart({
   );
 }
 
-function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: BacktestOrdersTableProps) {
+function BacktestOrdersTable({ orders, logs, showPlaceholder, animatePlaceholder }: BacktestOrdersTableProps) {
   const [activeTab, setActiveTab] = useState<ExecutionPanelTab>("orders");
   const [page, setPage] = useState(1);
   const [pageInput, setPageInput] = useState("1");
@@ -870,6 +876,11 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
   const pageStart = (currentPage - 1) * pageSize;
   const pageEnd = Math.min(pageStart + pageSize, filteredOrders.length);
   const visibleOrders = filteredOrders.slice(pageStart, pageEnd);
+
+  const totalLogPages = Math.max(1, Math.ceil(logs.length / pageSize));
+  const currentLogPage = Math.min(page, totalLogPages);
+  const logPageStart = (currentLogPage - 1) * pageSize;
+  const visibleLogs = logs.slice(logPageStart, logPageStart + pageSize);
 
   useEffect(() => {
     setPageInput(String(currentPage));
@@ -914,13 +925,74 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
           ))}
         </div>
 
-        {showPlaceholder ? (
+        {showPlaceholder && activeTab !== "logs" ? (
           <ExecutionPlaceholder animatePlaceholder={animatePlaceholder} />
-        ) : activeTab !== "orders" ? (
-          <ExecutionPlaceholder
-            animatePlaceholder={false}
-            label={activeTab === "logs" ? "Logs panel coming soon." : "Warnings panel coming soon."}
-          />
+        ) : activeTab === "logs" ? (
+          animatePlaceholder ? (
+            <ExecutionPlaceholder animatePlaceholder={true} />
+          ) : logs.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-4 py-8 text-center text-sm text-slate-400">
+              No logs for this run.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <ExecutionFilters pageSize={pageSize} onPageSizeChange={setPageSize} />
+
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
+                <div>{`${logPageStart + 1}–${logPageStart + visibleLogs.length} of ${logs.length} entries`}</div>
+                <div>{`${logs.length} total entries`}</div>
+              </div>
+
+              <div className="space-y-1 font-mono text-xs text-slate-300">
+                {visibleLogs.map((line, i) => (
+                  <div key={logPageStart + i} className="rounded-lg bg-slate-900/60 px-3 py-1.5 leading-relaxed">
+                    {line}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+                  <span>Page</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={pageInput}
+                    onChange={(event) => setPageInput(event.target.value.replace(/[^\d]/g, ""))}
+                    onBlur={applyPageInput}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        applyPageInput();
+                      }
+                    }}
+                    className="w-16 rounded-lg border border-slate-700 bg-slate-900/60 px-2 py-1.5 text-center text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+                  />
+                  <span>of {totalLogPages}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={currentLogPage === 1}
+                    className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage((current) => Math.min(totalLogPages, current + 1))}
+                    disabled={currentLogPage === totalLogPages}
+                    className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        ) : activeTab === "warnings" ? (
+          <ExecutionPlaceholder animatePlaceholder={false} label="Warnings panel coming soon." />
         ) : filteredOrders.length === 0 ? (
           <div className="space-y-4">
             <ExecutionFilters
@@ -1029,47 +1101,51 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
 }
 
 type ExecutionFiltersProps = {
-  symbolFilter: string;
-  actionFilter: "all" | "buy" | "sell";
   pageSize: number;
-  onSymbolFilterChange: (value: string) => void;
-  onActionFilterChange: (value: "all" | "buy" | "sell") => void;
   onPageSizeChange: (value: number) => void;
+  symbolFilter?: string;
+  actionFilter?: "all" | "buy" | "sell";
+  onSymbolFilterChange?: (value: string) => void;
+  onActionFilterChange?: (value: "all" | "buy" | "sell") => void;
 };
 
 function ExecutionFilters({
+  pageSize,
+  onPageSizeChange,
   symbolFilter,
   actionFilter,
-  pageSize,
   onSymbolFilterChange,
   onActionFilterChange,
-  onPageSizeChange,
 }: ExecutionFiltersProps) {
   return (
     <div className="flex flex-wrap items-end gap-3 border-y border-slate-800 py-4">
-      <label className="space-y-1">
-        <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Ticker</span>
-        <input
-          type="text"
-          value={symbolFilter}
-          onChange={(event) => onSymbolFilterChange(event.target.value)}
-          placeholder="Filter symbol"
-          className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-fuchsia-500 focus:outline-none"
-        />
-      </label>
+      {symbolFilter !== undefined && onSymbolFilterChange !== undefined && (
+        <label className="space-y-1">
+          <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Ticker</span>
+          <input
+            type="text"
+            value={symbolFilter}
+            onChange={(event) => onSymbolFilterChange(event.target.value)}
+            placeholder="Filter symbol"
+            className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-fuchsia-500 focus:outline-none"
+          />
+        </label>
+      )}
 
-      <label className="space-y-1">
-        <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Side</span>
-        <select
-          value={actionFilter}
-          onChange={(event) => onActionFilterChange(event.target.value as "all" | "buy" | "sell")}
-          className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
-        >
-          <option value="all">All</option>
-          <option value="buy">Buy</option>
-          <option value="sell">Sell</option>
-        </select>
-      </label>
+      {actionFilter !== undefined && onActionFilterChange !== undefined && (
+        <label className="space-y-1">
+          <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Side</span>
+          <select
+            value={actionFilter}
+            onChange={(event) => onActionFilterChange(event.target.value as "all" | "buy" | "sell")}
+            className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+          >
+            <option value="all">All</option>
+            <option value="buy">Buy</option>
+            <option value="sell">Sell</option>
+          </select>
+        </label>
+      )}
 
       <label className="space-y-1">
         <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Show</span>
