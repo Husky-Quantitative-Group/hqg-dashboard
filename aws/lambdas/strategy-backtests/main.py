@@ -55,7 +55,9 @@ def presign_backtest_upload(event):
         return ctx
     strategy_id, netid = ctx
     roles = get_roles_from_event(event)
-    if not _has_write_permission(strategy_id, netid, roles):
+    if not WRITE_PERMISSIONS_DDB or not has_write_permission(
+        strategy_id, netid, roles, WRITE_PERMISSIONS_DDB
+    ):
         return _json(403, {"message": "forbidden"})
 
     run_id = _ulid()
