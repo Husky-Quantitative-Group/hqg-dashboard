@@ -69,7 +69,9 @@ def download_artifact(strategy_id, artifact_id, event, max_bytes=1_000_000):
         return _json(401, {"message": "unauthorized"})
 
     roles = get_roles_from_event(event)
-    if "ADMIN" not in roles and not _has_read_permission(strategy_id, netid, roles):
+    if "ADMIN" not in roles and not has_read_permission(
+        strategy_id, netid, roles, READ_PERMISSIONS_TABLE, WRITE_PERMISSIONS_TABLE
+    ):
         return _json(403, {"message": "forbidden"})
 
     artifact = ARTIFACTS_TABLE.get_item(Key={"strategy_id": strategy_id, "artifact_id": artifact_id}).get("Item")
@@ -232,5 +234,4 @@ def _get_netid_from_event(event):
 
     netid = netid.strip()
     return netid or None
-
 
