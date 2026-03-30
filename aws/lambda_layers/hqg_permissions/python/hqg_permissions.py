@@ -36,6 +36,8 @@ def role_principals(roles: Iterable[str]) -> List[str]:
 
 
 def has_read_permission(strategy_id: str, netid: str, roles, read_table, write_table) -> bool:
+    if "ADMIN" in roles:
+        return True
     principal = f"USER#{netid}"
     for table in (read_table, write_table):
         resp = table.get_item(Key={"strategy_id": strategy_id, "principal": principal})
@@ -56,6 +58,8 @@ def has_read_permission(strategy_id: str, netid: str, roles, read_table, write_t
 
 
 def has_write_permission(strategy_id: str, netid: str, roles, write_table) -> bool:
+    if "ADMIN" in roles:
+        return True
     principal = f"USER#{netid}"
     resp = write_table.get_item(Key={"strategy_id": strategy_id, "principal": principal})
     if "Item" in resp:

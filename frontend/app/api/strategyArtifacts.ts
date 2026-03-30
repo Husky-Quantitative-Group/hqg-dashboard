@@ -41,9 +41,15 @@ export const uploadStrategyArtifacts = async (
 export const fetchStrategyWriteAccess = async (
   strategyId: string | number
 ): Promise<boolean> => {
-  const response = await coreApi.get<{ write?: { public?: boolean; fund?: boolean; users?: Array<{ netid?: string }> } }>(
-    `/strategies/${strategyId}/permissions`
-  );
+  const response = await coreApi.get<{
+    canWrite?: boolean;
+    write?: { public?: boolean; fund?: boolean; users?: Array<{ netid?: string }> };
+  }>(`/strategies/${strategyId}/permissions`);
+
+  if (typeof response.data.canWrite === "boolean") {
+    return response.data.canWrite;
+  }
+
   const write = response.data.write;
   if (!write) {
     return false;

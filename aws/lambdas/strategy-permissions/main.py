@@ -5,7 +5,11 @@ from typing import Any, Dict, List, Optional
 import boto3
 from boto3.dynamodb.conditions import Key
 
-from hqg_permissions import get_roles_from_event, has_read_permission
+from hqg_permissions import (
+    get_roles_from_event,
+    has_read_permission,
+    has_write_permission,
+)
 
 
 dynamo = boto3.resource("dynamodb")
@@ -50,10 +54,12 @@ def get_permissions(strategy_id: Optional[str], event: Dict[str, Any]) -> Dict[s
 
     roles = get_roles_from_event(event)
     owner = strategy.get("owner")
-    can_manage = "ADMIN" in roles or (owner and owner == netid)
-    if not can_manage and not has_read_permission(
+    can_read = has_read_permission(
         strategy_id, netid, roles, READ_PERMISSIONS_DDB, WRITE_PERMISSIONS_DDB
-    ):
+    )
+    can_write = has_write_permission(strategy_id, netid, roles, WRITE_PERMISSIONS_DDB)
+    can_manage = "ADMIN" in roles or (owner and owner == netid)
+    if not can_manage and not can_read:
         return _json(403, {"message": "forbidden"})
 
     return _json(
@@ -61,6 +67,8 @@ def get_permissions(strategy_id: Optional[str], event: Dict[str, Any]) -> Dict[s
         {
             "read": _permission_snapshot(READ_PERMISSIONS_DDB, strategy_id),
             "write": _permission_snapshot(WRITE_PERMISSIONS_DDB, strategy_id),
+            "canRead": can_read,
+            "canWrite": can_write,
         },
     )
 
