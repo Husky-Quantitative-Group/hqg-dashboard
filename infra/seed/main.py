@@ -58,6 +58,7 @@ DESCRIPTION_MAX_CHARS = 75
 DEFAULT_BACKTEST_START_DATE = "2020-01-03"
 DEFAULT_BACKTEST_END_DATE = "2024-12-31"
 DEFAULT_BACKTEST_INITIAL_CAPITAL = 100000.0
+SEEDED_STRATEGY_TIMESTAMP = "2026-03-06T12:00:00-05:00"
 
 BACKTEST_POLL_INTERVAL_SECONDS = 2.0
 BACKTEST_POLL_TIMEOUT_SECONDS = 900
@@ -679,8 +680,8 @@ def seed_tables(
         "owner_display": owner_display,
         "entrypoint": entrypoint,
         "current_version": VERSION,
-        "created_at": now,
-        "updated_at": now,
+        "created_at": SEEDED_STRATEGY_TIMESTAMP,
+        "updated_at": SEEDED_STRATEGY_TIMESTAMP,
         "description": description,
     }
     strategies.put_item(Item=strategy_item)
