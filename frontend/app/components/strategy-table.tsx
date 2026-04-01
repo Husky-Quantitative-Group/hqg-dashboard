@@ -1,4 +1,3 @@
-import React, { useMemo } from "react";
 import { Link } from "react-router-dom";
 import type { Strategy } from "../api/strategies";
 
@@ -11,19 +10,6 @@ export default function StrategyTable({
   strategies,
   isLoading = false,
 }: StrategyTableProps) {
-  const sortedStrategies = useMemo(
-    () =>
-      [...strategies].sort((a, b) => {
-        const aId = Number(a.id);
-        const bId = Number(b.id);
-        if (Number.isNaN(aId) || Number.isNaN(bId)) {
-          return String(a.id).localeCompare(String(b.id));
-        }
-        return aId - bId;
-      }),
-    [strategies]
-  );
-
   const formatDate = (value?: string) => {
     if (!value) return "—";
     const date = new Date(value);
@@ -98,18 +84,20 @@ export default function StrategyTable({
               </td>
             </tr>
           ) : (
-            sortedStrategies.map((strategy, index) => (
-              <tr
-                key={strategy.id}
-                className={`border-b border-slate-800 hover:bg-slate-600/50 transition-colors ${
-                  index % 2 === 0 ? "bg-slate-950/80" : "bg-slate-900/80"
-                }`}
-              >
+            strategies.map((strategy, index) => {
+              const ownerLabel = strategy.owner_display ?? strategy.owner ?? "—";
+              return (
+                <tr
+                  key={strategy.id}
+                  className={`border-b border-slate-800 hover:bg-slate-600/50 transition-colors ${
+                    index % 2 === 0 ? "bg-slate-950/80" : "bg-slate-900/80"
+                  }`}
+                >
                 <td className="py-4 px-4 text-gray-300 font-mono text-xs">
                   STR-{strategy.id}
                 </td>
                 <td className="py-4 px-4 align-middle">
-                  <div className="flex h-full flex-col items-center justify-center text-center">
+                  <div className="flex h-full items-center gap-2">
                     <Link to={`/strategies/${strategy.id}`} className="text-white font-medium hover:underline">
                       {strategy.name}
                     </Link>
@@ -120,7 +108,7 @@ export default function StrategyTable({
                 </td>
                 <td className="py-4 px-4">
                   <div className="text-white font-medium">
-                    {strategy.owner ?? "—"}
+                    {ownerLabel}
                   </div>
                 </td>
                 <td className="py-4 px-4">
@@ -153,8 +141,9 @@ export default function StrategyTable({
                 <td className="py-4 px-4 text-gray-200 font-mono text-sm">
                   {formatPercent(strategy.metrics?.annualized_return)}
                 </td>
-              </tr>
-            ))
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

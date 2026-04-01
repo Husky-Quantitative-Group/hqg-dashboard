@@ -62,11 +62,14 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     if not isinstance(roles, list):
         roles = [roles]
 
+    display_name = user.get("full_name") or netid
+
     return {
         "isAuthorized": True,
         "context": {
             "netid": netid,
             "roles": json.dumps(roles),
+            "display_name": str(display_name),
         },
     }
 

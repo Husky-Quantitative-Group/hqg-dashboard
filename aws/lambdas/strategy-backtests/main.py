@@ -11,14 +11,23 @@ from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 
 from wonderwords import RandomWord
+from hqg_permissions import (
+    get_roles_from_event,
+    has_read_permission,
+    has_write_permission,
+)
 
 s3 = boto3.client("s3")
 dynamo = boto3.resource("dynamodb")
 _WORD_GENERATOR = RandomWord()
 
 BACKTESTS_BUCKET = os.environ.get("BACKTESTS_BUCKET", "")
-BACKTEST_METRICS_TABLE = os.environ.get("BACKTEST_METRICS_TABLE", "")
+STRATEGY_BACKTESTS_TABLE = os.environ.get("STRATEGY_BACKTESTS_TABLE", "")
+WRITE_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_WRITE_PERMISSIONS_TABLE", "")
+READ_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_READ_PERMISSIONS_TABLE", "")
 STRATEGIES_TABLE = os.environ.get("STRATEGIES_TABLE", "")
+WRITE_PERMISSIONS_DDB = dynamo.Table(WRITE_PERMISSIONS_TABLE) if WRITE_PERMISSIONS_TABLE else None
+READ_PERMISSIONS_DDB = dynamo.Table(READ_PERMISSIONS_TABLE) if READ_PERMISSIONS_TABLE else None
 
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -45,6 +54,11 @@ def presign_backtest_upload(event):
     if isinstance(ctx, dict):
         return ctx
     strategy_id, netid = ctx
+    roles = get_roles_from_event(event)
+    if not WRITE_PERMISSIONS_DDB or not has_write_permission(
+        strategy_id, netid, roles, WRITE_PERMISSIONS_DDB
+    ):
+        return _json(403, {"message": "forbidden"})
 
     run_id = _ulid()
     key = f"strategies/{strategy_id}/runs/{run_id}/run.json.gz"
@@ -89,7 +103,12 @@ def list_backtest_runs(event):
     ctx = _require_strategy_context(event, require_table=True)
     if isinstance(ctx, dict):
         return ctx
-    strategy_id, _netid = ctx
+    strategy_id, netid = ctx
+    roles = get_roles_from_event(event)
+    if "ADMIN" not in roles and not has_read_permission(
+        strategy_id, netid, roles, READ_PERMISSIONS_DDB, WRITE_PERMISSIONS_DDB
+    ):
+        return _json(403, {"message": "forbidden"})
 
     query_params = event.get("queryStringParameters") or {}
     try:
@@ -106,7 +125,7 @@ def list_backtest_runs(event):
         except Exception:
             return _json(400, {"message": "invalid cursor"})
 
-    table = dynamo.Table(BACKTEST_METRICS_TABLE)
+    table = dynamo.Table(STRATEGY_BACKTESTS_TABLE)
     try:
         query_kwargs = {
             "KeyConditionExpression": Key("strategy_id").eq(strategy_id),
@@ -137,13 +156,18 @@ def get_backtest_run(event):
     ctx = _require_strategy_context(event, require_table=True, require_bucket=True)
     if isinstance(ctx, dict):
         return ctx
-    strategy_id, _netid = ctx
+    strategy_id, netid = ctx
+    roles = get_roles_from_event(event)
+    if "ADMIN" not in roles and not has_read_permission(
+        strategy_id, netid, roles, READ_PERMISSIONS_DDB, WRITE_PERMISSIONS_DDB
+    ):
+        return _json(403, {"message": "forbidden"})
 
     run_id = (event.get("pathParameters") or {}).get("backtestId")
     if not run_id:
         return _json(400, {"message": "backtestId is required"})
 
-    table = dynamo.Table(BACKTEST_METRICS_TABLE)
+    table = dynamo.Table(STRATEGY_BACKTESTS_TABLE)
     try:
         resp = table.get_item(Key={"strategy_id": strategy_id, "run_id": run_id})
     except ClientError as exc:
@@ -195,6 +219,11 @@ def dynamo_backtest_write(event):
     if isinstance(ctx, dict):
         return ctx
     strategy_id, netid = ctx
+    roles = get_roles_from_event(event)
+    if not WRITE_PERMISSIONS_DDB or not has_write_permission(
+        strategy_id, netid, roles, WRITE_PERMISSIONS_DDB
+    ):
+        return _json(403, {"message": "forbidden"})
 
     try:
         body = json.loads(event.get("body") or "{}")
@@ -228,7 +257,7 @@ def dynamo_backtest_write(event):
     if not normalized_start_date or not normalized_end_date:
         return _json(400, {"message": "backtest_params.start_date and end_date must be valid dates"})
 
-    table = dynamo.Table(BACKTEST_METRICS_TABLE)
+    table = dynamo.Table(STRATEGY_BACKTESTS_TABLE)
     try:
         strategy_runs = _list_strategy_runs(table, strategy_id)
         duplicate_item = _find_duplicate_run(
@@ -362,8 +391,8 @@ def _netid_from_authorizer(event):
     return None
 
 def _require_strategy_context(event, *, require_table=False, require_bucket=False, require_strategies_table=False):
-    if require_table and not BACKTEST_METRICS_TABLE:
-        return _json(500, {"message": "BACKTEST_METRICS_TABLE is not configured"})
+    if require_table and not STRATEGY_BACKTESTS_TABLE:
+        return _json(500, {"message": "STRATEGY_BACKTESTS_TABLE is not configured"})
     if require_bucket and not BACKTESTS_BUCKET:
         return _json(500, {"message": "BACKTESTS_BUCKET is not configured"})
     if require_strategies_table and not STRATEGIES_TABLE:
@@ -378,6 +407,7 @@ def _require_strategy_context(event, *, require_table=False, require_bucket=Fals
         return _json(401, {"message": "unauthorized"})
 
     return strategy_id, netid
+
 
 def _ulid():
     ts_ms = int(time.time() * 1000)

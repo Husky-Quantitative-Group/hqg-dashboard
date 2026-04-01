@@ -98,6 +98,7 @@ def _patch_user(netid: str | None, body: Dict[str, Any]) -> Dict[str, Any]:
 
     allowed_fields = {
         "full_name",
+        "full_name_lower",
         "uconn_email",
         "discord_username",
         "linkedin_url",
@@ -122,6 +123,13 @@ def _patch_user(netid: str | None, body: Dict[str, Any]) -> Dict[str, Any]:
     update_parts: List[str] = []
     expr_names: Dict[str, str] = {}
     expr_values: Dict[str, Any] = {}
+
+    if "full_name" in body:
+        full_name_value = body.get("full_name")
+        if isinstance(full_name_value, str) and full_name_value.strip():
+            body["full_name_lower"] = full_name_value.strip().lower()
+        else:
+            body.pop("full_name_lower", None)
 
     for idx, (key, value) in enumerate(body.items()):
         name_key = f"#k{idx}"
@@ -187,9 +195,10 @@ def _approve_access_request(netid: str | None, decision_notes: str, decided_by: 
 
     roles = ["PUBLIC"]
 
+    full_name = request_item.get("full_name")
     user_item = {
         "netid": netid,
-        "full_name": request_item.get("full_name"),
+        "full_name": full_name,
         "discord_username": request_item.get("discord_username"),
         "linkedin_url": request_item.get("linkedin_url"),
         "github_url": request_item.get("github_url"),
@@ -197,7 +206,10 @@ def _approve_access_request(netid: str | None, decision_notes: str, decided_by: 
         "joined_at": decided_at,
         "roles": roles,
         "is_banned": False,
+        "search_pk": "USER",
     }
+    if isinstance(full_name, str) and full_name.strip():
+        user_item["full_name_lower"] = full_name.strip().lower()
 
     try:
         dynamo.meta.client.transact_write_items(

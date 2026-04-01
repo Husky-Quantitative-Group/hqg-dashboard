@@ -90,6 +90,7 @@ type StrategyEquityChartProps = {
   isSaveDisabled: boolean;
   saveDisabledReason?: string;
   isViewingSaved: boolean;
+  isWriteForbidden: boolean;
   showPlaceholder: boolean;
   animatePlaceholder: boolean;
 };
@@ -155,6 +156,7 @@ export default function StrategyBacktest() {
     activeBacktestSource,
     setActiveBacktestSource,
     setActiveSavedRunId,
+    isWriteForbidden,
   } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [isSavingBacktest, setIsSavingBacktest] = useState(false);
@@ -263,6 +265,10 @@ export default function StrategyBacktest() {
 
   const handleSaveResults = async () => {
     if (isSavingBacktest) return;
+    if (isWriteForbidden) {
+      addToast("You do not have write access to save results.", "warning");
+      return;
+    }
     if (!backtestData) {
       addToast("Run a backtest before saving.", "warning");
       return;
@@ -433,6 +439,7 @@ export default function StrategyBacktest() {
               isSaveDisabled={isSaveDisabled}
               saveDisabledReason={saveDisabledReason}
               isViewingSaved={activeBacktestSource === "saved"}
+              isWriteForbidden={isWriteForbidden}
               showPlaceholder={showPlaceholder}
               animatePlaceholder={animatePlaceholder}
             />
