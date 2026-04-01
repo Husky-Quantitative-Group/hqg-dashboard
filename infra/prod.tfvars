@@ -5,8 +5,8 @@ frontend_base_url          = "https://dashboard.uconnquant.com"
 api_custom_domain_name     = "api.uconnquant.com"
 api_custom_domain_activate = true
 
-backtests_bucket_name           = "hqg-prod-backtest-metrics-016299216645"
-strategy_backtests_table_name   = "hqg-prod-backtest-metrics"
+backtests_bucket_name         = "hqg-prod-backtest-metrics-016299216645"
+strategy_backtests_table_name = "hqg-prod-backtest-metrics"
 
 tags = {
   Project = "hqg-dashboard"
