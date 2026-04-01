@@ -91,11 +91,12 @@ export type FinalizeBacktestRunResponse = {
   strategy_version?: number | string;
   backtest_params: BacktestParams;
   metrics: Record<string, unknown>;
-  net_pnl?: number;
+  annualized_return?: number;
   sharpe?: number;
-  win_rate?: number;
   max_drawdown?: number;
-  trades_count?: number;
+  ann_vol?: number;
+  var_95?: number;
+  beta?: number;
   s3_bucket: string;
   s3_key: string;
 };
