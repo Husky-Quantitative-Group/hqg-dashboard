@@ -221,7 +221,14 @@ export default function CreateStrategy() {
                 <div className="font-semibold text-white">{selectedTemplate.name}</div>
                 <div className="text-slate-400 text-xs">
                   Owner: {selectedTemplate.owner_display ?? selectedTemplate.owner ?? "—"} · Updated:{" "}
-                  {selectedTemplate.updated_at ? new Date(selectedTemplate.updated_at).toLocaleString() : "-"}
+                  {selectedTemplate.updated_at ? new Date(selectedTemplate.updated_at).toLocaleString("en-US", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    timeZoneName: "short",
+                  }) : "-"}
                 </div>
                 <div className="text-slate-300 text-xs line-clamp-3">
                   {selectedTemplate.description || "No description provided."}
