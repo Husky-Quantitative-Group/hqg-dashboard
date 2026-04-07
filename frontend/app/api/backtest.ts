@@ -59,6 +59,11 @@ export type BacktestCandle = {
   close: number;
 };
 
+export type BacktestWeightSnapshot = {
+  time: number;
+  weights: { [ticker: string]: number };
+};
+
 export type BacktestParameters = {
   name: string;
   starting_equity: number;
@@ -72,6 +77,7 @@ export type BacktestResponse = {
   metrics: Metrics;
   candles: BacktestCandle[];
   orders: BacktestOrder[];
+  holding_weights: BacktestWeightSnapshot[];
 };
 
 export type BacktestRequest = {

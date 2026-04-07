@@ -26,6 +26,7 @@ import {
   type BacktestCandle,
   type BacktestOrder,
   type BacktestResponse,
+  type BacktestWeightSnapshot,
   type Metrics,
 } from "~/api/backtest";
 import { finalizeBacktestRun, gzipJson, presignBacktestRunUpload, uploadPresignedPost } from "~/api/backtestMetrics";
@@ -83,8 +84,7 @@ type BacktestMetricsProps = {
 type StrategyEquityChartProps = {
   stats: EquityStat[];
   candles: EquityCandle[];
-  orders: BacktestOrder[];
-  startingEquity: number;
+  holdingWeightsSeries: { data: AllocationPoint[]; keys: string[] };
   onSave: () => void;
   isSaving: boolean;
   isSaveDisabled: boolean;
@@ -106,7 +106,7 @@ type ExecutionPanelTab = "orders" | "logs" | "warnings";
 
 const DEFAULT_EXECUTION_LOG_PAGE_SIZE = 10;
 const EXECUTION_LOG_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
-const ALLOCATION_COLORS = [
+const WEIGHT_CHART_COLORS = [
   "#60a5fa",
   "#34d399",
   "#fbbf24",
@@ -115,7 +115,12 @@ const ALLOCATION_COLORS = [
   "#fb7185",
   "#22d3ee",
   "#f59e0b",
+  "#818cf8",
+  "#2dd4bf",
+  "#e879f9",
+  "#38bdf8",
 ];
+const CASH_COLOR = "#64748b";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -404,14 +409,10 @@ export default function StrategyBacktest() {
   const candles = useMemo(() => buildCandles(backtestData?.candles), [backtestData]);
   const orders = useMemo(() => buildOrders(backtestData?.orders), [backtestData]);
   const equityStats = useMemo(() => buildEquityStats(backtestData), [backtestData]);
-  const chartStartingEquity = useMemo(() => {
-    const responseEquity = backtestData?.parameters?.starting_equity;
-    if (typeof responseEquity === "number" && Number.isFinite(responseEquity)) {
-      return responseEquity;
-    }
-    const parsed = Number.parseFloat((lastBacktestParamValues.startingEquity ?? "0").replace(/,/g, ""));
-    return Number.isFinite(parsed) ? parsed : 0;
-  }, [backtestData, lastBacktestParamValues.startingEquity]);
+  const holdingWeightsSeries = useMemo(
+    () => buildHoldingWeightsSeries(backtestData?.holding_weights),
+    [backtestData]
+  );
 
   return (
     <SkeletonTheme baseColor={skeletonBaseColor} highlightColor={skeletonHighlightColor}>
@@ -432,8 +433,7 @@ export default function StrategyBacktest() {
             <StrategyEquityChart
               stats={equityStats}
               candles={candles}
-              orders={orders}
-              startingEquity={chartStartingEquity}
+              holdingWeightsSeries={holdingWeightsSeries}
               onSave={handleSaveResults}
               isSaving={isSavingBacktest}
               isSaveDisabled={isSaveDisabled}
@@ -571,8 +571,7 @@ function BacktestMetrics({ metrics, showPlaceholder, animatePlaceholder }: Backt
 function StrategyEquityChart({
   stats,
   candles,
-  orders,
-  startingEquity,
+  holdingWeightsSeries,
   onSave,
   isSaving,
   isSaveDisabled,
@@ -588,10 +587,6 @@ function StrategyEquityChart({
   const hoverDotRef = useRef<HTMLDivElement | null>(null);
   const [chartType, setChartType] = useState<EquityChartType>("candles");
   const linePoints = useMemo(() => buildLinePoints(candles), [candles]);
-  const allocationSeries = useMemo(
-    () => buildAllocationSeries(candles, orders, startingEquity),
-    [candles, orders, startingEquity]
-  );
 
   useEffect(() => {
     if (chartType !== "candles") {
@@ -821,7 +816,7 @@ function StrategyEquityChart({
         </div>
       ) : chartType === "allocation" ? (
         <div className="mt-5 min-h-[420px] flex-1 overflow-hidden rounded-2xl">
-          <RechartsAllocationChart series={allocationSeries} />
+          <RechartsAllocationChart series={holdingWeightsSeries} />
         </div>
       ) : chartType === "line" ? (
         <div className="mt-5 min-h-[420px] flex-1 overflow-hidden rounded-2xl">
@@ -1279,128 +1274,6 @@ const buildLinePoints = (candles?: EquityCandle[]): EquityLinePoint[] => {
     }));
 };
 
-const buildAllocationSeries = (
-  candles: EquityCandle[],
-  orders: BacktestOrder[],
-  startingEquity: number
-) => {
-  if (!Array.isArray(candles) || candles.length === 0 || !Number.isFinite(startingEquity) || startingEquity <= 0) {
-    return {
-      data: [] as AllocationPoint[],
-      keys: [] as string[],
-    };
-  }
-
-  const timeline = [...candles].sort((a, b) => Number(a.time) - Number(b.time)).map((candle) => Number(candle.time));
-  const initialSnapshot: AllocationPoint = {
-    time: timeline[0] ?? 0,
-    Cash: 100,
-  };
-
-  if (!Array.isArray(orders) || orders.length === 0) {
-    return {
-      data: timeline.map((time) => ({ time, Cash: 100 })),
-      keys: ["Cash"],
-    };
-  }
-
-  const sortedOrders = [...orders].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-  );
-  const holdings = new Map<string, number>();
-  const latestPrices = new Map<string, number>();
-  let cash = startingEquity;
-  const snapshots: AllocationPoint[] = [];
-
-  for (let index = 0; index < sortedOrders.length; ) {
-    const timestamp = sortedOrders[index].timestamp;
-
-    while (index < sortedOrders.length && sortedOrders[index].timestamp === timestamp) {
-      const order = sortedOrders[index];
-      const direction = String(order.type).toLowerCase() === "buy" ? 1 : -1;
-      const shares = direction * order.shares;
-      const nextQuantity = (holdings.get(order.ticker) ?? 0) + shares;
-
-      if (Math.abs(nextQuantity) < 1e-9) {
-        holdings.delete(order.ticker);
-      } else {
-        holdings.set(order.ticker, nextQuantity);
-      }
-
-      latestPrices.set(order.ticker, order.price);
-      cash -= shares * order.price;
-      index += 1;
-    }
-
-    const assetValues = new Map<string, number>();
-    let totalValue = Math.max(cash, 0);
-
-    for (const [symbol, quantity] of holdings.entries()) {
-      const price = latestPrices.get(symbol);
-      if (!price || !Number.isFinite(price)) continue;
-      const marketValue = Math.max(quantity * price, 0);
-      if (marketValue <= 0) continue;
-      assetValues.set(symbol, marketValue);
-      totalValue += marketValue;
-    }
-
-    if (totalValue <= 0) {
-      continue;
-    }
-
-    const point: AllocationPoint = { time: Math.floor(new Date(timestamp).getTime() / 1000) };
-    for (const [symbol, marketValue] of assetValues.entries()) {
-      point[symbol] = (marketValue / totalValue) * 100;
-    }
-    point.Cash = (Math.max(cash, 0) / totalValue) * 100;
-    snapshots.push(point);
-  }
-
-  const normalizedSnapshots = [initialSnapshot, ...snapshots]
-    .sort((a, b) => a.time - b.time)
-    .filter((point, index, items) => index === 0 || point.time !== items[index - 1]?.time);
-
-  const keys = Array.from(
-    normalizedSnapshots.reduce((acc, point) => {
-      Object.keys(point).forEach((key) => {
-        if (key !== "time") acc.add(key);
-      });
-      return acc;
-    }, new Set<string>())
-  ).sort((a, b) => {
-    if (a === "Cash") return 1;
-    if (b === "Cash") return -1;
-    return a.localeCompare(b);
-  });
-
-  const data: AllocationPoint[] = [];
-  let snapshotIndex = 0;
-  let activeSnapshot = normalizedSnapshots[0];
-
-  for (const time of timeline) {
-    while (
-      snapshotIndex + 1 < normalizedSnapshots.length &&
-      normalizedSnapshots[snapshotIndex + 1] &&
-      normalizedSnapshots[snapshotIndex + 1].time <= time
-    ) {
-      snapshotIndex += 1;
-      activeSnapshot = normalizedSnapshots[snapshotIndex];
-    }
-
-    data.push(allocationPointFromSnapshot(time, activeSnapshot, keys));
-  }
-
-  return { data, keys };
-};
-
-const allocationPointFromSnapshot = (time: number, snapshot: AllocationPoint, keys: string[]) => {
-  const point: AllocationPoint = { time };
-  for (const key of keys) {
-    point[key] = snapshot[key] ?? 0;
-  }
-  return point;
-};
-
 const buildOrders = (orders?: BacktestOrder[]): BacktestOrder[] => {
   if (!Array.isArray(orders)) return [];
 
@@ -1607,10 +1480,20 @@ function RechartsAllocationChart({
   if (!series.data.length || !series.keys.length) {
     return (
       <div className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-4 text-sm text-slate-400">
-        No allocation snapshots could be derived from this run&apos;s orders.
+        No holding weight snapshots available for this run.
       </div>
     );
   }
+
+  const nonCashKeys = series.keys.filter((k) => k !== "Cash");
+  const hasCash = series.keys.includes("Cash");
+  const renderKeys = [...nonCashKeys, ...(hasCash ? ["Cash"] : [])];
+
+  const colorForKey = (key: string) => {
+    if (key === "Cash") return CASH_COLOR;
+    const idx = nonCashKeys.indexOf(key);
+    return WEIGHT_CHART_COLORS[idx % WEIGHT_CHART_COLORS.length];
+  };
 
   return (
     <div className="grid h-full min-h-[420px] gap-4 lg:grid-cols-[minmax(0,1fr)_180px]">
@@ -1642,33 +1525,39 @@ function RechartsAllocationChart({
               cursor={{ stroke: "rgba(226,232,240,0.28)", strokeWidth: 1 }}
               isAnimationActive={false}
             />
-            {series.keys.map((key, index) => (
-              <Area
-                key={key}
-                type="stepAfter"
-                dataKey={key}
-                stackId="allocation"
-                stroke={ALLOCATION_COLORS[index % ALLOCATION_COLORS.length]}
-                fill={ALLOCATION_COLORS[index % ALLOCATION_COLORS.length]}
-                fillOpacity={0.72}
-                isAnimationActive={false}
-              />
-            ))}
+            {renderKeys.map((key) => {
+              const color = colorForKey(key);
+              return (
+                <Area
+                  key={key}
+                  type="stepAfter"
+                  dataKey={key}
+                  stackId="allocation"
+                  stroke={color}
+                  fill={color}
+                  fillOpacity={key === "Cash" ? 0.35 : 0.72}
+                  isAnimationActive={false}
+                />
+              );
+            })}
           </AreaChart>
         </ResponsiveContainer>
       </div>
       <aside className="rounded-2xl border border-slate-800/60 bg-slate-900/30 p-4">
         <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Legend</p>
         <div className="mt-3 space-y-2">
-          {series.keys.map((key, index) => (
-            <div key={key} className="flex items-center gap-3 text-sm text-slate-200">
-              <span
-                className="h-3 w-3 rounded-full"
-                style={{ backgroundColor: ALLOCATION_COLORS[index % ALLOCATION_COLORS.length] }}
-              />
-              <span>{key}</span>
-            </div>
-          ))}
+          {renderKeys.map((key) => {
+            const color = colorForKey(key);
+            return (
+              <div key={key} className="flex items-center gap-3 text-sm text-slate-200">
+                <span
+                  className="h-3 w-3 rounded-full"
+                  style={{ backgroundColor: color, opacity: key === "Cash" ? 0.55 : 1 }}
+                />
+                <span className={key === "Cash" ? "text-slate-400" : ""}>{key}</span>
+              </div>
+            );
+          })}
         </div>
       </aside>
     </div>
@@ -1695,4 +1584,53 @@ const buildEquityStats = (data: BacktestResponse | null): EquityStat[] => {
     { id: "fees", label: "Fees", value: formatMoney(fees), accentClass: "text-white" },
     { id: "volume", label: "Volume", value: volume === null ? "—" : numberFormatter.format(volume), accentClass: "text-white" },
   ];
+};
+
+const buildHoldingWeightsSeries = (
+  snapshots?: BacktestWeightSnapshot[]
+): { data: Array<{ time: number; Cash: number; [ticker: string]: number }>; keys: string[] } => {
+  const empty = { data: [] as Array<{ time: number; Cash: number; [ticker: string]: number }>, keys: [] as string[] };
+  if (!Array.isArray(snapshots) || snapshots.length === 0) return empty;
+
+  const sorted = [...snapshots].sort((a, b) => a.time - b.time);
+
+  // Collect all ticker keys across all snapshots
+  const tickerSet = new Set<string>();
+  for (const snap of sorted) {
+    if (snap.weights) {
+      for (const ticker of Object.keys(snap.weights)) {
+        tickerSet.add(ticker);
+      }
+    }
+  }
+
+  const tickers = Array.from(tickerSet).sort((a, b) => a.localeCompare(b));
+
+  const data = sorted.map((snap) => {
+    const point: { time: number; Cash: number; [ticker: string]: number } = {
+      time: snap.time,
+      Cash: 0,
+    };
+
+    let weightSum = 0;
+    for (const ticker of tickers) {
+      const w = snap.weights?.[ticker] ?? 0;
+      // Weights come as fractions (0–1); convert to percentage
+      const pct = w * 100;
+      point[ticker] = Math.max(0, pct);
+      weightSum += w;
+    }
+
+    // Remainder goes to Cash
+    const cashWeight = Math.max(0, (1 - weightSum) * 100);
+    point.Cash = cashWeight;
+
+    return point;
+  });
+
+  // Include Cash in keys only if it's non-trivial at any point
+  const hasCash = data.some((p) => p.Cash > 0.05);
+  const keys = [...tickers, ...(hasCash ? ["Cash"] : [])];
+
+  return { data, keys };
 };
