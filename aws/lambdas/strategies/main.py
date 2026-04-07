@@ -184,6 +184,12 @@ def update_strategy(strategy_id: Optional[str], body: Dict[str, Any]) -> Dict[st
 # Helpers
 # ----------------------------
 
+DEFAULT_CONFIG = """{
+  "WINDOW": 21,
+  "STOP_LOSS": 0.05
+}"""
+
+
 def _copy_artifacts_from_source(
     source_strategy_id: str,
     target_strategy_id: str,
@@ -197,6 +203,7 @@ def _copy_artifacts_from_source(
     artifacts = resp.get("Items", [])
 
     readme_uploaded = False
+    config_uploaded = False
 
     for artifact in artifacts:
         artifact_id = artifact["artifact_id"]
@@ -220,6 +227,8 @@ def _copy_artifacts_from_source(
             readme_uploaded = True
             _put_readme(target_key, readme_content)
         else:
+            if artifact_id.lower() == "config.json":
+                config_uploaded = True
             s3.copy_object(
                 Bucket=ARTIFACT_BUCKET,
                 CopySource={"Bucket": ARTIFACT_BUCKET, "Key": source_s3_key},
@@ -240,6 +249,21 @@ def _copy_artifacts_from_source(
         _write_artifact_metadata(
             strategy_id=target_strategy_id,
             artifact_id="README.md",
+            version=target_version,
+            s3_key=target_key,
+        )
+
+    # If no config.json existed in source, scaffold a default one.
+    if not config_uploaded:
+        target_key = f"{target_strategy_id}/v{target_version}/config.json"
+        s3.put_object(
+            Bucket=ARTIFACT_BUCKET,
+            Key=target_key,
+            Body=DEFAULT_CONFIG.encode("utf-8"),
+        )
+        _write_artifact_metadata(
+            strategy_id=target_strategy_id,
+            artifact_id="config.json",
             version=target_version,
             s3_key=target_key,
         )
