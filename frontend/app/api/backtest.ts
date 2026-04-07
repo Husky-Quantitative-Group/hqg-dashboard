@@ -74,6 +74,7 @@ export type BacktestRequest = {
   start_date: string;
   end_date: string;
   initial_capital: number;
+  config_params?: Record<string, unknown>;
 };
 
 export type JobStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
