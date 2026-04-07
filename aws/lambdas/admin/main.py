@@ -99,6 +99,7 @@ def _patch_user(netid: str | None, body: Dict[str, Any]) -> Dict[str, Any]:
     allowed_fields = {
         "full_name",
         "full_name_lower",
+        "search_pk",
         "uconn_email",
         "discord_username",
         "linkedin_url",
@@ -130,6 +131,14 @@ def _patch_user(netid: str | None, body: Dict[str, Any]) -> Dict[str, Any]:
             body["full_name_lower"] = full_name_value.strip().lower()
         else:
             body.pop("full_name_lower", None)
+
+    if "search_pk" in body:
+        search_pk_value = body.get("search_pk")
+        if not isinstance(search_pk_value, str) or not search_pk_value.strip():
+            return _json(400, {"message": "search_pk must be a non-empty string"})
+        body["search_pk"] = search_pk_value.strip()
+    else:
+        body["search_pk"] = "USER"
 
     for idx, (key, value) in enumerate(body.items()):
         name_key = f"#k{idx}"
