@@ -1,3 +1,4 @@
+import Editor from "@monaco-editor/react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
@@ -29,6 +30,7 @@ import {
   type Metrics,
 } from "~/api/backtest";
 import { finalizeBacktestRun, gzipJson, presignBacktestRunUpload, uploadPresignedPost } from "~/api/backtestMetrics";
+import { fetchStrategyArtifactContent } from "~/api/strategyArtifacts";
 import { useStrategyWorkspace } from "./layout";
 
 type BacktestParameter = {
@@ -139,6 +141,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 export default function StrategyBacktest() {
   const {
     strategy,
+    files,
     entrypoint,
     addToast,
     isSaving: isWorkspaceSaving,
@@ -156,6 +159,10 @@ export default function StrategyBacktest() {
     setActiveBacktestSource,
     setActiveSavedRunId,
   } = useStrategyWorkspace();
+
+  const configFile = files.find(
+    (f) => f.path === "config.json" || f.path.endsWith("/config.json")
+  );
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [isSavingBacktest, setIsSavingBacktest] = useState(false);
   const [latestBacktestLogs, setLatestBacktestLogs] = useState<string[]>([]);
@@ -166,6 +173,14 @@ export default function StrategyBacktest() {
       if (pollIntervalRef.current !== null) clearInterval(pollIntervalRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!configFile || !strategy || configFile.content) return;
+    fetchStrategyArtifactContent(strategy.id, configFile.path)
+      .then((content) => { if (content) updateFileContent(configFile.path, content); })
+      .catch(() => {});
+  }, [configFile, strategy]);
+
   const backtestData = latestBacktestData;
   const currentEntrypointContent = typeof entrypoint?.content === "string" ? entrypoint.content : null;
   const lastRunParameters = useMemo(
@@ -190,6 +205,22 @@ export default function StrategyBacktest() {
       return;
     }
 
+    let configParams: Record<string, unknown> | undefined;
+    const configContent = configFile?.content?.trim();
+    if (configContent) {
+      try {
+        const parsed = JSON.parse(configContent);
+        if (typeof parsed !== "object" || Array.isArray(parsed) || parsed === null) {
+          addToast("config.json must be a JSON object.", "warning");
+          return;
+        }
+        configParams = parsed as Record<string, unknown>;
+      } catch {
+        addToast("config.json is not valid JSON. Fix it before running a backtest.", "warning");
+        return;
+      }
+    }
+
     const parsedStartingEquity = Number.parseFloat((values.startingEquity ?? "").replace(/,/g, ""));
     const initialCapital = Number.isFinite(parsedStartingEquity) ? parsedStartingEquity : 0;
 
@@ -211,6 +242,7 @@ export default function StrategyBacktest() {
         start_date: values.startDate,
         end_date: values.endDate,
         initial_capital: initialCapital,
+        config_params: configParams,
       });
 
       const POLL_INTERVAL_MS = 2000;
