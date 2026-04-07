@@ -1,6 +1,7 @@
 import Editor from "@monaco-editor/react";
 import { useEffect, useMemo, useState } from "react";
 import { getBacktestJob, submitBacktest } from "~/api/backtest";
+import { uploadStrategyArtifacts } from "~/api/strategyArtifacts";
 import { useStrategyWorkspace } from "./layout";
 
 function getFileKind(path: string) {
@@ -25,6 +26,7 @@ export default function StrategyCodeWorkspace() {
     selectedFilePath,
     selectFile,
     updateFileContent,
+    addFile,
     isDirty,
     isSaving,
     loadingFilePath,
@@ -32,6 +34,26 @@ export default function StrategyCodeWorkspace() {
     addToast,
     lastBacktestParamValues,
   } = useStrategyWorkspace();
+
+  const DEFAULT_CONFIG = `{\n  "WINDOW": 21,\n  "STOP_LOSS": 0.05\n}`;
+  const hasConfig = files.some((f) => f.path === "config.json" || f.path.endsWith("/config.json"));
+  const [isAddingConfig, setIsAddingConfig] = useState(false);
+
+  const handleAddConfig = async () => {
+    if (!strategy || isAddingConfig || hasConfig) return;
+    setIsAddingConfig(true);
+    try {
+      const file = { path: "config.json", language: "json", content: DEFAULT_CONFIG, isEntrypoint: false };
+      await uploadStrategyArtifacts(strategy.id, [file]);
+      addFile(file);
+      selectFile("config.json");
+      addToast("config.json created", "success");
+    } catch {
+      addToast("Failed to create config.json", "warning");
+    } finally {
+      setIsAddingConfig(false);
+    }
+  };
 
   const [editorReady, setEditorReady] = useState(false);
   const [isTypeChecking, setIsTypeChecking] = useState(false);
@@ -140,7 +162,7 @@ export default function StrategyCodeWorkspace() {
         <section className="flex min-w-0 flex-col">
           <div className="border-b border-white/10 bg-[#0a1220] px-4 pt-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                 {sortedCodeFiles.length === 0 ? (
                   <div className="inline-flex items-center rounded-t-2xl border border-b-0 border-white/10 bg-[#101a2a] px-4 py-3 text-sm text-slate-400">
                     No files loaded
@@ -171,6 +193,17 @@ export default function StrategyCodeWorkspace() {
                       </button>
                     );
                   })
+                )}
+                {!hasConfig && (
+                  <button
+                    type="button"
+                    onClick={handleAddConfig}
+                    disabled={isAddingConfig}
+                    title="Add config.json"
+                    className="inline-flex items-center justify-center rounded-t-2xl border border-b-0 border-transparent bg-white/[0.03] px-3 py-3 text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-200 disabled:opacity-40"
+                  >
+                    <span className="text-base leading-none">+</span>
+                  </button>
                 )}
               </div>
 
