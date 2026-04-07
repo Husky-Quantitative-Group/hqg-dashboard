@@ -15,27 +15,40 @@ export const backtesterApi = axios.create({
 export type BacktestOrder = {
   id: string;
   timestamp: string;
-  symbol: string;
-  action: "Buy" | "Sell" | "buy" | "sell";
+  ticker: string;
+  type: "Buy" | "Sell";
   shares: number;
   price: number;
 };
 
 export type Metrics = {
-  total_return: number;
-  annualized_return: number;
-  sharpe_ratio: number;
-  max_drawdown: number;
-  win_rate: number;
-  total_orders: number;
+  // equity stats
+  final_portfolio_value: number;
+  fees: number;
+  net_profit: number;
+  volume: number;
+
+  // ratios
+  sharpe: number;
   sortino: number;
+  calmar?: number | null;
+  psr: number;
+
+  // return
+  total_pct_return: number;
+  annualized_return?: number | null;
+
+  // risk
+  ann_vol: number;
+  max_drawdown: number;
+  max_drawdown_duration: number;
+  var_95: number;
+  cvar_95: number;
+
+  // benchmark
   alpha: number;
   beta: number;
-  psr: number;
-  avg_win: number;
-  avg_loss: number;
-  annualized_variance?: number;
-  annualized_std?: number;
+  total_orders: number;
 };
 
 export type BacktestCandle = {
@@ -53,18 +66,10 @@ export type BacktestParameters = {
   end_date: string;
 };
 
-export type EquityStats = {
-  equity: number;
-  fees: number;
-  net_profit: number;
-  return_pct: number;
-  volume: number;
-};
 
 export type BacktestResponse = {
   parameters: BacktestParameters;
   metrics: Metrics;
-  equity_stats: EquityStats;
   candles: BacktestCandle[];
   orders: BacktestOrder[];
 };

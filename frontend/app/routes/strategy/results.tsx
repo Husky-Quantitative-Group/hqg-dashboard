@@ -119,30 +119,29 @@ export default function StrategyResults() {
               <th className="px-4 py-3 text-left font-medium">Strategy Version</th>
               <th className="px-4 py-3 text-left font-medium">Started</th>
               <th className="px-4 py-3 text-left font-medium">Parameters</th>
-              <th className="px-4 py-3 text-left font-medium">Net PnL</th>
               <th className="px-4 py-3 text-left font-medium">Sharpe</th>
-              <th className="px-4 py-3 text-left font-medium">Win Rate</th>
+              <th className="px-4 py-3 text-left font-medium">CAGR</th>
               <th className="px-4 py-3 text-left font-medium">Drawdown</th>
-              <th className="px-4 py-3 text-left font-medium">Trades</th>
+              <th className="px-4 py-3 text-left font-medium">Volatility</th>
+              <th className="px-4 py-3 text-left font-medium">VaR (95%)</th>
+              <th className="px-4 py-3 text-left font-medium">Beta</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-900 text-slate-200">
             {isSavedBacktestRunsLoading ? (
               <tr>
-                <td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>
+                <td className="px-4 py-6 text-sm text-slate-400" colSpan={11}>
                   Loading…
                 </td>
               </tr>
             ) : null}
 
             {sortedRuns.map((run) => {
-              const pnl = run.net_pnl ?? 0;
-              const pnlClass = pnl >= 0 ? "text-emerald-400" : "text-rose-400";
               const name = run.name ?? "—";
               const start = run.backtest_params?.start_date ?? "—";
               const end = run.backtest_params?.end_date ?? "—";
               const equity = run.backtest_params?.initial_capital ?? 0;
-              const drawdown = typeof run.max_drawdown === "number" ? -run.max_drawdown : null;
+              const drawdown = typeof run.max_drawdown === "number" ? run.max_drawdown : null;
               return (
                 <tr
                   key={run.run_id}
@@ -168,20 +167,23 @@ export default function StrategyResults() {
                       <span className="text-slate-500">Equity:</span> {currencyFormatter.format(equity)}
                     </div>
                   </td>
-                  <td className={`px-4 py-4 align-top font-mono ${pnlClass}`}>
-                    {currencyFormatter.format(pnl)}
-                  </td>
                   <td className="px-4 py-4 align-top font-semibold text-white">
                     {typeof run.sharpe === "number" ? run.sharpe.toFixed(2) : "—"}
                   </td>
-                  <td className="px-4 py-4 align-top font-semibold text-emerald-300">
-                    {typeof run.win_rate === "number" ? formatPercent(run.win_rate) : "—"}
+                  <td className="px-4 py-4 align-top font-semibold text-white">
+                    {typeof run.annualized_return === "number" ? formatPercent(run.annualized_return) : "—"}
                   </td>
                   <td className="px-4 py-4 align-top font-semibold text-rose-300">
                     {drawdown === null ? "—" : formatPercent(drawdown)}
                   </td>
                   <td className="px-4 py-4 align-top font-semibold text-slate-200">
-                    {typeof run.trades_count === "number" ? run.trades_count : "—"}
+                    {typeof run.ann_vol === "number" ? formatPercent(run.ann_vol) : "—"}
+                  </td>
+                  <td className="px-4 py-4 align-top font-semibold text-slate-200">
+                    {typeof run.var_95 === "number" ? formatPercent(run.var_95) : "—"}
+                  </td>
+                  <td className="px-4 py-4 align-top font-semibold text-slate-200">
+                    {typeof run.beta === "number" ? run.beta.toFixed(2) : "—"}
                   </td>
                 </tr>
               );
