@@ -48,6 +48,7 @@ export type StrategyWorkspaceContext = {
   isSavedBacktestRunsLoading: boolean;
   refreshSavedBacktestRuns: () => Promise<void>;
   addToast: (message: string, variant?: ToastVariant) => void;
+  addFile: (file: StrategyFile) => void;
   loadingFilePath: string | null;
   fileLoadError: string | null;
 };
@@ -232,6 +233,10 @@ export default function StrategyLayout() {
 
   const selectFile = useCallback((path: string) => {
     setSelectedFilePath(path);
+  }, []);
+
+  const addFile = useCallback((file: StrategyFile) => {
+    setFiles((prev) => [...prev, file]);
   }, []);
 
   const updateFileContent = useCallback(
@@ -460,6 +465,7 @@ export default function StrategyLayout() {
     isSavedBacktestRunsLoading,
     refreshSavedBacktestRuns,
     addToast,
+    addFile,
     loadingFilePath,
     fileLoadError,
   };
