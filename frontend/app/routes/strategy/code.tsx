@@ -35,7 +35,6 @@ export default function StrategyCodeWorkspace() {
     lastBacktestParamValues,
   } = useStrategyWorkspace();
 
-  const DEFAULT_CONFIG = `{\n  "WINDOW": 21,\n  "STOP_LOSS": 0.05\n}`;
   const hasConfig = files.some((f) => f.path === "config.json" || f.path.endsWith("/config.json"));
   const [isAddingConfig, setIsAddingConfig] = useState(false);
 
@@ -43,7 +42,7 @@ export default function StrategyCodeWorkspace() {
     if (!strategy || isAddingConfig || hasConfig) return;
     setIsAddingConfig(true);
     try {
-      const file = { path: "config.json", language: "json", content: DEFAULT_CONFIG, isEntrypoint: false };
+      const file = { path: "config.json", language: "json", content: "", isEntrypoint: false };
       await uploadStrategyArtifacts(strategy.id, [file]);
       addFile(file);
       selectFile("config.json");

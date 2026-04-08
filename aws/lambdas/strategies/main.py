@@ -184,12 +184,6 @@ def update_strategy(strategy_id: Optional[str], body: Dict[str, Any]) -> Dict[st
 # Helpers
 # ----------------------------
 
-DEFAULT_CONFIG = """{
-  "WINDOW": 21,
-  "STOP_LOSS": 0.05
-}"""
-
-
 def _copy_artifacts_from_source(
     source_strategy_id: str,
     target_strategy_id: str,
@@ -253,13 +247,13 @@ def _copy_artifacts_from_source(
             s3_key=target_key,
         )
 
-    # If no config.json existed in source, scaffold a default one.
+    # If no config.json existed in source, scaffold an empty one.
     if not config_uploaded:
         target_key = f"{target_strategy_id}/v{target_version}/config.json"
         s3.put_object(
             Bucket=ARTIFACT_BUCKET,
             Key=target_key,
-            Body=DEFAULT_CONFIG.encode("utf-8"),
+            Body=b"",
         )
         _write_artifact_metadata(
             strategy_id=target_strategy_id,
