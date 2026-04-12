@@ -95,6 +95,76 @@ export type BenchmarkCandle = {
   close: number;
 };
 
+export type MonthlyReturn = {
+  year: number;
+  month: number;
+  return_pct: number;
+};
+
+export type RollingMetricPoint = {
+  time: number;
+  rolling_sharpe: number | null;
+  rolling_volatility: number | null;
+  rolling_beta: number | null;
+};
+
+export type DrawdownEpisode = {
+  rank: number;
+  peak_date: number;
+  valley_date: number;
+  recovery_date: number | null;
+  depth: number;
+  duration_bars: number;
+  recovery_bars: number | null;
+};
+
+export type AnnualReturn = {
+  year: number;
+  return_pct: number;
+};
+
+export type MonteCarloFanPoint = {
+  time: number;
+  p5: number;
+  p10: number;
+  p25: number;
+  p50: number;
+  p75: number;
+  p90: number;
+  p95: number;
+};
+
+export type MonteCarloResult = {
+  fan_chart: MonteCarloFanPoint[];
+  terminal_wealth_bins: number[];
+  terminal_wealth_counts: number[];
+  sharpe_bins: number[];
+  sharpe_counts: number[];
+  max_dd_bins: number[];
+  max_dd_counts: number[];
+  calmar_bins: number[];
+  calmar_counts: number[];
+  prob_positive: number;
+  n_simulations: number;
+};
+
+export type ReturnDistribution = {
+  bin_edges: number[];
+  bin_counts: number[];
+  mean: number;
+  std: number;
+  skewness: number;
+  kurtosis: number;
+};
+
+export type StressPeriodResult = {
+  name: string;
+  start_date: number;
+  end_date: number;
+  strategy_return: number;
+  benchmark_return: number | null;
+};
+
 export type BacktestParameters = {
   name: string;
   starting_equity: number;
@@ -110,6 +180,13 @@ export type BacktestResponse = {
   orders: BacktestOrder[];
   drawdown_series: DrawdownPoint[];
   benchmark_candles: BenchmarkCandle[];
+  monthly_returns: MonthlyReturn[];
+  rolling_metrics: RollingMetricPoint[];
+  top_drawdowns: DrawdownEpisode[];
+  annual_returns: AnnualReturn[];
+  monte_carlo: MonteCarloResult | null;
+  return_distribution: ReturnDistribution | null;
+  stress_periods: StressPeriodResult[];
 };
 
 export type BacktestRequest = {
