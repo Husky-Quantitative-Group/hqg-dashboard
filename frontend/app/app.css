@@ -10,7 +10,13 @@
 
 html,
 body {
-  @apply bg-gray-950;
+  background-color: #0d101a;
+  background-image:
+    radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.05) 0%, transparent 60%),
+    radial-gradient(at 100% 0%, rgba(59, 130, 246, 0.07) 0%, transparent 60%),
+    radial-gradient(at 50% 100%, rgba(148, 163, 184, 0.06) 0%, transparent 70%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.008'/%3E%3C/svg%3E");
+  background-attachment: fixed;
   color-scheme: dark;
 }
 
@@ -20,4 +26,20 @@ body {
 
 .apply-font {
   font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Material Symbols Icon styling */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Sidebar content adjustment for fixed positioning */
+#main-content {
+  margin-left: 210px;
+  transition: margin-left 0.3s ease-in-out;
+}
+
+#sidebar.collapsed~#main-content,
+#sidebar[style*="68px"]~#main-content {
+  margin-left: 68px;
 }

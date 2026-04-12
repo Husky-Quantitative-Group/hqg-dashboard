@@ -3,13 +3,22 @@ import Sidebar from "../components/sidebar";
 
 export default function DashboardLayout() {
   return (
-    <div className="grid h-screen min-h-0 grid-cols-[16rem_1fr] overflow-hidden">
-      <Sidebar/>
-
-      <main className="min-h-0 h-screen overflow-y-auto overscroll-contain p-6">
+    <>
+      <Sidebar />
+      <main
+        id="main-content"
+        className="min-h-screen overflow-y-auto overscroll-contain p-6"
+        style={{
+          marginLeft: "var(--sidebar-width, 210px)",
+          willChange: "margin-left",
+          backfaceVisibility: "hidden",
+          transform: "translateZ(0)",
+          transition: "margin-left 0.8s ease",
+        }}
+      >
         {/* global filters / header could go here */}
         <Outlet />
       </main>
-    </div>
+    </>
   );
 }
