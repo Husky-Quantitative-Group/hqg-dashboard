@@ -32,11 +32,16 @@ export type Metrics = {
   sharpe: number;
   sortino: number;
   calmar?: number | null;
+  omega: number;
+  treynor?: number | null;
   psr: number;
 
   // return
   total_pct_return: number;
   annualized_return?: number | null;
+  best_day: number;
+  worst_day: number;
+  avg_daily_return: number;
 
   // risk
   ann_vol: number;
@@ -44,11 +49,29 @@ export type Metrics = {
   max_drawdown_duration: number;
   var_95: number;
   cvar_95: number;
+  skewness: number;
+  excess_kurtosis: number;
+  tail_ratio: number;
+  ulcer_index: number;
+  ulcer_performance_index?: number | null;
 
-  // benchmark
+  // benchmark-relative
   alpha: number;
   beta: number;
+  information_ratio?: number | null;
+  tracking_error?: number | null;
+
+  // trade analysis
   total_orders: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  avg_win: number;
+  avg_loss: number;
+  largest_win: number;
+  largest_loss: number;
+  profit_factor?: number | null;
+  expectancy: number;
 };
 
 export type BacktestCandle = {
