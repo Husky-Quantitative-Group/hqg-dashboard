@@ -82,6 +82,19 @@ export type BacktestCandle = {
   close: number;
 };
 
+export type DrawdownPoint = {
+  time: number;
+  drawdown: number;
+};
+
+export type BenchmarkCandle = {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
 export type BacktestParameters = {
   name: string;
   starting_equity: number;
@@ -95,6 +108,8 @@ export type BacktestResponse = {
   metrics: Metrics;
   candles: BacktestCandle[];
   orders: BacktestOrder[];
+  drawdown_series: DrawdownPoint[];
+  benchmark_candles: BenchmarkCandle[];
 };
 
 export type BacktestRequest = {
