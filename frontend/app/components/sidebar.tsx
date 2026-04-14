@@ -8,6 +8,43 @@ type NavItem = {
   icon: string; // Material Symbols icon name
 };
 
+// Color palettes for avatars
+const avatarColors = [
+  "from-blue-500 to-blue-600",
+  "from-purple-500 to-purple-600",
+  "from-pink-500 to-pink-600",
+  "from-red-500 to-red-600",
+  "from-yellow-500 to-yellow-600",
+  "from-green-500 to-green-600",
+  "from-teal-500 to-teal-600",
+  "from-cyan-500 to-cyan-600",
+  "from-indigo-500 to-indigo-600",
+];
+
+// Hash function to consistently map strings to color indices
+const getColorIndex = (str: string, colorCount: number): number => {  
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash) % colorCount;
+};
+
+const getAvatarColor = (name: string): string => {
+  const index = getColorIndex(name, avatarColors.length);
+  return avatarColors[index];
+};
+
+const getAvatarText = (name: string): string => {
+  // Show first and third letter, or first and second if name is only 2 chars
+  if (name.length === 0) return "";
+  if (name.length === 1) return name.charAt(0).toUpperCase();
+  if (name.length === 2) return (name.charAt(0) + name.charAt(1)).toUpperCase();
+  return (name.charAt(0) + name.charAt(2)).toUpperCase();
+};
+
 export default function Sidebar() {
   const { user, hasRole } = useUser();
   const displayName = user?.display_name ?? user?.netid ?? "—";
@@ -51,7 +88,7 @@ export default function Sidebar() {
           willChange: "width",
           backfaceVisibility: "hidden",
           transform: "translateZ(0)",
-          transition: "width 0.8s ease",
+          transition: "width 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
         }}
       >
         {/* Toggle Button */}
@@ -77,7 +114,7 @@ export default function Sidebar() {
             zIndex: 500,
             color: "#e2e9f0",
             boxShadow: "4px 0 12px rgba(0,0,0,0.4)",
-            transition: "all 0.8s ease",
+            transition: "all 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
           }}
           title="Toggle Sidebar"
         >
@@ -86,7 +123,7 @@ export default function Sidebar() {
             style={{
               fontSize: "16px",
               transform: isCollapsed ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 0.5s ease",
+              transition: "transform 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
             }}
           >
             chevron_left
@@ -95,13 +132,14 @@ export default function Sidebar() {
 
         {/* Logo Section */}
         <div
-          className="flex items-center shrink-0 overflow-hidden transition-all duration-500"
+          className="flex items-center shrink-0 overflow-hidden"
           style={{
             height: "126px",
             paddingBottom: "24px",
-            paddingLeft: isCollapsed ? "22px" : "24px",
+            paddingLeft: "24px",
             paddingRight: isCollapsed ? "22px" : "24px",
             gap: "12px",
+            transition: "padding-right 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
           }}
         >
           <img
@@ -117,7 +155,7 @@ export default function Sidebar() {
               color: "#eef2f6",
               fontFamily: "Manrope, sans-serif",
               opacity: isCollapsed ? 0 : 1,
-              transition: "opacity 0.5s ease, width 0.5s ease",
+              transition: "opacity 1s cubic-bezier(0.25, 0.1, 0.25, 1), width 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
               whiteSpace: "nowrap",
               width: isCollapsed ? "0" : "auto",
               overflow: "hidden",
@@ -143,7 +181,7 @@ export default function Sidebar() {
                     color: active ? "#c7d2fe" : "#9caec2",
                     backgroundColor: active ? "rgba(129, 140, 248, 0.25)" : "transparent",
                     borderLeft: active ? "2px solid #818cf8" : "2px solid transparent",
-                    paddingLeft: isCollapsed ? "22px" : "24px",
+                    paddingLeft: "24px",
                     paddingRight: isCollapsed ? "22px" : "24px",
                     paddingTop: "14px",
                     paddingBottom: "14px",
@@ -163,7 +201,7 @@ export default function Sidebar() {
                   <div
                     style={{
                       opacity: isCollapsed ? 0 : 1,
-                      transition: "opacity 0.5s ease, width 0.5s ease",
+                      transition: "opacity 1s cubic-bezier(0.25, 0.1, 0.25, 1), width 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       width: isCollapsed ? "0" : "auto",
@@ -204,10 +242,10 @@ export default function Sidebar() {
                       color: active ? "#c7d2fe" : "#9caec2",
                       backgroundColor: active ? "rgba(129, 140, 248, 0.25)" : "transparent",
                       borderLeft: active ? "2px solid #818cf8" : "2px solid transparent",
-                      paddingLeft: isCollapsed ? "22px" : "24px",
+                      paddingLeft: "24px",
                       paddingRight: isCollapsed ? "22px" : "24px",
-                      paddingTop: "12px",
-                      paddingBottom: "12px",
+                      paddingTop: "14px",
+                      paddingBottom: "14px",
                       gap: "16px",
                     }}
                   >
@@ -217,7 +255,7 @@ export default function Sidebar() {
                         fontSize: "24px",
                         fontVariationSettings: "'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24",
                         flexShrink: 0,
-                        marginLeft: "-1px",
+                        marginLeft: "-2px",
                       }}
                     >
                       {item.icon}
@@ -225,7 +263,7 @@ export default function Sidebar() {
                     <div
                       style={{
                         opacity: isCollapsed ? 0 : 1,
-                        transition: "opacity 0.5s ease, width 0.5s ease",
+                        transition: "opacity 1s cubic-bezier(0.25, 0.1, 0.25, 1), width 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         width: isCollapsed ? "0" : "auto",
@@ -256,7 +294,7 @@ export default function Sidebar() {
             className="sidebar-link flex items-center transition-colors w-full overflow-hidden"
             style={{
               color: "#9caec2",
-              paddingLeft: isCollapsed ? "22px" : "24px",
+              paddingLeft: "24px",
               paddingRight: isCollapsed ? "22px" : "24px",
               paddingTop: "12px",
               paddingBottom: "12px",
@@ -276,7 +314,7 @@ export default function Sidebar() {
             <div
               style={{
                 opacity: isCollapsed ? 0 : 1,
-                transition: "opacity 0.4s ease, width 0.5s ease",
+                transition: "opacity 1s cubic-bezier(0.25, 0.1, 0.25, 1), width 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 width: isCollapsed ? "0" : "auto",
@@ -297,19 +335,20 @@ export default function Sidebar() {
 
           {/* User Profile Section */}
           <div
-            className="flex items-center transition-all duration-500 overflow-hidden"
+            className="flex items-center overflow-hidden"
             title={isCollapsed ? displayName : ""}
             style={{
               borderTop: "1px solid rgba(148, 163, 184, 0.08)",
-              paddingLeft: isCollapsed ? "22px" : "24px",
+              paddingLeft: "24px",
               paddingRight: isCollapsed ? "22px" : "24px",
               paddingTop: "12px",
               paddingBottom: "12px",
               gap: "16px",
+              transition: "padding-right 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
             }}
           >
             <div
-              className="w-6 h-6 rounded-full overflow-hidden border shrink-0"
+              className={`w-6 h-6 rounded-full overflow-hidden border shrink-0 bg-gradient-to-br ${getAvatarColor(displayName)} flex items-center justify-center text-[10px] font-bold text-white`}
               style={{
                 border: "1px solid rgba(148, 163, 184, 0.2)",
                 flexShrink: 0,
@@ -317,18 +356,14 @@ export default function Sidebar() {
                 minHeight: "24px",
               }}
             >
-              <img
-                alt={displayName}
-                src={`https://ui-avatars.com/api/?name=${displayName}&background=8b5cf6&color=fff`}
-                className="w-full h-full object-cover"
-              />
+              {getAvatarText(displayName)}
             </div>
             <div
               style={{
                 width: isCollapsed ? "0" : "auto",
                 flex: isCollapsed ? "0 0 0" : "1",
                 opacity: isCollapsed ? 0 : 1,
-                transition: "opacity 0.5s ease, width 0.5s ease",
+                transition: "opacity 1s cubic-bezier(0.25, 0.1, 0.25, 1), width 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
                 overflow: "hidden",
                 whiteSpace: "nowrap",
                 willChange: "width, opacity",
