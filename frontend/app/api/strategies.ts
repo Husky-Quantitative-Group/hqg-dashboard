@@ -8,6 +8,7 @@ export type Strategy = {
   created_at?: string;
   updated_at?: string;
   owner?: string;
+  owner_display?: string;
   project_id: string;
   project_name: string;
   metrics?: {
@@ -28,6 +29,77 @@ export const fetchStrategies = async (): Promise<Strategy[]> => {
 export const fetchStrategyById = async (strategyId: string | number): Promise<Strategy> => {
   const response = await coreApi.get<Strategy>(`/strategies/${strategyId}`);
   return response.data;
+};
+
+export type StrategyPermissions = {
+  read: {
+    public: boolean;
+    fund?: boolean;
+    users: UserSearchResult[];
+  };
+  write: {
+    public: boolean;
+    fund?: boolean;
+    users: UserSearchResult[];
+  };
+};
+
+export type StrategyPermissionsPatch = {
+  read?: {
+    public?: boolean;
+    fund?: boolean;
+    addUsers?: string[];
+    removeUsers?: string[];
+  };
+  write?: {
+    public?: boolean;
+    fund?: boolean;
+    addUsers?: string[];
+    removeUsers?: string[];
+  };
+};
+
+export const fetchStrategyPermissions = async (
+  strategyId: string | number
+): Promise<StrategyPermissions> => {
+  const response = await coreApi.get<StrategyPermissions>(
+    `/strategies/${strategyId}/permissions`
+  );
+  return response.data;
+};
+
+export const patchStrategyPermissions = async (
+  strategyId: string | number,
+  payload: StrategyPermissionsPatch
+): Promise<{ ok?: boolean }> => {
+  const response = await coreApi.patch(`/strategies/${strategyId}/permissions`, payload);
+  return response.data;
+};
+
+export const deleteStrategyPermissions = async (
+  strategyId: string | number,
+  payload: StrategyPermissionsPatch
+): Promise<{ ok?: boolean }> => {
+  const response = await coreApi.delete(`/strategies/${strategyId}/permissions`, {
+    data: payload,
+  });
+  return response.data;
+};
+
+export type UserSearchResult = {
+  netid: string;
+  full_name?: string;
+  uconn_email?: string;
+};
+
+export const searchUsers = async (query: string): Promise<UserSearchResult[]> => {
+  const response = await coreApi.get<{ items?: UserSearchResult[] }>(
+    `/users/search`,
+    {
+      params: { q: query },
+    }
+  );
+  return response.data.items ?? [];
 };
 
 export type CreateStrategyRequest = {

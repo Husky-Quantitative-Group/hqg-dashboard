@@ -166,14 +166,12 @@ export default function CreateStrategy() {
       navigate(`/strategies/${newStrategy.id}`);
     } catch (error) {
       console.error("Failed to create strategy", error);
-      const apiMessage =
         typeof error === "object" &&
         error !== null &&
         "response" in error &&
         typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === "string"
           ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
           : null;
-      setErrorMessage(apiMessage ?? "Failed to create strategy");
     } finally {
       setIsSubmitting(false);
     }
@@ -222,7 +220,15 @@ export default function CreateStrategy() {
               <div className="mt-2 space-y-2 text-sm text-slate-200">
                 <div className="font-semibold text-white">{selectedTemplate.name}</div>
                 <div className="text-slate-400 text-xs">
-                  Owner: {selectedTemplate.owner || "—"} · Updated: {selectedTemplate.updated_at ? new Date(selectedTemplate.updated_at).toLocaleString() : "-"}
+                  Owner: {selectedTemplate.owner_display ?? selectedTemplate.owner ?? "—"} · Updated:{" "}
+                  {selectedTemplate.updated_at ? new Date(selectedTemplate.updated_at).toLocaleString("en-US", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    timeZoneName: "short",
+                  }) : "-"}
                 </div>
                 <div className="text-slate-300 text-xs line-clamp-3">
                   {selectedTemplate.description || "No description provided."}
@@ -365,7 +371,7 @@ export default function CreateStrategy() {
             </button>
             <button
               type="button"
-              onClick={() => navigate("/strategies")}
+              onClick={() => navigate("/")}
               className="rounded-xl border border-slate-700 px-5 py-2 text-sm font-semibold text-slate-100"
             >
               Cancel

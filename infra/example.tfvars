@@ -14,7 +14,7 @@ frontend_base_url = "http://localhost:5173"
 # strategy_artifact_versions_table_name = "hqg-dev-strategy-artifact-versions"
 # users_table_name                      = "hqg-dev-users"
 # user_access_applications_table_name   = "hqg-dev-user-access-applications"
-# backtest_metrics_table_name           = "hqg-dev-backtest-metrics"
+# strategy_backtests_table_name           = "hqg-dev-strategy-backtests"
 
 tags = {
   Owner = "hqg-team"

@@ -5,6 +5,12 @@ from decimal import Decimal
 import base64
 from datetime import datetime, timezone
 
+from hqg_permissions import (
+    get_roles_from_event,
+    has_read_permission,
+    has_write_permission,
+)
+
 s3 = boto3.client("s3")
 dynamo = boto3.resource("dynamodb")
 
@@ -12,22 +18,24 @@ BUCKET = os.environ["ARTIFACT_BUCKET"]
 ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
 STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
+WRITE_PERMISSIONS_TABLE = dynamo.Table(os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"])
+READ_PERMISSIONS_TABLE = dynamo.Table(os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"])
 def handler(event, context):
     route = event["requestContext"]["routeKey"]
 
     if route == "GET /strategies/{id}/artifacts":
         strategy_id = event["pathParameters"]["id"]
-        return list_artifacts(strategy_id)
+        return list_artifacts(strategy_id, event)
 
     if route == "POST /strategies/{id}/artifacts":
         strategy_id = event["pathParameters"]["id"]
         body = json.loads(event.get("body") or "{}")
-        return upload_artifacts(strategy_id, body)
+        return upload_artifacts(strategy_id, body, event)
 
     if route == "GET /strategies/{id}/artifacts/{artifactId}":
         strategy_id = event["pathParameters"]["id"]
         artifact_id = event["pathParameters"]["artifactId"]
-        return download_artifact(strategy_id, artifact_id)
+        return download_artifact(strategy_id, artifact_id, event)
 
     return {"statusCode": 404, "body": "Not found"}
 
@@ -36,7 +44,17 @@ def handler(event, context):
 # Artifact operations
 # ----------------------------
 
-def list_artifacts(strategy_id):
+def list_artifacts(strategy_id, event):
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    roles = get_roles_from_event(event)
+    if "ADMIN" not in roles and not has_read_permission(
+        strategy_id, netid, roles, READ_PERMISSIONS_TABLE, WRITE_PERMISSIONS_TABLE
+    ):
+        return _json(403, {"message": "forbidden"})
+
     resp = ARTIFACTS_TABLE.query(
         KeyConditionExpression="strategy_id = :s",
         ExpressionAttributeValues={":s": strategy_id}
@@ -45,7 +63,17 @@ def list_artifacts(strategy_id):
     artifact_ids = [item.get("artifact_id") for item in items if "artifact_id" in item]
     return _json(200, {"artifacts": artifact_ids})
 
-def download_artifact(strategy_id, artifact_id, max_bytes=1_000_000):
+def download_artifact(strategy_id, artifact_id, event, max_bytes=1_000_000):
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    roles = get_roles_from_event(event)
+    if "ADMIN" not in roles and not has_read_permission(
+        strategy_id, netid, roles, READ_PERMISSIONS_TABLE, WRITE_PERMISSIONS_TABLE
+    ):
+        return _json(403, {"message": "forbidden"})
+
     artifact = ARTIFACTS_TABLE.get_item(Key={"strategy_id": strategy_id, "artifact_id": artifact_id}).get("Item")
     if not artifact:
         return _json(404, {"message": "Artifact not found"})
@@ -84,7 +112,7 @@ def download_artifact(strategy_id, artifact_id, max_bytes=1_000_000):
         "body": base64.b64encode(body).decode("utf-8"),
     }
 
-def upload_artifacts(strategy_id, body):
+def upload_artifacts(strategy_id, body, event):
     """
     New upload flow: accept all files + contents in a single request.
     Expected body:
@@ -99,6 +127,14 @@ def upload_artifacts(strategy_id, body):
 
     if not isinstance(files, list) or not files:
         return _json(400, {"message": "files must be a non-empty list"})
+
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    roles = get_roles_from_event(event)
+    if not has_write_permission(strategy_id, netid, roles, WRITE_PERMISSIONS_TABLE):
+        return _json(403, {"message": "forbidden"})
 
     strategy = STRATEGIES_TABLE.get_item(Key={"id": strategy_id}).get("Item")
     if not strategy:
@@ -183,3 +219,19 @@ def _json(code, body):
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps(body),
     }
+
+
+def _get_netid_from_event(event):
+    request_context = event.get("requestContext") or {}
+    authorizer = request_context.get("authorizer") or {}
+
+    netid = authorizer.get("netid")
+    if not netid and isinstance(authorizer.get("lambda"), dict):
+        netid = authorizer.get("lambda", {}).get("netid")
+
+    if not isinstance(netid, str):
+        return None
+
+    netid = netid.strip()
+    return netid or None
+

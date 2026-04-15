@@ -1,17 +1,24 @@
 import { fetchStrategyById, type Strategy } from "~/api/strategies";
-import { fetchStrategyArtifacts, fetchStrategyArtifactContent, type StrategyFile } from "~/api/strategyArtifacts";
+import {
+  fetchStrategyArtifacts,
+  fetchStrategyArtifactContent,
+  fetchStrategyWriteAccess,
+  type StrategyFile,
+} from "~/api/strategyArtifacts";
 
 export type StrategyWorkspace = {
   strategy: Strategy;
   files: StrategyFile[];
   backtestResults: BacktestResult[];
+  canWrite: boolean;
 };
 
 export const fetchStrategyWorkspace = async (strategyId: string | number): Promise<StrategyWorkspace> => {
   // Pull metadata from the real API, derive files from the artifacts list, keep mock runs for now.
-  const [strategy, artifactIds] = await Promise.all([
+  const [strategy, artifactIds, canWrite] = await Promise.all([
     fetchStrategyById(strategyId),
     fetchStrategyArtifacts(strategyId),
+    fetchStrategyWriteAccess(strategyId),
   ]);
 
   const readmePath = artifactIds.find((p) => p.toLowerCase().includes("readme"));
@@ -41,7 +48,8 @@ export const fetchStrategyWorkspace = async (strategyId: string | number): Promi
   return {
     strategy: strategy,
     files: cloneFiles(files),
-    backtestResults: cloneRuns(createMockRuns(1))
+    backtestResults: cloneRuns(createMockRuns(1)),
+    canWrite,
   };
 };
 

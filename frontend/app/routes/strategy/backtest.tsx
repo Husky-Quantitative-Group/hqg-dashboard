@@ -90,12 +90,14 @@ type StrategyEquityChartProps = {
   isSaveDisabled: boolean;
   saveDisabledReason?: string;
   isViewingSaved: boolean;
+  isWriteForbidden: boolean;
   showPlaceholder: boolean;
   animatePlaceholder: boolean;
 };
 
 type BacktestOrdersTableProps = {
   orders: BacktestOrder[];
+  logs: string[];
   showPlaceholder: boolean;
   animatePlaceholder: boolean;
 };
@@ -154,9 +156,11 @@ export default function StrategyBacktest() {
     activeBacktestSource,
     setActiveBacktestSource,
     setActiveSavedRunId,
+    isWriteForbidden,
   } = useStrategyWorkspace();
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const [isSavingBacktest, setIsSavingBacktest] = useState(false);
+  const [latestBacktestLogs, setLatestBacktestLogs] = useState<string[]>([]);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -195,6 +199,7 @@ export default function StrategyBacktest() {
     setActiveBacktestSource("live");
     setActiveSavedRunId(null);
     setLatestBacktestData(null);
+    setLatestBacktestLogs([]);
     setLatestBacktestStrategyCode(strategyCode);
     setLatestBacktestStrategyVersion(
       savedEntrypointContent !== null && strategyCode === savedEntrypointContent ? strategy.current_version ?? null : null
@@ -214,11 +219,11 @@ export default function StrategyBacktest() {
       pollIntervalRef.current = setInterval(async () => {
         try {
           const job = await getBacktestJob(jobId);
-
           if (job.status === "COMPLETED") {
             clearInterval(pollIntervalRef.current!);
             pollIntervalRef.current = null;
             setLatestBacktestData(job.result!);
+            setLatestBacktestLogs(job.logs ?? []);
             setIsRunningBacktest(false);
             addToast("Backtest finished", "success");
             console.log("[Backtest] Completed:", job);
@@ -226,6 +231,7 @@ export default function StrategyBacktest() {
             clearInterval(pollIntervalRef.current!);
             pollIntervalRef.current = null;
             setLatestBacktestData(null);
+            setLatestBacktestLogs(job.logs ?? []);
             setLatestBacktestStrategyVersion(null);
             setLatestBacktestStrategyCode(null);
             setIsRunningBacktest(false);
@@ -237,6 +243,7 @@ export default function StrategyBacktest() {
           clearInterval(pollIntervalRef.current!);
           pollIntervalRef.current = null;
           setLatestBacktestData(null);
+          setLatestBacktestLogs([]);
           setLatestBacktestStrategyVersion(null);
           setLatestBacktestStrategyCode(null);
           setIsRunningBacktest(false);
@@ -246,6 +253,7 @@ export default function StrategyBacktest() {
       }, POLL_INTERVAL_MS);
     } catch (submitError) {
       setLatestBacktestData(null);
+      setLatestBacktestLogs([]);
       setLatestBacktestStrategyVersion(null);
       setLatestBacktestStrategyCode(null);
       setIsRunningBacktest(false);
@@ -257,6 +265,10 @@ export default function StrategyBacktest() {
 
   const handleSaveResults = async () => {
     if (isSavingBacktest) return;
+    if (isWriteForbidden) {
+      addToast("You do not have write access to save results.", "warning");
+      return;
+    }
     if (!backtestData) {
       addToast("Run a backtest before saving.", "warning");
       return;
@@ -427,13 +439,14 @@ export default function StrategyBacktest() {
               isSaveDisabled={isSaveDisabled}
               saveDisabledReason={saveDisabledReason}
               isViewingSaved={activeBacktestSource === "saved"}
+              isWriteForbidden={isWriteForbidden}
               showPlaceholder={showPlaceholder}
               animatePlaceholder={animatePlaceholder}
             />
           </div>
         </div>
 
-        <BacktestOrdersTable orders={orders} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
+        <BacktestOrdersTable orders={orders} logs={latestBacktestLogs} showPlaceholder={showPlaceholder} animatePlaceholder={animatePlaceholder} />
       </div>
     </SkeletonTheme>
   );
@@ -835,34 +848,39 @@ function StrategyEquityChart({
   );
 }
 
-function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: BacktestOrdersTableProps) {
+function BacktestOrdersTable({ orders, logs, showPlaceholder, animatePlaceholder }: BacktestOrdersTableProps) {
   const [activeTab, setActiveTab] = useState<ExecutionPanelTab>("orders");
   const [page, setPage] = useState(1);
   const [pageInput, setPageInput] = useState("1");
   const [pageSize, setPageSize] = useState(DEFAULT_EXECUTION_LOG_PAGE_SIZE);
-  const [symbolFilter, setSymbolFilter] = useState("");
-  const [actionFilter, setActionFilter] = useState<"all" | "buy" | "sell">("all");
+  const [tickerFilter, setSymbolFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | "buy" | "sell">("all");
 
   useEffect(() => {
     setPage(1);
     setPageInput("1");
-  }, [orders, pageSize, symbolFilter, actionFilter, activeTab]);
+  }, [orders, pageSize, tickerFilter, typeFilter, activeTab]);
 
   const filteredOrders = useMemo(() => {
-    const normalizedSymbol = symbolFilter.trim().toLowerCase();
+    const normalizedTicker = tickerFilter.trim().toLowerCase();
     return orders.filter((order) => {
-      const matchesSymbol = !normalizedSymbol || order.symbol.toLowerCase().includes(normalizedSymbol);
-      const normalizedAction = String(order.action).toLowerCase();
-      const matchesAction = actionFilter === "all" || normalizedAction === actionFilter;
-      return matchesSymbol && matchesAction;
+      const matchesTicker = !normalizedTicker || order.ticker.toLowerCase().includes(normalizedTicker);
+      const normalizedType = String(order.type).toLowerCase();
+      const matchesType = typeFilter === "all" || normalizedType === typeFilter;
+      return matchesTicker && matchesType;
     });
-  }, [actionFilter, orders, symbolFilter]);
+  }, [typeFilter, orders, tickerFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageStart = (currentPage - 1) * pageSize;
   const pageEnd = Math.min(pageStart + pageSize, filteredOrders.length);
   const visibleOrders = filteredOrders.slice(pageStart, pageEnd);
+
+  const totalLogPages = Math.max(1, Math.ceil(logs.length / pageSize));
+  const currentLogPage = Math.min(page, totalLogPages);
+  const logPageStart = (currentLogPage - 1) * pageSize;
+  const visibleLogs = logs.slice(logPageStart, logPageStart + pageSize);
 
   useEffect(() => {
     setPageInput(String(currentPage));
@@ -907,21 +925,82 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
           ))}
         </div>
 
-        {showPlaceholder ? (
+        {showPlaceholder && activeTab !== "logs" ? (
           <ExecutionPlaceholder animatePlaceholder={animatePlaceholder} />
-        ) : activeTab !== "orders" ? (
-          <ExecutionPlaceholder
-            animatePlaceholder={false}
-            label={activeTab === "logs" ? "Logs panel coming soon." : "Warnings panel coming soon."}
-          />
+        ) : activeTab === "logs" ? (
+          animatePlaceholder ? (
+            <ExecutionPlaceholder animatePlaceholder={true} />
+          ) : logs.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-4 py-8 text-center text-sm text-slate-400">
+              No logs for this run.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <ExecutionFilters pageSize={pageSize} onPageSizeChange={setPageSize} />
+
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
+                <div>{`${logPageStart + 1}–${logPageStart + visibleLogs.length} of ${logs.length} entries`}</div>
+                <div>{`${logs.length} total entries`}</div>
+              </div>
+
+              <div className="space-y-1 font-mono text-xs text-slate-300">
+                {visibleLogs.map((line, i) => (
+                  <div key={logPageStart + i} className="rounded-lg bg-slate-900/60 px-3 py-1.5 leading-relaxed">
+                    {line}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+                  <span>Page</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={pageInput}
+                    onChange={(event) => setPageInput(event.target.value.replace(/[^\d]/g, ""))}
+                    onBlur={applyPageInput}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        applyPageInput();
+                      }
+                    }}
+                    className="w-16 rounded-lg border border-slate-700 bg-slate-900/60 px-2 py-1.5 text-center text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+                  />
+                  <span>of {totalLogPages}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={currentLogPage === 1}
+                    className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage((current) => Math.min(totalLogPages, current + 1))}
+                    disabled={currentLogPage === totalLogPages}
+                    className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        ) : activeTab === "warnings" ? (
+          <ExecutionPlaceholder animatePlaceholder={false} label="Warnings panel coming soon." />
         ) : filteredOrders.length === 0 ? (
           <div className="space-y-4">
             <ExecutionFilters
-              symbolFilter={symbolFilter}
-              actionFilter={actionFilter}
+              tickerFilter={tickerFilter}
+              typeFilter={typeFilter}
               pageSize={pageSize}
-              onSymbolFilterChange={setSymbolFilter}
-              onActionFilterChange={setActionFilter}
+              onTickerFilterChange={setSymbolFilter}
+              onTypeFilterChange={setTypeFilter}
               onPageSizeChange={setPageSize}
             />
             <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-4 py-8 text-center text-sm text-slate-400">
@@ -931,11 +1010,11 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
         ) : (
           <div className="space-y-4">
             <ExecutionFilters
-              symbolFilter={symbolFilter}
-              actionFilter={actionFilter}
+              tickerFilter={tickerFilter}
+              typeFilter={typeFilter}
               pageSize={pageSize}
-              onSymbolFilterChange={setSymbolFilter}
-              onActionFilterChange={setActionFilter}
+              onTickerFilterChange={setSymbolFilter}
+              onTypeFilterChange={setTypeFilter}
               onPageSizeChange={setPageSize}
             />
 
@@ -956,12 +1035,12 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
               </thead>
               <tbody>
                 {visibleOrders.map((order) => {
-                  const isBuy = String(order.action).toLowerCase() === "buy";
+                  const isBuy = String(order.type).toLowerCase() === "buy";
                   const orderType = isBuy ? "Buy" : "Sell";
                   return (
                     <tr key={order.id} className="border-t border-slate-800 text-slate-200">
                       <td className="px-3 py-3">{dateFormatter.format(new Date(order.timestamp))}</td>
-                      <td className="px-3 py-3 font-semibold">{order.symbol}</td>
+                      <td className="px-3 py-3 font-semibold">{order.ticker}</td>
                       <td className="px-3 py-3">
                         <span className={`font-semibold ${isBuy ? "text-emerald-400" : "text-rose-400"}`}>
                           {orderType}
@@ -1022,47 +1101,51 @@ function BacktestOrdersTable({ orders, showPlaceholder, animatePlaceholder }: Ba
 }
 
 type ExecutionFiltersProps = {
-  symbolFilter: string;
-  actionFilter: "all" | "buy" | "sell";
   pageSize: number;
-  onSymbolFilterChange: (value: string) => void;
-  onActionFilterChange: (value: "all" | "buy" | "sell") => void;
   onPageSizeChange: (value: number) => void;
+  tickerFilter?: string;
+  typeFilter?: "all" | "buy" | "sell";
+  onTickerFilterChange?: (value: string) => void;
+  onTypeFilterChange?: (value: "all" | "buy" | "sell") => void;
 };
 
 function ExecutionFilters({
-  symbolFilter,
-  actionFilter,
   pageSize,
-  onSymbolFilterChange,
-  onActionFilterChange,
   onPageSizeChange,
+  tickerFilter,
+  typeFilter,
+  onTickerFilterChange,
+  onTypeFilterChange,
 }: ExecutionFiltersProps) {
   return (
     <div className="flex flex-wrap items-end gap-3 border-y border-slate-800 py-4">
-      <label className="space-y-1">
-        <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Ticker</span>
-        <input
-          type="text"
-          value={symbolFilter}
-          onChange={(event) => onSymbolFilterChange(event.target.value)}
-          placeholder="Filter symbol"
-          className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-fuchsia-500 focus:outline-none"
-        />
-      </label>
+      {tickerFilter !== undefined && onTickerFilterChange !== undefined && (
+        <label className="space-y-1">
+          <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Ticker</span>
+          <input
+            type="text"
+            value={tickerFilter}
+            onChange={(event) => onTickerFilterChange(event.target.value)}
+            placeholder="Filter ticker"
+            className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-fuchsia-500 focus:outline-none"
+          />
+        </label>
+      )}
 
-      <label className="space-y-1">
-        <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Side</span>
-        <select
-          value={actionFilter}
-          onChange={(event) => onActionFilterChange(event.target.value as "all" | "buy" | "sell")}
-          className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
-        >
-          <option value="all">All</option>
-          <option value="buy">Buy</option>
-          <option value="sell">Sell</option>
-        </select>
-      </label>
+      {typeFilter !== undefined && onTypeFilterChange !== undefined && (
+        <label className="space-y-1">
+          <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Side</span>
+          <select
+            value={typeFilter}
+            onChange={(event) => onTypeFilterChange(event.target.value as "all" | "buy" | "sell")}
+            className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-fuchsia-500 focus:outline-none"
+          >
+            <option value="all">All</option>
+            <option value="buy">Buy</option>
+            <option value="sell">Sell</option>
+          </select>
+        </label>
+      )}
 
       <label className="space-y-1">
         <span className="text-xs uppercase tracking-[0.22em] text-slate-500">Show</span>
@@ -1118,7 +1201,7 @@ const toFiniteNumber = (value: unknown): number | null => {
   return value;
 };
 
-const toDecimal = (value: number | undefined) => (Number.isFinite(value) ? (value as number) : null);
+const toDecimal = (value: number | null | undefined) => (Number.isFinite(value) ? (value as number) : null);
 
 const formatNumber = (value: number | null, decimals = 2) =>
   value === null ? "—" : value.toFixed(decimals);
@@ -1136,32 +1219,36 @@ const formatPercentValue = (value: number | null, decimals = 2) => {
 const formatMoney = (value: number | null) => (value === null ? "—" : currencyFormatter.format(value));
 
 const buildMetrics = (metrics?: Metrics): BacktestMetric[] => {
-  const sharpe = toDecimal(metrics?.sharpe_ratio);
+  const sharpe = toDecimal(metrics?.sharpe);
   const sortino = toDecimal(metrics?.sortino);
+  const calmar = toDecimal(metrics?.calmar);
   const alpha = toDecimal(metrics?.alpha);
   const beta = toDecimal(metrics?.beta);
   const psr = toDecimal(metrics?.psr);
-  const winRate = toDecimal(metrics?.win_rate);
   const maxDrawdown = toDecimal(metrics?.max_drawdown);
+  const maxDrawdownDuration = toDecimal(metrics?.max_drawdown_duration);
   const totalOrders = toDecimal(metrics?.total_orders);
-  const avgWin = toDecimal(metrics?.avg_win);
-  const avgLoss = toDecimal(metrics?.avg_loss);
-  const totalReturn = toDecimal(metrics?.total_return);
+  const totalReturn = toDecimal(metrics?.total_pct_return);
   const annualizedReturn = toDecimal(metrics?.annualized_return);
+  const annVol = toDecimal(metrics?.ann_vol);
+  const var95 = toDecimal(metrics?.var_95);
+  const cvar95 = toDecimal(metrics?.cvar_95);
 
   return [
     { id: "sharpe", label: "Sharpe", value: formatNumber(sharpe), column: "left" },
     { id: "sortino", label: "Sortino", value: formatNumber(sortino), column: "left" },
+    { id: "calmar", label: "Calmar", value: formatNumber(calmar), column: "left" },
     { id: "alpha", label: "Alpha", value: formatNumber(alpha), column: "left" },
     { id: "beta", label: "Beta", value: formatNumber(beta), column: "left" },
     { id: "psr", label: "PSR", value: formatNumber(psr), column: "left" },
-    { id: "winRate", label: "Win Rate", value: formatPercent(winRate), column: "left" },
     { id: "totalReturn", label: "Total Return", value: formatPercent(totalReturn), column: "right" },
-    { id: "annualizedReturn", label: "Ann. Return", value: formatPercent(annualizedReturn), column: "right" },
+    { id: "annualizedReturn", label: "CAGR", value: formatPercent(annualizedReturn), column: "right" },
+    { id: "annVol", label: "Ann. Volatility", value: formatPercent(annVol), column: "right" },
     { id: "maxDrawdown", label: "Max Drawdown", value: formatPercent(maxDrawdown), column: "right" },
-    { id: "totalOrders", label: "Total Orders", value: totalOrders === null ? "—" : numberFormatter.format(totalOrders), column: "right" },
-    { id: "avgWin", label: "Avg Win %", value: formatPercent(avgWin), column: "right" },
-    { id: "avgLoss", label: "Avg Loss %", value: formatPercent(avgLoss), column: "right" },
+    { id: "maxDrawdownDuration", label: "Max DD Duration", value: maxDrawdownDuration === null ? "—" : `${numberFormatter.format(maxDrawdownDuration)} bars`, column: "right" },
+    { id: "var95", label: "VaR (95%)", value: formatPercent(var95), column: "right" },
+    { id: "cvar95", label: "CVaR (95%)", value: formatPercent(cvar95), column: "right" },
+    { id: "totalOrders", label: "Total Orders", value: totalOrders === null ? "—" : numberFormatter.format(totalOrders), column: "left" },
   ];
 };
 
@@ -1230,17 +1317,17 @@ const buildAllocationSeries = (
 
     while (index < sortedOrders.length && sortedOrders[index].timestamp === timestamp) {
       const order = sortedOrders[index];
-      const direction = String(order.action).toLowerCase() === "buy" ? 1 : -1;
+      const direction = String(order.type).toLowerCase() === "buy" ? 1 : -1;
       const shares = direction * order.shares;
-      const nextQuantity = (holdings.get(order.symbol) ?? 0) + shares;
+      const nextQuantity = (holdings.get(order.ticker) ?? 0) + shares;
 
       if (Math.abs(nextQuantity) < 1e-9) {
-        holdings.delete(order.symbol);
+        holdings.delete(order.ticker);
       } else {
-        holdings.set(order.symbol, nextQuantity);
+        holdings.set(order.ticker, nextQuantity);
       }
 
-      latestPrices.set(order.symbol, order.price);
+      latestPrices.set(order.ticker, order.price);
       cash -= shares * order.price;
       index += 1;
     }
@@ -1319,7 +1406,7 @@ const buildOrders = (orders?: BacktestOrder[]): BacktestOrder[] => {
 
   return orders.map((order, index) => ({
     ...order,
-    id: order.id || `${order.timestamp}-${order.symbol}-${index}`,
+    id: order.id || `${order.timestamp}-${order.ticker}-${index}`,
   }));
 };
 
@@ -1591,11 +1678,12 @@ function RechartsAllocationChart({
 const buildEquityStats = (data: BacktestResponse | null): EquityStat[] => {
   if (!data) return [];
 
-  const finalEquity = toDecimal(data.equity_stats?.equity);
-  const fees = toDecimal(data.equity_stats?.fees);
-  const netProfit = toDecimal(data.equity_stats?.net_profit);
-  const returnPct = toDecimal(data.equity_stats?.return_pct);
-  const volume = toDecimal(data.equity_stats?.volume);
+  const m = data.metrics;
+  const finalEquity = toDecimal(m?.final_portfolio_value);
+  const fees = toDecimal(m?.fees);
+  const netProfit = toDecimal(m?.net_profit);
+  const returnPct = toDecimal(m?.total_pct_return);
+  const volume = toDecimal(m?.volume);
 
   const profitAccent = netProfit !== null && netProfit >= 0 ? "text-emerald-300" : "text-rose-300";
   const returnAccent = returnPct !== null && returnPct >= 0 ? "text-emerald-300" : "text-rose-300";
@@ -1603,7 +1691,7 @@ const buildEquityStats = (data: BacktestResponse | null): EquityStat[] => {
   return [
     { id: "finalEquity", label: "Final Equity", value: formatMoney(finalEquity), accentClass: "text-white" },
     { id: "netProfit", label: "Net Profit", value: formatMoney(netProfit), accentClass: profitAccent },
-    { id: "return", label: "Return", value: formatPercentValue(returnPct), accentClass: returnAccent },
+    { id: "return", label: "Return", value: formatPercent(returnPct), accentClass: returnAccent },
     { id: "fees", label: "Fees", value: formatMoney(fees), accentClass: "text-white" },
     { id: "volume", label: "Volume", value: volume === null ? "—" : numberFormatter.format(volume), accentClass: "text-white" },
   ];

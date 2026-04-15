@@ -28,20 +28,22 @@ provider "aws" {
 data "aws_caller_identity" "current" {}
 
 locals {
-  name_prefix                         = "${var.project}-${var.env}"
-  is_prod                             = lower(var.env) == "prod"
-  api_custom_domain_requested         = local.is_prod && var.api_custom_domain_name != null
-  api_custom_domain_activated         = local.api_custom_domain_requested && var.api_custom_domain_activate
-  artifacts_bucket_name               = coalesce(var.artifacts_bucket_name, "${local.name_prefix}-strategy-artifacts-${data.aws_caller_identity.current.account_id}")
-  backtests_bucket_name               = coalesce(var.backtests_bucket_name, "${local.name_prefix}-backtest-metrics-${data.aws_caller_identity.current.account_id}")
-  jwks_bucket_name                    = coalesce(var.jwks_bucket_name, "${local.name_prefix}-jwks-${random_id.jwks_bucket_suffix.hex}")
-  strategies_table_name               = coalesce(var.strategies_table_name, "${local.name_prefix}-strategies")
-  strategy_artifacts_table_name       = coalesce(var.strategy_artifacts_table_name, "${local.name_prefix}-strategy-artifacts")
-  strategy_artifact_versions_table    = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
-  users_table_name                    = coalesce(var.users_table_name, "${local.name_prefix}-users")
-  user_access_applications_table_name = coalesce(var.user_access_applications_table_name, "${local.name_prefix}-user-access-applications")
-  backtest_metrics_table_name         = coalesce(var.backtest_metrics_table_name, "${local.name_prefix}-backtest-metrics")
-  counters_table_name                 = coalesce(var.counters_table_name, "${local.name_prefix}-counters")
+  name_prefix                             = "${var.project}-${var.env}"
+  is_prod                                 = lower(var.env) == "prod"
+  api_custom_domain_requested             = local.is_prod && var.api_custom_domain_name != null
+  api_custom_domain_activated             = local.api_custom_domain_requested && var.api_custom_domain_activate
+  artifacts_bucket_name                   = coalesce(var.artifacts_bucket_name, "${local.name_prefix}-strategy-artifacts-${data.aws_caller_identity.current.account_id}")
+  backtests_bucket_name                   = coalesce(var.backtests_bucket_name, "${local.name_prefix}-strategy-backtests-${data.aws_caller_identity.current.account_id}")
+  jwks_bucket_name                        = coalesce(var.jwks_bucket_name, "${local.name_prefix}-jwks-${random_id.jwks_bucket_suffix.hex}")
+  strategies_table_name                   = coalesce(var.strategies_table_name, "${local.name_prefix}-strategies")
+  strategy_artifacts_table_name           = coalesce(var.strategy_artifacts_table_name, "${local.name_prefix}-strategy-artifacts")
+  strategy_artifact_versions_table        = coalesce(var.strategy_artifact_versions_table_name, "${local.name_prefix}-strategy-artifact-versions")
+  users_table_name                        = coalesce(var.users_table_name, "${local.name_prefix}-users")
+  user_access_applications_table_name     = coalesce(var.user_access_applications_table_name, "${local.name_prefix}-user-access-applications")
+  strategy_backtests_table_name           = coalesce(var.strategy_backtests_table_name, "${local.name_prefix}-strategy-backtests")
+  strategies_read_permissions_table_name  = coalesce(var.strategies_read_permissions_table_name, "${local.name_prefix}-strategies-read-permissions")
+  strategies_write_permissions_table_name = coalesce(var.strategies_write_permissions_table_name, "${local.name_prefix}-strategies-write-permissions")
+  counters_table_name                     = coalesce(var.counters_table_name, "${local.name_prefix}-counters")
 
   tags = merge(
     {
@@ -94,23 +96,23 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "strategy_artifact
 # S3 bucket for backtest storage
 # ------------------------------
 
-resource "aws_s3_bucket" "backtest_metrics" {
+resource "aws_s3_bucket" "strategy_backtests" {
   bucket        = local.backtests_bucket_name
   force_destroy = lower(var.env) != "prod"
 
   tags = local.tags
 }
 
-resource "aws_s3_bucket_versioning" "backtest_metrics" {
-  bucket = aws_s3_bucket.backtest_metrics.id
+resource "aws_s3_bucket_versioning" "strategy_backtests" {
+  bucket = aws_s3_bucket.strategy_backtests.id
 
   versioning_configuration {
     status = "Enabled"
   }
 }
 
-resource "aws_s3_bucket_public_access_block" "backtest_metrics" {
-  bucket = aws_s3_bucket.backtest_metrics.id
+resource "aws_s3_bucket_public_access_block" "strategy_backtests" {
+  bucket = aws_s3_bucket.strategy_backtests.id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -118,8 +120,8 @@ resource "aws_s3_bucket_public_access_block" "backtest_metrics" {
   restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "backtest_metrics" {
-  bucket = aws_s3_bucket.backtest_metrics.id
+resource "aws_s3_bucket_server_side_encryption_configuration" "strategy_backtests" {
+  bucket = aws_s3_bucket.strategy_backtests.id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -128,8 +130,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "backtest_metrics"
   }
 }
 
-resource "aws_s3_bucket_cors_configuration" "backtest_metrics" {
-  bucket = aws_s3_bucket.backtest_metrics.id
+resource "aws_s3_bucket_cors_configuration" "strategy_backtests" {
+  bucket = aws_s3_bucket.strategy_backtests.id
 
   cors_rule {
     allowed_headers = ["*"]
@@ -300,6 +302,39 @@ resource "aws_dynamodb_table" "users" {
     type = "S"
   }
 
+  attribute {
+    name = "search_pk"
+    type = "S"
+  }
+
+  attribute {
+    name = "full_name_lower"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "users-netid-gsi"
+    hash_key        = "search_pk"
+    range_key       = "netid"
+    projection_type = "INCLUDE"
+    non_key_attributes = [
+      "full_name",
+      "uconn_email",
+    ]
+  }
+
+  global_secondary_index {
+    name            = "users-full-name-gsi"
+    hash_key        = "search_pk"
+    range_key       = "full_name_lower"
+    projection_type = "INCLUDE"
+    non_key_attributes = [
+      "netid",
+      "full_name",
+      "uconn_email",
+    ]
+  }
+
   point_in_time_recovery {
     enabled = true
   }
@@ -338,8 +373,8 @@ resource "aws_dynamodb_table" "user_access_applications" {
   tags = local.tags
 }
 
-resource "aws_dynamodb_table" "backtest_metrics" {
-  name         = local.backtest_metrics_table_name
+resource "aws_dynamodb_table" "strategy_backtests" {
+  name         = local.strategy_backtests_table_name
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "strategy_id"
   range_key    = "run_id"
@@ -352,6 +387,74 @@ resource "aws_dynamodb_table" "backtest_metrics" {
   attribute {
     name = "run_id"
     type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = local.tags
+}
+
+resource "aws_dynamodb_table" "strategies_read_permissions" {
+  name         = local.strategies_read_permissions_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "strategy_id"
+  range_key    = "principal"
+
+  attribute {
+    name = "strategy_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "principal"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "principal-strategy-index"
+    hash_key        = "principal"
+    range_key       = "strategy_id"
+    projection_type = "ALL"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = local.tags
+}
+
+resource "aws_dynamodb_table" "strategies_write_permissions" {
+  name         = local.strategies_write_permissions_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "strategy_id"
+  range_key    = "principal"
+
+  attribute {
+    name = "strategy_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "principal"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "principal-strategy-index"
+    hash_key        = "principal"
+    range_key       = "strategy_id"
+    projection_type = "ALL"
   }
 
   point_in_time_recovery {
@@ -399,6 +502,7 @@ data "aws_iam_policy_document" "strategy_storage" {
       "dynamodb:UpdateItem",
       "dynamodb:DeleteItem",
       "dynamodb:BatchWriteItem",
+      "dynamodb:BatchGetItem",
       "dynamodb:Query",
       "dynamodb:Scan",
       "dynamodb:DescribeTable",
@@ -408,6 +512,10 @@ data "aws_iam_policy_document" "strategy_storage" {
       aws_dynamodb_table.strategies.arn,
       aws_dynamodb_table.strategy_artifacts.arn,
       aws_dynamodb_table.strategy_artifact_versions.arn,
+      aws_dynamodb_table.strategies_read_permissions.arn,
+      "${aws_dynamodb_table.strategies_read_permissions.arn}/index/*",
+      aws_dynamodb_table.strategies_write_permissions.arn,
+      "${aws_dynamodb_table.strategies_write_permissions.arn}/index/*",
     ]
   }
 }
@@ -459,6 +567,32 @@ data "aws_iam_policy_document" "users_read" {
 resource "aws_iam_policy" "users_read" {
   name   = "${local.name_prefix}-users-read"
   policy = data.aws_iam_policy_document.users_read.json
+
+  tags = local.tags
+}
+
+data "aws_iam_policy_document" "users_search" {
+  statement {
+    sid    = "DynamoUsersSearch"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:BatchGetItem",
+      "dynamodb:GetItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+    ]
+
+    resources = [
+      aws_dynamodb_table.users.arn,
+      "${aws_dynamodb_table.users.arn}/index/*",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "users_search" {
+  name   = "${local.name_prefix}-users-search"
+  policy = data.aws_iam_policy_document.users_search.json
 
   tags = local.tags
 }
@@ -515,7 +649,7 @@ resource "aws_iam_policy" "admin_dynamodb" {
   tags = local.tags
 }
 
-data "aws_iam_policy_document" "backtest_metrics_storage" {
+data "aws_iam_policy_document" "strategy_backtests_storage" {
   statement {
     sid    = "S3BacktestMetricsAccess"
     effect = "Allow"
@@ -530,8 +664,8 @@ data "aws_iam_policy_document" "backtest_metrics_storage" {
     ]
 
     resources = [
-      aws_s3_bucket.backtest_metrics.arn,
-      "${aws_s3_bucket.backtest_metrics.arn}/*",
+      aws_s3_bucket.strategy_backtests.arn,
+      "${aws_s3_bucket.strategy_backtests.arn}/*",
     ]
   }
 
@@ -551,15 +685,19 @@ data "aws_iam_policy_document" "backtest_metrics_storage" {
     ]
 
     resources = [
-      aws_dynamodb_table.backtest_metrics.arn,
+      aws_dynamodb_table.strategy_backtests.arn,
+      aws_dynamodb_table.strategies_write_permissions.arn,
+      "${aws_dynamodb_table.strategies_write_permissions.arn}/index/*",
+      aws_dynamodb_table.strategies_read_permissions.arn,
+      "${aws_dynamodb_table.strategies_read_permissions.arn}/index/*",
       aws_dynamodb_table.strategies.arn,
     ]
   }
 }
 
-resource "aws_iam_policy" "backtest_metrics_storage" {
-  name   = "${local.name_prefix}-backtest-metrics-storage"
-  policy = data.aws_iam_policy_document.backtest_metrics_storage.json
+resource "aws_iam_policy" "strategy_backtests_storage" {
+  name   = "${local.name_prefix}-strategy-backtests-storage"
+  policy = data.aws_iam_policy_document.strategy_backtests_storage.json
 
   tags = local.tags
 }
@@ -818,10 +956,22 @@ data "archive_file" "admin_lambda" {
   output_path = "${path.module}/dist/admin-lambda.zip"
 }
 
-data "archive_file" "backtest_metrics_lambda" {
+data "archive_file" "strategy_backtests_lambda" {
   type        = "zip"
-  source_dir  = "${path.module}/../aws/lambdas/backtest-metrics"
-  output_path = "${path.module}/dist/backtest-metrics-lambda.zip"
+  source_dir  = "${path.module}/../aws/lambdas/strategy-backtests"
+  output_path = "${path.module}/dist/strategy-backtests-lambda.zip"
+}
+
+data "archive_file" "users_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/users"
+  output_path = "${path.module}/dist/users-lambda.zip"
+}
+
+data "archive_file" "strategy_permissions_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/strategy-permissions"
+  output_path = "${path.module}/dist/strategy-permissions-lambda.zip"
 }
 
 # ------------------------------
@@ -881,8 +1031,22 @@ resource "aws_iam_role" "admin_lambda" {
   tags = local.tags
 }
 
-resource "aws_iam_role" "backtest_metrics_lambda" {
-  name               = "${local.name_prefix}-backtest-metrics-lambda"
+resource "aws_iam_role" "strategy_backtests_lambda" {
+  name               = "${local.name_prefix}-strategy-backtests-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = local.tags
+}
+
+resource "aws_iam_role" "users_lambda" {
+  name               = "${local.name_prefix}-users-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = local.tags
+}
+
+resource "aws_iam_role" "strategy_permissions_lambda" {
+  name               = "${local.name_prefix}-strategy-permissions-lambda"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 
   tags = local.tags
@@ -896,6 +1060,11 @@ resource "aws_iam_role_policy_attachment" "strategies_lambda_basic_logs" {
 resource "aws_iam_role_policy_attachment" "strategies_lambda_storage" {
   role       = aws_iam_role.strategies_lambda.name
   policy_arn = aws_iam_policy.strategy_storage.arn
+}
+
+resource "aws_iam_role_policy_attachment" "strategies_lambda_users_search" {
+  role       = aws_iam_role.strategies_lambda.name
+  policy_arn = aws_iam_policy.users_search.arn
 }
 
 resource "aws_iam_role_policy_attachment" "strategies_lambda_counters" {
@@ -968,14 +1137,39 @@ resource "aws_iam_role_policy_attachment" "admin_lambda_dynamodb" {
   policy_arn = aws_iam_policy.admin_dynamodb.arn
 }
 
-resource "aws_iam_role_policy_attachment" "backtest_metrics_lambda_basic_logs" {
-  role       = aws_iam_role.backtest_metrics_lambda.name
+resource "aws_iam_role_policy_attachment" "strategy_backtests_lambda_basic_logs" {
+  role       = aws_iam_role.strategy_backtests_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-resource "aws_iam_role_policy_attachment" "backtest_metrics_lambda_storage" {
-  role       = aws_iam_role.backtest_metrics_lambda.name
-  policy_arn = aws_iam_policy.backtest_metrics_storage.arn
+resource "aws_iam_role_policy_attachment" "strategy_backtests_lambda_storage" {
+  role       = aws_iam_role.strategy_backtests_lambda.name
+  policy_arn = aws_iam_policy.strategy_backtests_storage.arn
+}
+
+resource "aws_iam_role_policy_attachment" "users_lambda_basic_logs" {
+  role       = aws_iam_role.users_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "users_lambda_users_search" {
+  role       = aws_iam_role.users_lambda.name
+  policy_arn = aws_iam_policy.users_search.arn
+}
+
+resource "aws_iam_role_policy_attachment" "strategy_permissions_lambda_basic_logs" {
+  role       = aws_iam_role.strategy_permissions_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "strategy_permissions_lambda_storage" {
+  role       = aws_iam_role.strategy_permissions_lambda.name
+  policy_arn = aws_iam_policy.strategy_storage.arn
+}
+
+resource "aws_iam_role_policy_attachment" "strategy_permissions_lambda_users_search" {
+  role       = aws_iam_role.strategy_permissions_lambda.name
+  policy_arn = aws_iam_policy.users_search.arn
 }
 
 # ------------------------------
@@ -1003,6 +1197,13 @@ resource "aws_lambda_layer_version" "wonderwords" {
   compatible_runtimes = ["python3.12"]
 }
 
+resource "aws_lambda_layer_version" "hqg_permissions" {
+  layer_name          = "${local.name_prefix}-hqg-permissions"
+  filename            = "${path.module}/../aws/lambda_layers/hqg_permissions/build/hqg-permissions-layer.zip"
+  source_code_hash    = filebase64sha256("${path.module}/../aws/lambda_layers/hqg_permissions/build/hqg-permissions-layer.zip")
+  compatible_runtimes = ["python3.12"]
+}
+
 # ------------------------------
 # Lambda deployment definitions
 # ------------------------------
@@ -1015,14 +1216,18 @@ resource "aws_lambda_function" "strategies" {
 
   filename         = data.archive_file.strategies_lambda.output_path
   source_code_hash = data.archive_file.strategies_lambda.output_base64sha256
+  layers           = [aws_lambda_layer_version.hqg_permissions.arn]
 
   environment {
     variables = {
-      STRATEGIES_TABLE                 = aws_dynamodb_table.strategies.name
-      STRATEGY_ARTIFACTS_TABLE         = aws_dynamodb_table.strategy_artifacts.name
-      STRATEGY_ARTIFACT_VERSIONS_TABLE = aws_dynamodb_table.strategy_artifact_versions.name
-      ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket
-      COUNTERS_TABLE                   = aws_dynamodb_table.counters.name
+      STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+      STRATEGY_ARTIFACTS_TABLE           = aws_dynamodb_table.strategy_artifacts.name
+      STRATEGY_ARTIFACT_VERSIONS_TABLE   = aws_dynamodb_table.strategy_artifact_versions.name
+      ARTIFACT_BUCKET                    = aws_s3_bucket.strategy_artifacts.bucket
+      STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
+      STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
+      USERS_TABLE                        = aws_dynamodb_table.users.name
+      COUNTERS_TABLE                     = aws_dynamodb_table.counters.name
     }
   }
 
@@ -1037,13 +1242,16 @@ resource "aws_lambda_function" "strategy_artifacts" {
 
   filename         = data.archive_file.strategy_artifacts_lambda.output_path
   source_code_hash = data.archive_file.strategy_artifacts_lambda.output_base64sha256
+  layers           = [aws_lambda_layer_version.hqg_permissions.arn]
 
   environment {
     variables = {
-      STRATEGIES_TABLE                 = aws_dynamodb_table.strategies.name
-      STRATEGY_ARTIFACTS_TABLE         = aws_dynamodb_table.strategy_artifacts.name
-      STRATEGY_ARTIFACT_VERSIONS_TABLE = aws_dynamodb_table.strategy_artifact_versions.name
-      ARTIFACT_BUCKET                  = aws_s3_bucket.strategy_artifacts.bucket
+      STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+      STRATEGY_ARTIFACTS_TABLE           = aws_dynamodb_table.strategy_artifacts.name
+      STRATEGY_ARTIFACT_VERSIONS_TABLE   = aws_dynamodb_table.strategy_artifact_versions.name
+      ARTIFACT_BUCKET                    = aws_s3_bucket.strategy_artifacts.bucket
+      STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
+      STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
     }
   }
 
@@ -1185,22 +1393,67 @@ resource "aws_lambda_function" "admin" {
   tags = local.tags
 }
 
-resource "aws_lambda_function" "backtest_metrics" {
-  function_name = "${local.name_prefix}-backtest-metrics"
-  role          = aws_iam_role.backtest_metrics_lambda.arn
+resource "aws_lambda_function" "strategy_backtests" {
+  function_name = "${local.name_prefix}-strategy-backtests"
+  role          = aws_iam_role.strategy_backtests_lambda.arn
   runtime       = "python3.12"
   handler       = "main.handler"
 
-  filename         = data.archive_file.backtest_metrics_lambda.output_path
-  source_code_hash = data.archive_file.backtest_metrics_lambda.output_base64sha256
+  filename         = data.archive_file.strategy_backtests_lambda.output_path
+  source_code_hash = data.archive_file.strategy_backtests_lambda.output_base64sha256
 
-  layers = [aws_lambda_layer_version.wonderwords.arn]
+  layers = [
+    aws_lambda_layer_version.wonderwords.arn,
+    aws_lambda_layer_version.hqg_permissions.arn,
+  ]
 
   environment {
     variables = {
-      BACKTEST_METRICS_TABLE = aws_dynamodb_table.backtest_metrics.name
-      BACKTESTS_BUCKET       = aws_s3_bucket.backtest_metrics.bucket
-      STRATEGIES_TABLE       = aws_dynamodb_table.strategies.name
+      STRATEGY_BACKTESTS_TABLE           = aws_dynamodb_table.strategy_backtests.name
+      BACKTESTS_BUCKET                   = aws_s3_bucket.strategy_backtests.bucket
+      STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
+      STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
+      STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+    }
+  }
+
+  tags = local.tags
+}
+
+resource "aws_lambda_function" "users_search" {
+  function_name = "${local.name_prefix}-users"
+  role          = aws_iam_role.users_lambda.arn
+  runtime       = "python3.12"
+  handler       = "main.handler"
+
+  filename         = data.archive_file.users_lambda.output_path
+  source_code_hash = data.archive_file.users_lambda.output_base64sha256
+
+  environment {
+    variables = {
+      USERS_TABLE = aws_dynamodb_table.users.name
+    }
+  }
+
+  tags = local.tags
+}
+
+resource "aws_lambda_function" "strategy_permissions" {
+  function_name = "${local.name_prefix}-strategy-permissions"
+  role          = aws_iam_role.strategy_permissions_lambda.arn
+  runtime       = "python3.12"
+  handler       = "main.handler"
+
+  filename         = data.archive_file.strategy_permissions_lambda.output_path
+  source_code_hash = data.archive_file.strategy_permissions_lambda.output_base64sha256
+  layers           = [aws_lambda_layer_version.hqg_permissions.arn]
+
+  environment {
+    variables = {
+      STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+      STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
+      STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
+      USERS_TABLE                        = aws_dynamodb_table.users.name
     }
   }
 
@@ -1238,6 +1491,22 @@ resource "aws_apigatewayv2_integration" "get_strategies" {
   payload_format_version = "2.0"
 }
 
+resource "aws_apigatewayv2_integration" "users_search" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.users_search.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_integration" "strategy_permissions" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.strategy_permissions.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
 resource "aws_apigatewayv2_route" "get_strategies" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /strategies"
@@ -1262,10 +1531,58 @@ resource "aws_apigatewayv2_route" "get_strategy_by_id" {
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
+resource "aws_apigatewayv2_route" "get_strategy_permissions" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /strategies/{id}/permissions"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_permissions.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "patch_strategy_permissions" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "PATCH /strategies/{id}/permissions"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_permissions.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "delete_strategy_permissions" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "DELETE /strategies/{id}/permissions"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_permissions.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "get_users_search" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /users/search"
+  target             = "integrations/${aws_apigatewayv2_integration.users_search.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
 resource "aws_lambda_permission" "allow_apigw_invoke_strategies" {
   statement_id  = "AllowAPIGWInvokeStrategies"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.strategies.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "allow_apigw_invoke_users" {
+  statement_id  = "AllowAPIGWInvokeUsers"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.users_search.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "allow_apigw_invoke_strategy_permissions" {
+  statement_id  = "AllowAPIGWInvokeStrategyPermissions"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.strategy_permissions.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }
@@ -1441,13 +1758,13 @@ resource "aws_lambda_permission" "allow_apigw_invoke_admin" {
 }
 
 # ------------------------------
-# API Gateway integration/routes for backtest_metrics lambda
+# API Gateway integration/routes for strategy_backtests lambda
 # ------------------------------
 
-resource "aws_apigatewayv2_integration" "backtest_metrics" {
+resource "aws_apigatewayv2_integration" "strategy_backtests" {
   api_id                 = aws_apigatewayv2_api.api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.backtest_metrics.invoke_arn
+  integration_uri        = aws_lambda_function.strategy_backtests.invoke_arn
   integration_method     = "POST"
   payload_format_version = "2.0"
 }
@@ -1455,7 +1772,7 @@ resource "aws_apigatewayv2_integration" "backtest_metrics" {
 resource "aws_apigatewayv2_route" "post_strategy_backtests_presign" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "POST /strategies/{id}/backtests/presign"
-  target             = "integrations/${aws_apigatewayv2_integration.backtest_metrics.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_backtests.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -1463,7 +1780,7 @@ resource "aws_apigatewayv2_route" "post_strategy_backtests_presign" {
 resource "aws_apigatewayv2_route" "get_strategy_backtests" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /strategies/{id}/backtests"
-  target             = "integrations/${aws_apigatewayv2_integration.backtest_metrics.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_backtests.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -1471,7 +1788,7 @@ resource "aws_apigatewayv2_route" "get_strategy_backtests" {
 resource "aws_apigatewayv2_route" "post_strategy_backtests" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "POST /strategies/{id}/backtests"
-  target             = "integrations/${aws_apigatewayv2_integration.backtest_metrics.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_backtests.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
@@ -1479,15 +1796,15 @@ resource "aws_apigatewayv2_route" "post_strategy_backtests" {
 resource "aws_apigatewayv2_route" "get_strategy_backtest_by_id" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /strategies/{id}/backtests/{backtestId}"
-  target             = "integrations/${aws_apigatewayv2_integration.backtest_metrics.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_backtests.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
-resource "aws_lambda_permission" "allow_apigw_invoke_backtest_metrics" {
+resource "aws_lambda_permission" "allow_apigw_invoke_strategy_backtests" {
   statement_id  = "AllowAPIGWInvokeBacktestMetrics"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.backtest_metrics.function_name
+  function_name = aws_lambda_function.strategy_backtests.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }

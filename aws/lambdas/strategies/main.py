@@ -5,16 +5,31 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 import boto3
+from boto3.dynamodb.types import TypeSerializer
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
+
+from hqg_permissions import (
+    get_roles_from_event,
+    has_read_permission,
+    role_principals,
+)
 
 dynamo = boto3.resource("dynamodb")
+dynamo_client = boto3.client("dynamodb")
 s3 = boto3.client("s3")
+serializer = TypeSerializer()
 
 STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
 VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
 COUNTERS_TABLE = dynamo.Table(os.environ["COUNTERS_TABLE"])
 ARTIFACT_BUCKET = os.environ["ARTIFACT_BUCKET"]
+READ_PERMISSIONS_TABLE = os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"]
+WRITE_PERMISSIONS_TABLE = os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"]
+READ_PERMISSIONS_DDB = dynamo.Table(READ_PERMISSIONS_TABLE)
+WRITE_PERMISSIONS_DDB = dynamo.Table(WRITE_PERMISSIONS_TABLE)
+USERS_TABLE = dynamo.Table(os.environ["USERS_TABLE"])
 STRATEGY_NAME_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 75
 README_MAX_CHARS = 10_000
@@ -33,7 +48,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     route_key = (event.get("requestContext") or {}).get("routeKey")
 
     if route_key == "GET /strategies":
-        return get_strategies()
+        return get_strategies(event)
 
     if route_key == "POST /strategies":
         body = json.loads(event.get("body") or "{}")
@@ -41,7 +56,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
 
     if route_key == "GET /strategies/{id}":
         strategy_id = (event.get("pathParameters") or {}).get("id")
-        return get_strategy(strategy_id)
+        return get_strategy(strategy_id, event)
 
     if route_key == "PATCH /strategies/{id}":
         strategy_id = (event.get("pathParameters") or {}).get("id")
@@ -51,10 +66,28 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     return {"statusCode": 404, "body": "Not found"}
 
 
-def get_strategies() -> Dict[str, Any]:
-    resp = STRATEGIES_TABLE.scan()
-    items: List[Dict[str, Any]] = resp.get("Items", [])
-    return _json(200, _clean_decimals(items))
+def get_strategies(event: Dict[str, Any]) -> Dict[str, Any]:
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    roles = get_roles_from_event(event)
+    if "ADMIN" in roles:
+        resp = STRATEGIES_TABLE.scan()
+        items = _clean_decimals(resp.get("Items", []))
+        _hydrate_owner_display(items)
+        return _json(200, items)
+
+    strategy_ids = _list_readable_strategy_ids(netid, roles)
+    if not strategy_ids:
+        return _json(200, [])
+
+    keys = [{"id": sid} for sid in strategy_ids]
+    items = _batch_get_strategies(keys)
+    cleaned_items = _clean_decimals(items)
+    _hydrate_owner_display(cleaned_items)
+
+    return _json(200, cleaned_items)
 
 
 def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, Any]:
@@ -123,11 +156,17 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
     netid = _get_netid_from_event(event)
     if not netid:
         return _json(401, {"message": "unauthorized"})
+    roles = get_roles_from_event(event)
     owner = netid
+    owner_display = _get_display_name_from_event(event) or netid
 
     source = _get_strategy_by_id(source_id)
     if not source:
         return _json(404, {"message": f"Source strategy {source_id} not found"})
+    if "ADMIN" not in roles and not has_read_permission(
+        source_id, netid, roles, READ_PERMISSIONS_DDB, WRITE_PERMISSIONS_DDB
+    ):
+        return _json(403, {"message": "forbidden"})
 
     new_strategy_id = str(_next_strategy_id())
     new_version = 1
@@ -153,21 +192,64 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
         "updated_at": now,
         "description": description,
         "owner": owner,
+        "owner_display": owner_display,
         "tags": tags,
     }
 
-    STRATEGIES_TABLE.put_item(Item=item)
+    owner_principal = _principal_for_user(owner)
+    try:
+        dynamo_client.transact_write_items(
+            TransactItems=[
+                {
+                    "Put": {
+                        "TableName": STRATEGIES_TABLE.name,
+                        "Item": _ddb_item(item),
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": READ_PERMISSIONS_TABLE,
+                        "Item": _ddb_item(
+                            {"strategy_id": new_strategy_id, "principal": owner_principal}
+                        ),
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": WRITE_PERMISSIONS_TABLE,
+                        "Item": _ddb_item(
+                            {"strategy_id": new_strategy_id, "principal": owner_principal}
+                        ),
+                    }
+                },
+            ]
+        )
+    except ClientError as exc:
+        return _json(500, {"message": f"Failed to create strategy permissions: {exc}"})
+
     return _json(201, item)
 
 
-def get_strategy(strategy_id: Optional[str]) -> Dict[str, Any]:
+def get_strategy(strategy_id: Optional[str], event: Dict[str, Any]) -> Dict[str, Any]:
     if not strategy_id:
         return _json(400, {"message": "strategy id is required"})
+
+    netid = _get_netid_from_event(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    roles = get_roles_from_event(event)
+    if "ADMIN" not in roles and not has_read_permission(
+        strategy_id, netid, roles, READ_PERMISSIONS_DDB, WRITE_PERMISSIONS_DDB
+    ):
+        return _json(403, {"message": "forbidden"})
 
     item = _get_strategy_by_id(strategy_id)
     if not item:
         return _json(404, {"message": "Not found"})
-    return _json(200, _clean_decimals(item))
+    cleaned_item = _clean_decimals(item)
+    _hydrate_owner_display([cleaned_item])
+    return _json(200, cleaned_item)
 
 
 def update_strategy(strategy_id: Optional[str], body: Dict[str, Any]) -> Dict[str, Any]:
@@ -322,3 +404,129 @@ def _get_netid_from_event(event: Dict[str, Any]) -> Optional[str]:
 
     netid = netid.strip()
     return netid or None
+
+
+def _list_readable_strategy_ids(netid: str, roles: List[str]) -> List[str]:
+    principals = [_principal_for_user(netid), "ROLE#PUBLIC"]
+    principals.extend(role_principals(roles))
+    strategy_ids = _list_strategy_ids_for_principals(READ_PERMISSIONS_DDB, principals)
+    write_ids = _list_strategy_ids_for_principals(WRITE_PERMISSIONS_DDB, principals)
+    for sid in write_ids:
+        if sid not in strategy_ids:
+            strategy_ids.append(sid)
+    return strategy_ids
+
+
+def _list_strategy_ids_for_principals(
+    table, principals: List[str]
+) -> List[str]:
+    strategy_ids: List[str] = []
+    seen = set()
+
+    for principal in principals:
+        last_key = None
+        while True:
+            query_kwargs = {
+                "IndexName": "principal-strategy-index",
+                "KeyConditionExpression": Key("principal").eq(principal),
+                "ProjectionExpression": "strategy_id",
+            }
+            if last_key:
+                query_kwargs["ExclusiveStartKey"] = last_key
+
+            resp = table.query(**query_kwargs)
+            for item in resp.get("Items", []):
+                sid = item.get("strategy_id")
+                if isinstance(sid, str) and sid not in seen:
+                    seen.add(sid)
+                    strategy_ids.append(sid)
+
+            last_key = resp.get("LastEvaluatedKey")
+            if not last_key:
+                break
+
+    return strategy_ids
+
+
+def _chunk(items: List[Dict[str, Any]], size: int) -> List[List[Dict[str, Any]]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _batch_get_strategies(keys: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    if not keys:
+        return items
+
+    for batch in _chunk(keys, 100):
+        request_items = {STRATEGIES_TABLE.name: {"Keys": batch}}
+        while request_items:
+            resp = dynamo.batch_get_item(RequestItems=request_items)
+            items.extend(resp.get("Responses", {}).get(STRATEGIES_TABLE.name, []))
+            request_items = resp.get("UnprocessedKeys") or {}
+
+    return items
+
+
+def _batch_get_users(netids: List[str]) -> Dict[str, Dict[str, Any]]:
+    if not netids:
+        return {}
+
+    keys = [{"netid": netid} for netid in netids if isinstance(netid, str) and netid]
+    items: List[Dict[str, Any]] = []
+
+    for batch in _chunk(keys, 100):
+        request_items = {USERS_TABLE.name: {"Keys": batch}}
+        while request_items:
+            resp = dynamo.batch_get_item(RequestItems=request_items)
+            items.extend(resp.get("Responses", {}).get(USERS_TABLE.name, []))
+            request_items = resp.get("UnprocessedKeys") or {}
+
+    user_map: Dict[str, Dict[str, Any]] = {}
+    for item in items:
+        netid = item.get("netid")
+        if isinstance(netid, str) and netid:
+            user_map[netid] = item
+    return user_map
+
+
+def _hydrate_owner_display(items: List[Dict[str, Any]]) -> None:
+    owner_netids = {
+        item.get("owner")
+        for item in items
+        if isinstance(item, dict)
+        and item.get("owner")
+        and (not item.get("owner_display") or item.get("owner_display") == item.get("owner"))
+    }
+    owner_netids = {netid for netid in owner_netids if isinstance(netid, str) and netid}
+    user_map = _batch_get_users(list(owner_netids))
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        owner = item.get("owner")
+        if isinstance(owner, str) and owner in user_map:
+            full_name = user_map[owner].get("full_name")
+            if isinstance(full_name, str) and full_name.strip():
+                item["owner_display"] = full_name.strip()
+  
+  
+def _get_display_name_from_event(event: Dict[str, Any]) -> Optional[str]:
+    request_context = event.get("requestContext") or {}
+    authorizer = request_context.get("authorizer") or {}
+
+    display_name = authorizer.get("display_name")
+    if not display_name and isinstance(authorizer.get("lambda"), dict):
+        display_name = authorizer.get("lambda", {}).get("display_name")
+
+    if not isinstance(display_name, str):
+        return None
+
+    display_name = display_name.strip()
+    return display_name or None
+
+
+def _principal_for_user(netid: str) -> str:
+    return f"USER#{netid}"
+
+
+def _ddb_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: serializer.serialize(v) for k, v in item.items()}
