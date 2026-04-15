@@ -13,6 +13,10 @@ dynamo = boto3.resource("dynamodb")
 
 USERS_TABLE = dynamo.Table(os.environ["USERS_TABLE"])
 USER_ACCESS_APPLICATIONS_TABLE = dynamo.Table(os.environ["USER_ACCESS_APPLICATIONS_TABLE"])
+USER_ANALYTICS_TABLE = dynamo.Table(os.environ["USER_ANALYTICS_TABLE"])
+STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
+READ_PERMISSIONS_TABLE = dynamo.Table(os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"])
+WRITE_PERMISSIONS_TABLE = dynamo.Table(os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"])
 
 
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
@@ -20,6 +24,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     Admin service Lambda.
     - GET /admin/users
     - GET /admin/users/{netid}
+    - GET /admin/users/{netid}/analytics
     - PATCH /admin/users/{netid}
     - GET /admin/access-requests
     - POST /admin/access-requests/{netid}/approve
@@ -38,6 +43,10 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     if route_key == "GET /admin/users/{netid}":
         netid = _get_netid_param(event)
         return _get_user(netid)
+
+    if route_key == "GET /admin/users/{netid}/analytics":
+        netid = _get_netid_param(event)
+        return _get_user_analytics(netid)
 
     if route_key == "PATCH /admin/users/{netid}":
         netid = _get_netid_param(event)
@@ -88,6 +97,31 @@ def _get_user(netid: str | None) -> Dict[str, Any]:
     if not item:
         return _json(404, {"message": "User not found"})
     return _json(200, _clean_decimals(item))
+
+
+def _get_user_analytics(netid: str | None) -> Dict[str, Any]:
+    if not netid:
+        return _json(400, {"message": "netid is required"})
+
+    user_resp = USERS_TABLE.get_item(Key={"netid": netid})
+    user_item = user_resp.get("Item")
+    if not user_item:
+        return _json(404, {"message": "User not found"})
+
+    analytics_resp = USER_ANALYTICS_TABLE.get_item(Key={"netid": netid})
+    analytics_item = analytics_resp.get("Item") or {}
+
+    permissions_footprint = _permissions_footprint(netid, user_item)
+    payload = {
+        "netid": netid,
+        "total_strategies_created": analytics_item.get("total_strategies_created", 0),
+        "total_backtests_run": analytics_item.get("total_backtests_run", 0),
+        "total_revisions": analytics_item.get("total_revisions", 0),
+        "last_active_at": analytics_item.get("last_active_at"),
+        "updated_at": analytics_item.get("updated_at"),
+        "permissions_footprint": permissions_footprint,
+    }
+    return _json(200, _clean_decimals(payload))
 
 
 def _patch_user(netid: str | None, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -322,6 +356,70 @@ def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _permissions_footprint(netid: str, user_item: Dict[str, Any]) -> Dict[str, int]:
+    roles = user_item.get("roles")
+    role_set = {role for role in roles if isinstance(role, str)} if isinstance(roles, list) else set()
+
+    if "ADMIN" in role_set:
+        total_strategies = _count_table_items(STRATEGIES_TABLE)
+        return {
+            "readable_strategy_count": total_strategies,
+            "writable_strategy_count": total_strategies,
+        }
+
+    principals = {f"USER#{netid}"}
+    for role in role_set:
+        principals.add(f"ROLE#{role}")
+
+    readable = _strategy_ids_for_principals(READ_PERMISSIONS_TABLE, principals)
+    writable = _strategy_ids_for_principals(WRITE_PERMISSIONS_TABLE, principals)
+    readable.update(writable)
+
+    return {
+        "readable_strategy_count": len(readable),
+        "writable_strategy_count": len(writable),
+    }
+
+
+def _strategy_ids_for_principals(table, principals: set[str]) -> set[str]:
+    strategy_ids: set[str] = set()
+    for principal in principals:
+        last_key = None
+        while True:
+            query_kwargs = {
+                "IndexName": "principal-strategy-index",
+                "KeyConditionExpression": Key("principal").eq(principal),
+                "ProjectionExpression": "strategy_id",
+            }
+            if last_key:
+                query_kwargs["ExclusiveStartKey"] = last_key
+
+            resp = table.query(**query_kwargs)
+            for item in resp.get("Items", []):
+                strategy_id = item.get("strategy_id")
+                if isinstance(strategy_id, str):
+                    strategy_ids.add(strategy_id)
+
+            last_key = resp.get("LastEvaluatedKey")
+            if not last_key:
+                break
+
+    return strategy_ids
+
+
+def _count_table_items(table) -> int:
+    count = 0
+    scan_kwargs = {"Select": "COUNT"}
+    while True:
+        resp = table.scan(**scan_kwargs)
+        count += int(resp.get("Count", 0))
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        scan_kwargs["ExclusiveStartKey"] = last_key
+    return count
 
 
 def _now_iso() -> str:

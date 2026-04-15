@@ -26,8 +26,10 @@ STRATEGY_BACKTESTS_TABLE = os.environ.get("STRATEGY_BACKTESTS_TABLE", "")
 WRITE_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_WRITE_PERMISSIONS_TABLE", "")
 READ_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_READ_PERMISSIONS_TABLE", "")
 STRATEGIES_TABLE = os.environ.get("STRATEGIES_TABLE", "")
+USER_ANALYTICS_TABLE = os.environ.get("USER_ANALYTICS_TABLE", "")
 WRITE_PERMISSIONS_DDB = dynamo.Table(WRITE_PERMISSIONS_TABLE) if WRITE_PERMISSIONS_TABLE else None
 READ_PERMISSIONS_DDB = dynamo.Table(READ_PERMISSIONS_TABLE) if READ_PERMISSIONS_TABLE else None
+USER_ANALYTICS_DDB = dynamo.Table(USER_ANALYTICS_TABLE) if USER_ANALYTICS_TABLE else None
 
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -369,6 +371,8 @@ def dynamo_backtest_write(event):
             return _json(409, {"message": "Run already finalized"})
         return _json(500, {"message": f"Failed to write DynamoDB item: {code or 'error'}"})
 
+    _update_user_analytics(netid, total_backtests_run_inc=1, last_active_at=now)
+
     metadata_warning = _update_strategy_metadata(strategy_id, strategy_metadata_metrics)
     if metadata_warning:
         return _json(500, {"message": metadata_warning})
@@ -506,6 +510,34 @@ def _update_strategy_metadata(strategy_id, strategy_metadata_metrics):
         return f"Failed to update strategy metadata: {code}"
 
     return None
+
+
+def _update_user_analytics(netid, *, total_backtests_run_inc=0, last_active_at=None):
+    if not USER_ANALYTICS_DDB or not total_backtests_run_inc or not last_active_at:
+        return
+
+    try:
+        USER_ANALYTICS_DDB.update_item(
+            Key={"netid": netid},
+            UpdateExpression=(
+                "SET #updated_at = :updated_at, "
+                "#last_active_at = :last_active_at, "
+                "#total_backtests_run = if_not_exists(#total_backtests_run, :zero) + :total_backtests_run_inc"
+            ),
+            ExpressionAttributeNames={
+                "#updated_at": "updated_at",
+                "#last_active_at": "last_active_at",
+                "#total_backtests_run": "total_backtests_run",
+            },
+            ExpressionAttributeValues={
+                ":updated_at": _now(),
+                ":last_active_at": last_active_at,
+                ":zero": 0,
+                ":total_backtests_run_inc": total_backtests_run_inc,
+            },
+        )
+    except ClientError as exc:
+        print(f"Failed to update user analytics for {netid}: {exc}")
 
 def _normalize_date_value(value):
     if not isinstance(value, str):
