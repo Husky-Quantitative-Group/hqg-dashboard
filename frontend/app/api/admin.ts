@@ -4,6 +4,9 @@ export type AdminUser = {
   netid: string;
   full_name?: string;
   uconn_email?: string;
+  discord_username?: string;
+  linkedin_url?: string;
+  github_url?: string;
   roles?: string[];
   is_banned?: boolean;
   joined_at?: string;
@@ -26,6 +29,20 @@ export type AccessRequest = {
   [key: string]: unknown;
 };
 
+export type AdminUserAnalytics = {
+  netid: string;
+  total_strategies_created: number;
+  total_backtests_run: number;
+  total_revisions: number;
+  last_active_at?: string;
+  updated_at?: string;
+  permissions_footprint?: {
+    readable_strategy_count: number;
+    writable_strategy_count: number;
+  };
+  [key: string]: unknown;
+};
+
 export async function fetchAdminUsers(): Promise<AdminUser[]> {
   const response = await coreApi.get("/admin/users");
   const data = response.data as { items?: AdminUser[] } | AdminUser[];
@@ -36,6 +53,11 @@ export async function fetchAdminUsers(): Promise<AdminUser[]> {
 export async function fetchAdminUser(netid: string): Promise<AdminUser> {
   const response = await coreApi.get(`/admin/users/${netid}`);
   return response.data as AdminUser;
+}
+
+export async function fetchAdminUserAnalytics(netid: string): Promise<AdminUserAnalytics> {
+  const response = await coreApi.get(`/admin/users/${netid}/analytics`);
+  return response.data as AdminUserAnalytics;
 }
 
 export async function patchAdminUser(netid: string, payload: Partial<AdminUser>) {

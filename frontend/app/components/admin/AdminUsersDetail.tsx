@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { patchAdminUser, type AdminUser } from "~/api/admin";
+import { patchAdminUser, type AdminUser, type AdminUserAnalytics } from "~/api/admin";
 
 const ROLE_OPTIONS = ["PUBLIC", "FUND", "ADMIN"] as const;
 
 type AdminUsersDetailProps = {
   user?: AdminUser | null;
+  analytics?: AdminUserAnalytics | null;
   loading?: boolean;
   onSaveComplete?: (user: AdminUser) => void;
 };
 
 export default function AdminUsersDetail({
   user,
+  analytics,
   loading,
   onSaveComplete,
 }: AdminUsersDetailProps) {
@@ -217,6 +219,21 @@ export default function AdminUsersDetail({
     ["Notes", user.notes ?? "—"],
   ];
 
+  const analyticsRows: Array<[string, string]> = [
+    ["Strategies created", String(analytics?.total_strategies_created ?? 0)],
+    ["Backtests run", String(analytics?.total_backtests_run ?? 0)],
+    ["Total revisions", String(analytics?.total_revisions ?? 0)],
+    ["Last active", analytics?.last_active_at ?? "—"],
+    [
+      "Readable strategies",
+      String(analytics?.permissions_footprint?.readable_strategy_count ?? 0),
+    ],
+    [
+      "Writable strategies",
+      String(analytics?.permissions_footprint?.writable_strategy_count ?? 0),
+    ],
+  ];
+
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6">
       <div className="flex items-center justify-between">
@@ -236,6 +253,17 @@ export default function AdminUsersDetail({
             <div className="text-sm text-slate-200 break-words">{value}</div>
           </div>
         ))}
+      </div>
+      <div className="mt-6 border-t border-slate-800 pt-4">
+        <div className="text-xs uppercase tracking-wide text-slate-500">Analytics</div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {analyticsRows.map(([label, value]) => (
+            <div key={label} className="flex flex-col gap-1">
+              <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+              <div className="text-sm text-slate-200 break-words">{value}</div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

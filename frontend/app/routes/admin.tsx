@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import {
   fetchAdminAccessRequests,
   fetchAdminUser,
+  fetchAdminUserAnalytics,
   fetchAdminUsers,
   type AccessRequest,
+  type AdminUserAnalytics,
   type AdminUser,
 } from "~/api/admin";
 import AdminUsersTable from "~/components/admin/AdminUsersTable";
@@ -26,6 +28,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+  const [selectedUserAnalytics, setSelectedUserAnalytics] = useState<AdminUserAnalytics | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<AccessRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +74,9 @@ export default function AdminPage() {
       if (selectedUser) {
         const match = data.find((item) => item.netid === selectedUser.netid);
         setSelectedUser(match ?? null);
+        if (!match) {
+          setSelectedUserAnalytics(null);
+        }
       }
     } catch (err) {
       setError("Failed to refresh users.");
@@ -82,11 +88,16 @@ export default function AdminPage() {
   const handleUserSelect = async (user: AdminUser) => {
     if (!isAdmin) return;
     setSelectedUser(user);
+    setSelectedUserAnalytics(null);
     setUserDetailLoading(true);
     setError(null);
     try {
-      const detail = await fetchAdminUser(user.netid);
+      const [detail, analytics] = await Promise.all([
+        fetchAdminUser(user.netid),
+        fetchAdminUserAnalytics(user.netid),
+      ]);
       setSelectedUser(detail);
+      setSelectedUserAnalytics(analytics);
     } catch (err) {
       setError("Failed to load user details.");
     } finally {
@@ -208,9 +219,13 @@ export default function AdminPage() {
             {tab === "users" ? (
               <AdminUsersDetail
                 user={selectedUser}
+                analytics={selectedUserAnalytics}
                 loading={userDetailLoading}
                 onSaveComplete={(updated) => {
                   setSelectedUser(updated);
+                  fetchAdminUserAnalytics(updated.netid)
+                    .then((analytics) => setSelectedUserAnalytics(analytics))
+                    .catch(() => setError("Failed to refresh user analytics."));
                   refreshUsers();
                 }}
               />
