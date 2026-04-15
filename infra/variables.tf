@@ -85,6 +85,12 @@ variable "counters_table_name" {
   default     = null
 }
 
+variable "user_analytics_table_name" {
+  description = "Optional explicit name for the UserAnalytics table. Defaults to \"<project>-<env>-user-analytics\"."
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "Additional tags to apply to resources."
   type        = map(string)

@@ -108,6 +108,16 @@ output "counters_table_name" {
   description = "Name of the Counters table."
 }
 
+output "user_analytics_table_name" {
+  value       = aws_dynamodb_table.user_analytics.name
+  description = "Name of the UserAnalytics table."
+}
+
+output "user_analytics_table_arn" {
+  value       = aws_dynamodb_table.user_analytics.arn
+  description = "ARN of the UserAnalytics table."
+}
+
 output "http_api_id" {
   value       = aws_apigatewayv2_api.api.id
   description = "ID of the HTTP API Gateway."

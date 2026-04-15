@@ -44,6 +44,7 @@ locals {
   strategies_read_permissions_table_name  = coalesce(var.strategies_read_permissions_table_name, "${local.name_prefix}-strategies-read-permissions")
   strategies_write_permissions_table_name = coalesce(var.strategies_write_permissions_table_name, "${local.name_prefix}-strategies-write-permissions")
   counters_table_name                     = coalesce(var.counters_table_name, "${local.name_prefix}-counters")
+  user_analytics_table_name               = coalesce(var.user_analytics_table_name, "${local.name_prefix}-user-analytics")
 
   tags = merge(
     {
@@ -224,6 +225,27 @@ resource "aws_dynamodb_table" "counters" {
 
   attribute {
     name = "counter_name"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = local.tags
+}
+
+resource "aws_dynamodb_table" "user_analytics" {
+  name         = local.user_analytics_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "netid"
+
+  attribute {
+    name = "netid"
     type = "S"
   }
 
@@ -512,6 +534,7 @@ data "aws_iam_policy_document" "strategy_storage" {
       aws_dynamodb_table.strategies.arn,
       aws_dynamodb_table.strategy_artifacts.arn,
       aws_dynamodb_table.strategy_artifact_versions.arn,
+      aws_dynamodb_table.user_analytics.arn,
       aws_dynamodb_table.strategies_read_permissions.arn,
       "${aws_dynamodb_table.strategies_read_permissions.arn}/index/*",
       aws_dynamodb_table.strategies_write_permissions.arn,
@@ -638,6 +661,12 @@ data "aws_iam_policy_document" "admin_dynamodb" {
     resources = [
       aws_dynamodb_table.users.arn,
       aws_dynamodb_table.user_access_applications.arn,
+      aws_dynamodb_table.user_analytics.arn,
+      aws_dynamodb_table.strategies.arn,
+      aws_dynamodb_table.strategies_read_permissions.arn,
+      "${aws_dynamodb_table.strategies_read_permissions.arn}/index/*",
+      aws_dynamodb_table.strategies_write_permissions.arn,
+      "${aws_dynamodb_table.strategies_write_permissions.arn}/index/*",
     ]
   }
 }
@@ -686,6 +715,7 @@ data "aws_iam_policy_document" "strategy_backtests_storage" {
 
     resources = [
       aws_dynamodb_table.strategy_backtests.arn,
+      aws_dynamodb_table.user_analytics.arn,
       aws_dynamodb_table.strategies_write_permissions.arn,
       "${aws_dynamodb_table.strategies_write_permissions.arn}/index/*",
       aws_dynamodb_table.strategies_read_permissions.arn,
@@ -1228,6 +1258,7 @@ resource "aws_lambda_function" "strategies" {
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
       USERS_TABLE                        = aws_dynamodb_table.users.name
       COUNTERS_TABLE                     = aws_dynamodb_table.counters.name
+      USER_ANALYTICS_TABLE               = aws_dynamodb_table.user_analytics.name
     }
   }
 
@@ -1252,6 +1283,7 @@ resource "aws_lambda_function" "strategy_artifacts" {
       ARTIFACT_BUCKET                    = aws_s3_bucket.strategy_artifacts.bucket
       STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
+      USER_ANALYTICS_TABLE               = aws_dynamodb_table.user_analytics.name
     }
   }
 
@@ -1385,8 +1417,12 @@ resource "aws_lambda_function" "admin" {
 
   environment {
     variables = {
-      USERS_TABLE                    = aws_dynamodb_table.users.name
-      USER_ACCESS_APPLICATIONS_TABLE = aws_dynamodb_table.user_access_applications.name
+      USERS_TABLE                        = aws_dynamodb_table.users.name
+      USER_ACCESS_APPLICATIONS_TABLE     = aws_dynamodb_table.user_access_applications.name
+      USER_ANALYTICS_TABLE               = aws_dynamodb_table.user_analytics.name
+      STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+      STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
+      STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
     }
   }
 
@@ -1414,6 +1450,7 @@ resource "aws_lambda_function" "strategy_backtests" {
       STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
       STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+      USER_ANALYTICS_TABLE               = aws_dynamodb_table.user_analytics.name
     }
   }
 
@@ -1712,6 +1749,14 @@ resource "aws_apigatewayv2_route" "get_admin_users" {
 resource "aws_apigatewayv2_route" "get_admin_user_by_netid" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /admin/users/{netid}"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "get_admin_user_analytics_by_netid" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /admin/users/{netid}/analytics"
   target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
