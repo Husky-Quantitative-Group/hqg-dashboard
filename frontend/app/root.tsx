@@ -11,7 +11,7 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
-import { coreApi } from "./api/core";
+import { coreApi, refreshAuthSession } from "./api/core";
 import axios from "axios";
 import { UserProvider, useUser } from "./context/UserConext";
 
@@ -88,6 +88,32 @@ function AppContent() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const { setUser } = useUser();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const refreshQuietly = () => {
+      refreshAuthSession().catch(() => {
+        // Let the next user-initiated request or route check handle login UX.
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshQuietly();
+      }
+    };
+
+    const intervalId = window.setInterval(refreshQuietly, 10 * 60 * 1000);
+    window.addEventListener("focus", refreshQuietly);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshQuietly);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
