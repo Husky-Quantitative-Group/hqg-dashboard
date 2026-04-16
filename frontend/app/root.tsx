@@ -12,6 +12,7 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import {
+  authLoginUrl,
   coreApi,
   noteAuthSessionExpiresAt,
   refreshAuthSession,
@@ -140,8 +141,20 @@ function AppContent() {
           roles?: string[];
           display_name?: string;
           expires_at?: number;
+          refresh_until?: number;
         };
         noteAuthSessionExpiresAt(data.expires_at);
+
+        const minRefreshWindowMs = 8 * 60 * 60 * 1000;
+        const refreshUntilMs =
+          typeof data.refresh_until === "number" && Number.isFinite(data.refresh_until)
+            ? data.refresh_until * 1000
+            : null;
+        if (refreshUntilMs === null || refreshUntilMs - Date.now() < minRefreshWindowMs) {
+          window.location.assign(authLoginUrl);
+          return;
+        }
+
         if (!isCancelled) {
           setUser(
             data?.netid

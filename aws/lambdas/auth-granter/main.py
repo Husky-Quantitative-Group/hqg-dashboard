@@ -199,6 +199,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
                 "roles": [str(role) for role in roles],
                 "display_name": display_name,
                 "expires_at": payload["exp"],
+                "refresh_until": payload.get("refresh_until"),
             },
         )
 

@@ -14,6 +14,8 @@ export const coreApi = axios.create({
   withCredentials: true,
 });
 
+export const authLoginUrl = `${coreApiBaseUrl}/auth/login`;
+
 let refreshPromise: Promise<void> | null = null;
 let authSessionExpiresAtMs: number | null = null;
 
