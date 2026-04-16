@@ -11,7 +11,12 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
-import { coreApi, refreshAuthSession } from "./api/core";
+import {
+  coreApi,
+  noteAuthSessionExpiresAt,
+  refreshAuthSession,
+  shouldRefreshAuthSession,
+} from "./api/core";
 import axios from "axios";
 import { UserProvider, useUser } from "./context/UserConext";
 
@@ -92,25 +97,33 @@ function AppContent() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    const refreshBufferMs = 5 * 60 * 1000;
+
     const refreshQuietly = () => {
       refreshAuthSession().catch(() => {
         // Let the next user-initiated request or route check handle login UX.
       });
     };
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
+    const refreshIfNearExpiry = () => {
+      if (shouldRefreshAuthSession(refreshBufferMs)) {
         refreshQuietly();
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshIfNearExpiry();
+      }
+    };
+
     const intervalId = window.setInterval(refreshQuietly, 10 * 60 * 1000);
-    window.addEventListener("focus", refreshQuietly);
+    window.addEventListener("focus", refreshIfNearExpiry);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.clearInterval(intervalId);
-      window.removeEventListener("focus", refreshQuietly);
+      window.removeEventListener("focus", refreshIfNearExpiry);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
@@ -122,7 +135,13 @@ function AppContent() {
     const run = async () => {
       try {
         const response = await coreApi.get("/auth/me");
-        const data = response.data as { netid?: string; roles?: string[]; display_name?: string };
+        const data = response.data as {
+          netid?: string;
+          roles?: string[];
+          display_name?: string;
+          expires_at?: number;
+        };
+        noteAuthSessionExpiresAt(data.expires_at);
         if (!isCancelled) {
           setUser(
             data?.netid

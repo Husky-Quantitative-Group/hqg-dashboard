@@ -5,18 +5,38 @@ type AuthRetryConfig = InternalAxiosRequestConfig & {
   _authRetry?: boolean;
 };
 
+type RefreshResponse = {
+  expires_at?: number;
+};
+
 export const coreApi = axios.create({
   baseURL: coreApiBaseUrl,
   withCredentials: true,
 });
 
 let refreshPromise: Promise<void> | null = null;
+let authSessionExpiresAtMs: number | null = null;
+
+export function noteAuthSessionExpiresAt(expiresAtSeconds?: number) {
+  if (typeof expiresAtSeconds !== "number" || !Number.isFinite(expiresAtSeconds)) {
+    authSessionExpiresAtMs = null;
+    return;
+  }
+
+  authSessionExpiresAtMs = expiresAtSeconds * 1000;
+}
+
+export function shouldRefreshAuthSession(bufferMs: number): boolean {
+  return authSessionExpiresAtMs === null || authSessionExpiresAtMs - Date.now() <= bufferMs;
+}
 
 export function refreshAuthSession(): Promise<void> {
   if (!refreshPromise) {
     refreshPromise = coreApi
-      .post("/auth/refresh")
-      .then(() => undefined)
+      .post<RefreshResponse>("/auth/refresh")
+      .then((response) => {
+        noteAuthSessionExpiresAt(response.data?.expires_at);
+      })
       .finally(() => {
         refreshPromise = null;
       });

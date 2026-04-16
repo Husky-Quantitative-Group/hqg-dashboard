@@ -176,7 +176,11 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         if not token:
             return _json_response(401, {"message": "Unauthorized"})
 
-        netid = _decode_netid(token)
+        payload = _decode_token_payload(token)
+        if not payload:
+            return _json_response(401, {"message": "Unauthorized"})
+
+        netid = _netid_from_payload(payload)
         if not netid:
             return _json_response(401, {"message": "Unauthorized"})
 
@@ -194,6 +198,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
                 "netid": netid,
                 "roles": [str(role) for role in roles],
                 "display_name": display_name,
+                "expires_at": payload["exp"],
             },
         )
 
@@ -215,12 +220,19 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         if not isinstance(roles, list):
             roles = [roles]
 
-        token = mint_jwt(netid, [str(role) for role in roles], payload["refresh_until"])
+        token, token_payload = mint_jwt_with_payload(netid, [str(role) for role in roles], payload["refresh_until"])
         return {
-            "statusCode": 204,
+            "statusCode": 200,
             "headers": {
                 "Set-Cookie": _build_auth_cookie(token),
+                "Content-Type": "application/json",
             },
+            "body": json.dumps(
+                {
+                    "expires_at": token_payload["exp"],
+                    "refresh_until": token_payload["refresh_until"],
+                }
+            ),
         }
 
     if route_key == "POST /auth/apply":
@@ -305,6 +317,15 @@ def validate_cas_ticket(ticket) -> str | None:
 
 def mint_jwt(netid: str, roles: Optional[List[str]] = None, refresh_until: Optional[int] = None):
     """Returns a JSON web token with the user's encoded netid and expiry"""
+    token, _payload = mint_jwt_with_payload(netid, roles, refresh_until)
+    return token
+
+
+def mint_jwt_with_payload(
+    netid: str,
+    roles: Optional[List[str]] = None,
+    refresh_until: Optional[int] = None,
+):
     now = int(time.time())
     roles = roles or []
     refresh_until = refresh_until or (now + AUTH_REFRESH_TTL_SECONDS)
@@ -319,7 +340,8 @@ def mint_jwt(netid: str, roles: Optional[List[str]] = None, refresh_until: Optio
     kid = _get_current_kid()
     if kid:
         headers = {"kid": kid}
-    return jwt.encode(payload, _get_private_key(), algorithm="RS256", headers=headers)
+    token = jwt.encode(payload, _get_private_key(), algorithm="RS256", headers=headers)
+    return token, payload
 
 # ----------------------------
 # Cookie/JWT helpers
@@ -335,6 +357,10 @@ def _decode_netid(token: str) -> Optional[str]:
     if not payload:
         return None
 
+    return _netid_from_payload(payload)
+
+
+def _netid_from_payload(payload: Dict[str, Any]) -> Optional[str]:
     netid = payload.get("sub")
     if not isinstance(netid, str):
         return None
