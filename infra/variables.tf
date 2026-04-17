@@ -85,8 +85,14 @@ variable "counters_table_name" {
   default     = null
 }
 
-variable "user_analytics_table_name" {
-  description = "Optional explicit name for the UserAnalytics table. Defaults to \"<project>-<env>-user-analytics\"."
+variable "analytics_table_name" {
+  description = "Optional explicit name for the Analytics table. Defaults to \"<project>-<env>-analytics\"."
+  type        = string
+  default     = null
+}
+
+variable "daily_user_logins_table_name" {
+  description = "Optional explicit name for the DailyUserLogins table. Defaults to \"<project>-<env>-daily-user-logins\"."
   type        = string
   default     = null
 }

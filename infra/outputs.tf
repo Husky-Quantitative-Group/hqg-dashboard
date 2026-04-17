@@ -108,14 +108,24 @@ output "counters_table_name" {
   description = "Name of the Counters table."
 }
 
-output "user_analytics_table_name" {
-  value       = aws_dynamodb_table.user_analytics.name
-  description = "Name of the UserAnalytics table."
+output "analytics_table_name" {
+  value       = aws_dynamodb_table.analytics.name
+  description = "Name of the Analytics table."
 }
 
-output "user_analytics_table_arn" {
-  value       = aws_dynamodb_table.user_analytics.arn
-  description = "ARN of the UserAnalytics table."
+output "analytics_table_arn" {
+  value       = aws_dynamodb_table.analytics.arn
+  description = "ARN of the Analytics table."
+}
+
+output "daily_user_logins_table_name" {
+  value       = aws_dynamodb_table.daily_user_logins.name
+  description = "Name of the DailyUserLogins table."
+}
+
+output "daily_user_logins_table_arn" {
+  value       = aws_dynamodb_table.daily_user_logins.arn
+  description = "ARN of the DailyUserLogins table."
 }
 
 output "http_api_id" {
