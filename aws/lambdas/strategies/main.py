@@ -24,7 +24,7 @@ STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
 VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
 COUNTERS_TABLE = dynamo.Table(os.environ["COUNTERS_TABLE"])
-USER_ANALYTICS_TABLE = dynamo.Table(os.environ["USER_ANALYTICS_TABLE"])
+ANALYTICS_TABLE = dynamo.Table(os.environ["ANALYTICS_TABLE"])
 ARTIFACT_BUCKET = os.environ["ARTIFACT_BUCKET"]
 READ_PERMISSIONS_TABLE = os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"]
 WRITE_PERMISSIONS_TABLE = os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"]
@@ -236,7 +236,7 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
             return _json(409, {"message": "Strategy id collision detected. Please try again."})
         return _json(500, {"message": f"Failed to create strategy permissions: {exc}"})
 
-    _update_user_analytics(
+    _update_analytics(
         netid,
         total_strategies_created_inc=1,
         total_revisions_inc=revision_count,
@@ -437,7 +437,11 @@ def _get_netid_from_event(event: Dict[str, Any]) -> Optional[str]:
     return netid or None
 
 
-def _update_user_analytics(
+def _day_bucket(timestamp: str) -> str:
+    return timestamp.split("T")[0]
+
+
+def _update_analytics(
     netid: str,
     *,
     total_strategies_created_inc: int = 0,
@@ -474,14 +478,29 @@ def _update_user_analytics(
     expr_values[":zero"] = 0
 
     try:
-        USER_ANALYTICS_TABLE.update_item(
-            Key={"netid": netid},
+        ANALYTICS_TABLE.update_item(
+            Key={"pk": f"USER#{netid}", "sk": "SUMMARY"},
             UpdateExpression="SET " + ", ".join(update_parts),
             ExpressionAttributeNames=expr_names,
             ExpressionAttributeValues=expr_values,
         )
     except ClientError as exc:
         print(f"Failed to update user analytics for {netid}: {exc}")
+        return
+
+    try:
+        ANALYTICS_TABLE.update_item(
+            Key={"pk": "METRIC#strategies_created", "sk": f"DAY#{_day_bucket(last_active_at)}"},
+            UpdateExpression="SET #count = if_not_exists(#count, :zero) + :inc, #updated_at = :updated_at",
+            ExpressionAttributeNames={"#count": "count", "#updated_at": "updated_at"},
+            ExpressionAttributeValues={
+                ":zero": 0,
+                ":inc": total_strategies_created_inc,
+                ":updated_at": _now(),
+            },
+        )
+    except ClientError as exc:
+        print(f"Failed to update strategies_created analytics metric for {netid}: {exc}")
 
 
 def _list_readable_strategy_ids(netid: str, roles: List[str]) -> List[str]:
