@@ -663,6 +663,7 @@ data "aws_iam_policy_document" "admin_dynamodb" {
       aws_dynamodb_table.user_access_applications.arn,
       aws_dynamodb_table.user_analytics.arn,
       aws_dynamodb_table.strategies.arn,
+      aws_dynamodb_table.strategy_backtests.arn,
       aws_dynamodb_table.strategies_read_permissions.arn,
       "${aws_dynamodb_table.strategies_read_permissions.arn}/index/*",
       aws_dynamodb_table.strategies_write_permissions.arn,
@@ -1421,6 +1422,7 @@ resource "aws_lambda_function" "admin" {
       USER_ACCESS_APPLICATIONS_TABLE     = aws_dynamodb_table.user_access_applications.name
       USER_ANALYTICS_TABLE               = aws_dynamodb_table.user_analytics.name
       STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+      STRATEGY_BACKTESTS_TABLE           = aws_dynamodb_table.strategy_backtests.name
       STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
     }
@@ -1741,6 +1743,14 @@ resource "aws_apigatewayv2_integration" "admin" {
 resource "aws_apigatewayv2_route" "get_admin_users" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /admin/users"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "get_admin_analytics" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /admin/analytics"
   target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id

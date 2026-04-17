@@ -17,11 +17,13 @@ USER_ANALYTICS_TABLE = dynamo.Table(os.environ["USER_ANALYTICS_TABLE"])
 STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 READ_PERMISSIONS_TABLE = dynamo.Table(os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"])
 WRITE_PERMISSIONS_TABLE = dynamo.Table(os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"])
+STRATEGY_BACKTESTS_TABLE = dynamo.Table(os.environ["STRATEGY_BACKTESTS_TABLE"])
 
 
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     """
     Admin service Lambda.
+    - GET /admin/analytics
     - GET /admin/users
     - GET /admin/users/{netid}
     - GET /admin/users/{netid}/analytics
@@ -39,6 +41,9 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
 
     if route_key == "GET /admin/users":
         return _list_users()
+
+    if route_key == "GET /admin/analytics":
+        return _get_global_analytics()
 
     if route_key == "GET /admin/users/{netid}":
         netid = _get_netid_param(event)
@@ -97,6 +102,16 @@ def _get_user(netid: str | None) -> Dict[str, Any]:
     if not item:
         return _json(404, {"message": "User not found"})
     return _json(200, _clean_decimals(item))
+
+
+def _get_global_analytics() -> Dict[str, Any]:
+    payload = {
+        "total_users": _count_table_items(USERS_TABLE),
+        "total_strategies": _count_table_items(STRATEGIES_TABLE),
+        "total_backtests": _count_table_items(STRATEGY_BACKTESTS_TABLE),
+        "updated_at": _now_iso(),
+    }
+    return _json(200, payload)
 
 
 def _get_user_analytics(netid: str | None) -> Dict[str, Any]:

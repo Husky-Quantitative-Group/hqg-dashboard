@@ -43,11 +43,23 @@ export type AdminUserAnalytics = {
   [key: string]: unknown;
 };
 
+export type AdminGlobalAnalytics = {
+  total_users: number;
+  total_strategies: number;
+  total_backtests: number;
+  updated_at?: string;
+};
+
 export async function fetchAdminUsers(): Promise<AdminUser[]> {
   const response = await coreApi.get("/admin/users");
   const data = response.data as { items?: AdminUser[] } | AdminUser[];
   if (Array.isArray(data)) return data;
   return data.items ?? [];
+}
+
+export async function fetchAdminAnalytics(): Promise<AdminGlobalAnalytics> {
+  const response = await coreApi.get("/admin/analytics");
+  return response.data as AdminGlobalAnalytics;
 }
 
 export async function fetchAdminUser(netid: string): Promise<AdminUser> {
