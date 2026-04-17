@@ -47,7 +47,25 @@ export type AdminGlobalAnalytics = {
   total_users: number;
   total_strategies: number;
   total_backtests: number;
+  users_logged_in_today?: number;
   updated_at?: string;
+};
+
+export type AdminAnalyticsPoint = {
+  date: string;
+  value: number;
+};
+
+export type AdminAnalyticsTimeseries = {
+  from: string;
+  to: string;
+  updated_at?: string;
+  series: {
+    total_users: AdminAnalyticsPoint[];
+    total_strategies: AdminAnalyticsPoint[];
+    total_backtests: AdminAnalyticsPoint[];
+    users_logged_in: AdminAnalyticsPoint[];
+  };
 };
 
 export async function fetchAdminUsers(): Promise<AdminUser[]> {
@@ -60,6 +78,15 @@ export async function fetchAdminUsers(): Promise<AdminUser[]> {
 export async function fetchAdminAnalytics(): Promise<AdminGlobalAnalytics> {
   const response = await coreApi.get("/admin/analytics");
   return response.data as AdminGlobalAnalytics;
+}
+
+export async function fetchAdminAnalyticsTimeseries(
+  days = 30
+): Promise<AdminAnalyticsTimeseries> {
+  const response = await coreApi.get("/admin/analytics/timeseries", {
+    params: { days },
+  });
+  return response.data as AdminAnalyticsTimeseries;
 }
 
 export async function fetchAdminUser(netid: string): Promise<AdminUser> {

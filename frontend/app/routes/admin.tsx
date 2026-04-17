@@ -1,33 +1,43 @@
 import { useEffect, useState } from "react";
 import {
-  fetchAdminAnalytics,
   fetchAdminAccessRequests,
+  fetchAdminAnalyticsTimeseries,
   fetchAdminUser,
   fetchAdminUserAnalytics,
   fetchAdminUsers,
   type AccessRequest,
-  type AdminGlobalAnalytics,
-  type AdminUserAnalytics,
+  type AdminAnalyticsTimeseries,
   type AdminUser,
+  type AdminUserAnalytics,
 } from "~/api/admin";
-import AdminUsersTable from "~/components/admin/AdminUsersTable";
-import AdminUsersDetail from "~/components/admin/AdminUsersDetail";
-import AdminAccessRequestsTable from "~/components/admin/AdminAccessRequestsTable";
 import AdminAccessRequestDetail from "~/components/admin/AdminAccessRequestDetail";
+import AdminAccessRequestsTable from "~/components/admin/AdminAccessRequestsTable";
+import AdminAnalyticsPanel from "~/components/admin/AdminAnalyticsPanel";
+import AdminUsersDetail from "~/components/admin/AdminUsersDetail";
+import AdminUsersTable from "~/components/admin/AdminUsersTable";
 import { useUser } from "~/context/UserConext";
 
-const TABS = [
+const TOP_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "analytics", label: "Analytics" },
+] as const;
+
+const OVERVIEW_TABS = [
   { id: "users", label: "Users" },
   { id: "access", label: "Access Requests" },
 ] as const;
 
-type TabId = (typeof TABS)[number]["id"];
+type TopTabId = (typeof TOP_TABS)[number]["id"];
+type OverviewTabId = (typeof OVERVIEW_TABS)[number]["id"];
 
 export default function AdminPage() {
   const { hasRole } = useUser();
   const isAdmin = hasRole("ADMIN");
-  const [tab, setTab] = useState<TabId>("users");
-  const [globalAnalytics, setGlobalAnalytics] = useState<AdminGlobalAnalytics | null>(null);
+  const [topTab, setTopTab] = useState<TopTabId>("overview");
+  const [overviewTab, setOverviewTab] = useState<OverviewTabId>("users");
+  const [analyticsDays, setAnalyticsDays] = useState(30);
+  const [analyticsData, setAnalyticsData] = useState<AdminAnalyticsTimeseries | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
@@ -42,22 +52,22 @@ export default function AdminPage() {
   useEffect(() => {
     if (!isAdmin) return;
     let cancelled = false;
+
     const load = async () => {
       setLoading(true);
       setError(null);
       try {
-        const [analyticsData, usersData, requestsData] = await Promise.all([
-          fetchAdminAnalytics(),
+        const [usersData, requestsData, analytics] = await Promise.all([
           fetchAdminUsers(),
           fetchAdminAccessRequests(),
+          fetchAdminAnalyticsTimeseries(analyticsDays),
         ]);
         if (cancelled) return;
-        setGlobalAnalytics(analyticsData);
         setUsers(usersData);
         setRequests(requestsData);
-      } catch (err) {
-        if (cancelled) return;
-        setError("Failed to load admin data.");
+        setAnalyticsData(analytics);
+      } catch (_err) {
+        if (!cancelled) setError("Failed to load admin data.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -69,9 +79,13 @@ export default function AdminPage() {
     };
   }, [isAdmin]);
 
+  useEffect(() => {
+    if (!isAdmin || loading) return;
+    refreshAnalytics(analyticsDays);
+  }, [analyticsDays]);
+
   const refreshUsers = async () => {
-    if (!isAdmin) return;
-    if (refreshingUsers) return;
+    if (!isAdmin || refreshingUsers) return;
     setRefreshingUsers(true);
     try {
       const data = await fetchAdminUsers();
@@ -79,24 +93,46 @@ export default function AdminPage() {
       if (selectedUser) {
         const match = data.find((item) => item.netid === selectedUser.netid);
         setSelectedUser(match ?? null);
-        if (!match) {
-          setSelectedUserAnalytics(null);
-        }
+        if (!match) setSelectedUserAnalytics(null);
       }
-    } catch (err) {
+    } catch (_err) {
       setError("Failed to refresh users.");
     } finally {
       setRefreshingUsers(false);
     }
   };
 
-  const refreshGlobalAnalytics = async () => {
-    if (!isAdmin) return;
+  const refreshRequests = async () => {
+    if (!isAdmin || refreshingRequests) return;
+    setRefreshingRequests(true);
     try {
-      const data = await fetchAdminAnalytics();
-      setGlobalAnalytics(data);
-    } catch (err) {
-      setError("Failed to refresh global analytics.");
+      const data = await fetchAdminAccessRequests();
+      setRequests(data);
+      if (selectedRequest) {
+        const match = data.find(
+          (item) =>
+            item.netid === selectedRequest.netid &&
+            item.created_at === selectedRequest.created_at
+        );
+        setSelectedRequest(match ?? null);
+      }
+    } catch (_err) {
+      setError("Failed to refresh access requests.");
+    } finally {
+      setRefreshingRequests(false);
+    }
+  };
+
+  const refreshAnalytics = async (days = analyticsDays) => {
+    if (!isAdmin) return;
+    setAnalyticsLoading(true);
+    try {
+      const data = await fetchAdminAnalyticsTimeseries(days);
+      setAnalyticsData(data);
+    } catch (_err) {
+      setError("Failed to refresh analytics.");
+    } finally {
+      setAnalyticsLoading(false);
     }
   };
 
@@ -113,32 +149,10 @@ export default function AdminPage() {
       ]);
       setSelectedUser(detail);
       setSelectedUserAnalytics(analytics);
-    } catch (err) {
+    } catch (_err) {
       setError("Failed to load user details.");
     } finally {
       setUserDetailLoading(false);
-    }
-  };
-
-  const refreshRequests = async () => {
-    if (!isAdmin) return;
-    if (refreshingRequests) return;
-    setRefreshingRequests(true);
-    try {
-      const data = await fetchAdminAccessRequests();
-      setRequests(data);
-      if (selectedRequest) {
-        const match = data.find(
-          (item) =>
-            item.netid === selectedRequest.netid &&
-            item.created_at === selectedRequest.created_at
-        );
-        setSelectedRequest(match ?? null);
-      }
-    } catch (err) {
-      setError("Failed to refresh access requests.");
-    } finally {
-      setRefreshingRequests(false);
     }
   };
 
@@ -152,34 +166,22 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6">
-      {globalAnalytics && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          {[
-            ["Users", globalAnalytics.total_users],
-            ["Strategies", globalAnalytics.total_strategies],
-            ["Backtests", globalAnalytics.total_backtests],
-          ].map(([label, value]) => (
-            <div
-              key={String(label)}
-              className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5"
-            >
-              <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-              <div className="mt-2 text-3xl font-semibold text-slate-100">{value}</div>
-            </div>
-          ))}
-        </div>
-      )}
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold text-slate-100">Admin</h1>
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-100">Admin</h1>
+          <p className="text-sm text-slate-400">
+            User operations, access requests, and platform telemetry.
+          </p>
+        </div>
         <div className="ml-auto flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/50 p-1">
-          {TABS.map((tabOption) => (
+          {TOP_TABS.map((tabOption) => (
             <button
               key={tabOption.id}
               type="button"
-              onClick={() => setTab(tabOption.id)}
+              onClick={() => setTopTab(tabOption.id)}
               className={
-                "px-4 py-2 text-sm font-medium transition rounded-lg " +
-                (tab === tabOption.id
+                "rounded-lg px-4 py-2 text-sm font-medium transition " +
+                (topTab === tabOption.id
                   ? "bg-slate-800 text-white"
                   : "text-slate-400 hover:text-white")
               }
@@ -202,74 +204,107 @@ export default function AdminPage() {
         </div>
       )}
 
-      {!loading && !error && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
-          <div>
-            {tab === "users" ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold text-slate-200">Users</div>
-                  <button
-                    type="button"
-                    onClick={refreshUsers}
-                    disabled={refreshingUsers}
-                    className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:text-white"
-                  >
-                    {refreshingUsers ? "Refreshing..." : "Refresh"}
-                  </button>
-                </div>
-                <AdminUsersTable
-                  users={users}
-                  selectedNetid={selectedUser?.netid}
-                  onSelect={handleUserSelect}
-                />
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold text-slate-200">
-                    Access requests
+      {!loading && !error && topTab === "analytics" && (
+        <AdminAnalyticsPanel
+          data={analyticsData}
+          loading={analyticsLoading}
+          days={analyticsDays}
+          onDaysChange={setAnalyticsDays}
+        />
+      )}
+
+      {!loading && !error && topTab === "overview" && (
+        <>
+          <div className="flex justify-end">
+            <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/50 p-1">
+              {OVERVIEW_TABS.map((tabOption) => (
+                <button
+                  key={tabOption.id}
+                  type="button"
+                  onClick={() => setOverviewTab(tabOption.id)}
+                  className={
+                    "rounded-lg px-4 py-2 text-sm font-medium transition " +
+                    (overviewTab === tabOption.id
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-400 hover:text-white")
+                  }
+                >
+                  {tabOption.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
+            <div>
+              {overviewTab === "users" ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-slate-200">Users</div>
+                    <button
+                      type="button"
+                      onClick={refreshUsers}
+                      disabled={refreshingUsers}
+                      className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:text-white"
+                    >
+                      {refreshingUsers ? "Refreshing..." : "Refresh"}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={refreshRequests}
-                    disabled={refreshingRequests}
-                    className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:text-white"
-                  >
-                    {refreshingRequests ? "Refreshing..." : "Refresh"}
-                  </button>
+                  <AdminUsersTable
+                    users={users}
+                    selectedNetid={selectedUser?.netid}
+                    onSelect={handleUserSelect}
+                  />
                 </div>
-                <AdminAccessRequestsTable
-                  requests={requests}
-                  selectedNetid={selectedRequest?.netid}
-                  onSelect={(request) => setSelectedRequest(request)}
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-slate-200">Access requests</div>
+                    <button
+                      type="button"
+                      onClick={refreshRequests}
+                      disabled={refreshingRequests}
+                      className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:text-white"
+                    >
+                      {refreshingRequests ? "Refreshing..." : "Refresh"}
+                    </button>
+                  </div>
+                  <AdminAccessRequestsTable
+                    requests={requests}
+                    selectedNetid={selectedRequest?.netid}
+                    onSelect={(request) => setSelectedRequest(request)}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div>
+              {overviewTab === "users" ? (
+                <AdminUsersDetail
+                  user={selectedUser}
+                  analytics={selectedUserAnalytics}
+                  loading={userDetailLoading}
+                  onSaveComplete={(updated) => {
+                    setSelectedUser(updated);
+                    fetchAdminUserAnalytics(updated.netid)
+                      .then((analytics) => setSelectedUserAnalytics(analytics))
+                      .catch(() => setError("Failed to refresh user analytics."));
+                    refreshUsers();
+                  }}
                 />
-              </div>
-            )}
+              ) : (
+                <AdminAccessRequestDetail
+                  request={selectedRequest}
+                  onActionComplete={() => {
+                    refreshRequests();
+                    refreshUsers();
+                    refreshAnalytics();
+                  }}
+                />
+              )}
+            </div>
           </div>
-          <div>
-            {tab === "users" ? (
-              <AdminUsersDetail
-                user={selectedUser}
-                analytics={selectedUserAnalytics}
-                loading={userDetailLoading}
-                onSaveComplete={(updated) => {
-                  setSelectedUser(updated);
-                  fetchAdminUserAnalytics(updated.netid)
-                    .then((analytics) => setSelectedUserAnalytics(analytics))
-                    .catch(() => setError("Failed to refresh user analytics."));
-                  refreshUsers();
-                  refreshGlobalAnalytics();
-                }}
-              />
-            ) : (
-              <AdminAccessRequestDetail
-                request={selectedRequest}
-                onActionComplete={refreshRequests}
-              />
-            )}
-          </div>
-        </div>
+        </>
       )}
     </div>
   );
