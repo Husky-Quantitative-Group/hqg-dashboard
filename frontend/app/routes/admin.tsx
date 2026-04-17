@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import {
+  fetchAdminAnalytics,
   fetchAdminAccessRequests,
   fetchAdminUser,
   fetchAdminUserAnalytics,
   fetchAdminUsers,
   type AccessRequest,
+  type AdminGlobalAnalytics,
   type AdminUserAnalytics,
   type AdminUser,
 } from "~/api/admin";
@@ -25,6 +27,7 @@ export default function AdminPage() {
   const { hasRole } = useUser();
   const isAdmin = hasRole("ADMIN");
   const [tab, setTab] = useState<TabId>("users");
+  const [globalAnalytics, setGlobalAnalytics] = useState<AdminGlobalAnalytics | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
@@ -43,11 +46,13 @@ export default function AdminPage() {
       setLoading(true);
       setError(null);
       try {
-        const [usersData, requestsData] = await Promise.all([
+        const [analyticsData, usersData, requestsData] = await Promise.all([
+          fetchAdminAnalytics(),
           fetchAdminUsers(),
           fetchAdminAccessRequests(),
         ]);
         if (cancelled) return;
+        setGlobalAnalytics(analyticsData);
         setUsers(usersData);
         setRequests(requestsData);
       } catch (err) {
@@ -82,6 +87,16 @@ export default function AdminPage() {
       setError("Failed to refresh users.");
     } finally {
       setRefreshingUsers(false);
+    }
+  };
+
+  const refreshGlobalAnalytics = async () => {
+    if (!isAdmin) return;
+    try {
+      const data = await fetchAdminAnalytics();
+      setGlobalAnalytics(data);
+    } catch (err) {
+      setError("Failed to refresh global analytics.");
     }
   };
 
@@ -137,6 +152,23 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6">
+      {globalAnalytics && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {[
+            ["Users", globalAnalytics.total_users],
+            ["Strategies", globalAnalytics.total_strategies],
+            ["Backtests", globalAnalytics.total_backtests],
+          ].map(([label, value]) => (
+            <div
+              key={String(label)}
+              className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5"
+            >
+              <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+              <div className="mt-2 text-3xl font-semibold text-slate-100">{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-slate-100">Admin</h1>
         <div className="ml-auto flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/50 p-1">
@@ -227,6 +259,7 @@ export default function AdminPage() {
                     .then((analytics) => setSelectedUserAnalytics(analytics))
                     .catch(() => setError("Failed to refresh user analytics."));
                   refreshUsers();
+                  refreshGlobalAnalytics();
                 }}
               />
             ) : (
