@@ -215,7 +215,7 @@ export default function AdminUsersDetail({
     ["Email", user.uconn_email ?? "—"],
     ["Roles", Array.isArray(user.roles) ? user.roles.join(", ") : "—"],
     ["Banned", user.is_banned ? "Yes" : "No"],
-    ["Joined", user.joined_at ?? "—"],
+    ["Joined", formatDateTime(user.joined_at)],
     ["Notes", user.notes ?? "—"],
   ];
 
@@ -223,7 +223,7 @@ export default function AdminUsersDetail({
     ["Strategies created", String(analytics?.total_strategies_created ?? 0)],
     ["Backtests run", String(analytics?.total_backtests_run ?? 0)],
     ["Total revisions", String(analytics?.total_revisions ?? 0)],
-    ["Last active", analytics?.last_active_at ?? "—"],
+    ["Last active", formatDateTime(analytics?.last_active_at)],
     [
       "Readable strategies",
       String(analytics?.permissions_footprint?.readable_strategy_count ?? 0),
@@ -267,4 +267,19 @@ export default function AdminUsersDetail({
       </div>
     </div>
   );
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return "—";
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(parsed);
 }
