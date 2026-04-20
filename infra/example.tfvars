@@ -7,14 +7,20 @@ frontend_base_url = "http://localhost:5173"
 # api_custom_domain_activate = false
 
 # Optional overrides (uncomment to set explicit names)
-# artifacts_bucket_name                 = "strategy-artifacts"
-# jwks_bucket_name                      = "hqg-dev-jwks-abcdef12"
-# strategies_table_name                 = "hqg-dev-strategies"
-# strategy_artifacts_table_name         = "hqg-dev-strategy-artifacts"
-# strategy_artifact_versions_table_name = "hqg-dev-strategy-artifact-versions"
-# users_table_name                      = "hqg-dev-users"
-# user_access_applications_table_name   = "hqg-dev-user-access-applications"
+# artifacts_bucket_name                   = "strategy-artifacts"
+# backtests_bucket_name                   = "strategy-backtests"
+# jwks_bucket_name                        = "hqg-dev-jwks-abcdef12"
+# strategies_table_name                   = "hqg-dev-strategies"
+# strategy_artifacts_table_name           = "hqg-dev-strategy-artifacts"
+# strategy_artifact_versions_table_name   = "hqg-dev-strategy-artifact-versions"
+# users_table_name                        = "hqg-dev-users"
+# user_access_applications_table_name     = "hqg-dev-user-access-applications"
 # strategy_backtests_table_name           = "hqg-dev-strategy-backtests"
+# strategies_read_permissions_table_name  = "hqg-dev-strategies-read-permissions"
+# strategies_write_permissions_table_name = "hqg-dev-strategies-write-permissions"
+# counters_table_name                     = "hqg-dev-counters"
+# analytics_table_name                    = "hqg-dev-analytics"
+# daily_user_logins_table_name            = "hqg-dev-daily-user-logins"
 
 tags = {
   Owner = "hqg-team"
