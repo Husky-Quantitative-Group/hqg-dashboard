@@ -138,7 +138,7 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-slate-700">
+      <div className="flex min-h-screen items-center justify-center bg-background text-on-background">
         Checking session...
       </div>
     );

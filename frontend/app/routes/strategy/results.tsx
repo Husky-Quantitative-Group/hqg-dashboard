@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { getBacktestRun, gunzipJson, type BacktestRunItem } from "~/api/backtestMetrics";
 import { useStrategyWorkspace } from "./layout";
 import { useNavigate } from "react-router-dom";
@@ -44,6 +44,7 @@ export default function StrategyResults() {
     strategy,
     addToast,
     setLatestBacktestData,
+    setLatestBacktestLogs,
     setLatestBacktestStrategyVersion,
     setLatestBacktestStrategyCode,
     setLastBacktestParamValues,
@@ -52,13 +53,72 @@ export default function StrategyResults() {
     savedBacktestRuns,
     isSavedBacktestRunsLoading,
   } = useStrategyWorkspace();
-  const surface = "border border-slate-800 bg-slate-950/40";
-  const mutedColor = "text-slate-400";
+  const [entriesCount, setEntriesCount] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
   const [loadingRunId, setLoadingRunId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  
   const sortedRuns = useMemo(() => {
     const runs = savedBacktestRuns ?? [];
-    return [...runs].sort((a, b) => new Date(b.time_created).getTime() - new Date(a.time_created).getTime());
-  }, [savedBacktestRuns]);
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    
+    const filtered = normalizedSearch
+      ? runs.filter((run) => (run.name ?? "").toLowerCase().includes(normalizedSearch))
+      : runs;
+    
+    return [...filtered].sort((a, b) => new Date(b.time_created).getTime() - new Date(a.time_created).getTime());
+  }, [savedBacktestRuns, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedRuns.length / entriesCount));
+  const startIdx = (currentPage - 1) * entriesCount;
+  const endIdx = Math.min(startIdx + entriesCount, sortedRuns.length);
+  const paginatedRuns = sortedRuns.slice(startIdx, endIdx);
+  const [pageInput, setPageInput] = useState(String(currentPage));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, entriesCount]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    setPageInput(String(currentPage));
+  }, [currentPage]);
+
+  const handlePageChange = (page: number) => {
+    const nextPage = Math.min(Math.max(page, 1), totalPages);
+    setCurrentPage(nextPage);
+  };
+
+  const handlePrevPage = () => {
+    if (currentPage > 1) handlePageChange(currentPage - 1);
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) handlePageChange(currentPage + 1);
+  };
+
+  const handlePageJump = () => {
+    const pageNum = Number.parseInt(pageInput, 10);
+    if (!Number.isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+      handlePageChange(pageNum);
+      setPageInput(String(pageNum));
+      return;
+    }
+    setPageInput(String(currentPage));
+  };
+
+  const handlePageInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      handlePageJump();
+    } else if (event.key === "Escape") {
+      setPageInput(String(currentPage));
+    }
+  };
 
   const openRun = async (run: BacktestRunItem) => {
     if (loadingRunId) return;
@@ -71,6 +131,7 @@ export default function StrategyResults() {
       const backtest = await gunzipJson<BacktestResponse>(raw);
 
       setLatestBacktestData(backtest);
+      setLatestBacktestLogs([]);
       setLatestBacktestStrategyVersion(resp.item.strategy_version ?? null);
       setLatestBacktestStrategyCode(null);
       setActiveBacktestSource("saved");
@@ -92,104 +153,223 @@ export default function StrategyResults() {
     }
   };
 
-  if (!sortedRuns.length && !isSavedBacktestRunsLoading) {
-    return (
-      <div className={`rounded-2xl ${surface} p-12 text-center text-sm ${mutedColor}`}>
-        No runs available for this strategy yet. Save a backtest to see it here.
-      </div>
-    );
-  }
-
   return (
-    <section className={`rounded-3xl ${surface} p-6 shadow-xl`}>
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Results</p>
-          <h1 className="text-2xl font-semibold text-white">Strategy Runs</h1>
+    <section className="glass-card ghost-border light-catch rounded-xl overflow-hidden w-full flex flex-col min-h-[600px]">
+      <div className="flex justify-between items-center bg-[#181818]/60 border-b border-white/5 px-6 py-2">
+        <div className="flex items-center gap-3">
+          <h3 className="text-xs font-bold text-on-surface tracking-wide uppercase">Backtest Results</h3>
+          <span className="px-2 py-0.5 rounded bg-secondary/10 text-secondary-fixed-dim text-[10px] font-bold border border-secondary/20">
+            Showing {sortedRuns.length === 0 ? 0 : startIdx + 1}-{endIdx} of {sortedRuns.length}
+          </span>
         </div>
-        <p className={`text-sm ${mutedColor}`}>Latest executions with their parameter sets and key metrics.</p>
-      </header>
-
-      <div className="mt-6 overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-800 text-sm">
-          <thead className="text-xs uppercase tracking-wide text-slate-400">
+        <div className="flex items-center bg-surface-container-highest/50 border border-outline-variant/30 rounded-lg px-3 py-1">
+          <svg
+            className="text-on-surface-variant text-lg mr-2 w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          <input
+            type="text"
+            className="bg-transparent border-none outline-none focus:ring-0 focus:outline-none text-xs text-on-surface placeholder-on-surface-variant/90 w-48 py-1"
+            placeholder="Search backtests..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="table-wrapper no-scrollbar">
+        <table className="table-container min-w-[1180px]">
+          <colgroup>
+            <col className="w-[220px]" />
+            <col className="w-[100px]" />
+            <col className="w-[150px]" />
+            <col className="w-[220px]" />
+            <col className="w-[82px]" />
+            <col className="w-[82px]" />
+            <col className="w-[82px]" />
+            <col className="w-[82px]" />
+            <col className="w-[82px]" />
+            <col className="w-[70px]" />
+          </colgroup>
+          <thead className="table-header">
             <tr>
-              <th className="px-4 py-3 text-left font-medium">ID</th>
-              <th className="px-4 py-3 text-left font-medium">Name</th>
-              <th className="px-4 py-3 text-left font-medium">Strategy Version</th>
-              <th className="px-4 py-3 text-left font-medium">Started</th>
-              <th className="px-4 py-3 text-left font-medium">Parameters</th>
-              <th className="px-4 py-3 text-left font-medium">Sharpe</th>
-              <th className="px-4 py-3 text-left font-medium">CAGR</th>
-              <th className="px-4 py-3 text-left font-medium">Drawdown</th>
-              <th className="px-4 py-3 text-left font-medium">Volatility</th>
-              <th className="px-4 py-3 text-left font-medium">VaR (95%)</th>
-              <th className="px-4 py-3 text-left font-medium">Beta</th>
+              <th className="px-4 py-2 text-[11px] font-bold uppercase tracking-[0.05em] text-[#9caec2]">Name</th>
+              <th className="px-3 py-2 text-center text-[11px] font-bold uppercase tracking-[0.05em] text-[#9caec2]">Version</th>
+              <th className="px-4 py-2 text-[11px] font-bold uppercase tracking-[0.05em] text-[#9caec2]">Started</th>
+              <th className="px-4 py-2 text-[11px] font-bold uppercase tracking-[0.05em] text-[#9caec2]">Parameters</th>
+              <th className="px-3 py-2 text-center text-[11px] font-bold uppercase tracking-[0.05em] text-[#9caec2]">CAGR</th>
+              <th className="px-3 py-2 text-center text-[11px] font-bold uppercase tracking-[0.05em] text-[#9caec2]">Sharpe</th>
+              <th className="px-3 py-2 text-center text-[11px] font-bold uppercase tracking-[0.05em] text-[#9caec2]">Drawdown</th>
+              <th className="px-3 py-2 text-center text-[11px] font-bold uppercase tracking-[0.05em] text-[#9caec2]">Volatility</th>
+              <th className="px-3 py-2 text-center text-[11px] font-bold uppercase tracking-[0.05em] text-[#9caec2]">VAR (95%)</th>
+              <th className="px-3 py-2 text-center text-[11px] font-bold uppercase tracking-[0.05em] text-[#9caec2]">Beta</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-900 text-slate-200">
+          <tbody className="table-body">
             {isSavedBacktestRunsLoading ? (
               <tr>
-                <td className="px-4 py-6 text-sm text-slate-400" colSpan={11}>
+                <td className="px-4 py-3 text-sm text-on-surface-variant" colSpan={10}>
                   Loading…
                 </td>
               </tr>
             ) : null}
 
-            {sortedRuns.map((run) => {
+            {sortedRuns.length === 0 && !isSavedBacktestRunsLoading ? (
+              <tr>
+                <td className="px-4 py-3 text-sm text-on-surface-variant text-center" colSpan={10}>
+                  {searchTerm ? "No backtests match your search." : "No runs available for this strategy yet. Save a backtest to see it here."}
+                </td>
+              </tr>
+            ) : null}
+
+            {paginatedRuns.map((run, index) => {
               const name = run.name ?? "—";
               const start = run.backtest_params?.start_date ?? "—";
               const end = run.backtest_params?.end_date ?? "—";
               const equity = run.backtest_params?.initial_capital ?? 0;
+              const annualizedReturn = typeof run.annualized_return === "number" ? run.annualized_return : null;
               const drawdown = typeof run.max_drawdown === "number" ? run.max_drawdown : null;
+
               return (
                 <tr
                   key={run.run_id}
-                  className="cursor-pointer transition hover:bg-slate-900/30"
+                  className={`table-row-striped table-row-hover cursor-pointer ${
+                    index % 2 === 0 ? "table-row-even" : "table-row-odd"
+                  }`}
                   onClick={() => void openRun(run)}
                   aria-busy={loadingRunId === run.run_id}
                 >
-                  <td className="px-4 py-4 align-top font-mono text-slate-300">{run.run_id.slice(0, 10)}</td>
-                  <td className="px-4 py-4 align-top font-semibold text-white">{name}</td>
-                  <td className="px-4 py-4 align-top text-slate-200">{run.strategy_version ?? "—"}</td>
-                  <td className="px-4 py-4 align-top text-sm text-slate-300">
-                    <div>{dateFormatter.format(new Date(run.time_created))}</div>
-                    <div className="text-xs text-slate-500">{formatDuration()}</div>
-                  </td>
-                  <td className="px-4 py-4 align-top text-xs text-slate-300">
-                    <div>
-                      <span className="text-slate-500">Start:</span> {start}
-                    </div>
-                    <div>
-                      <span className="text-slate-500">End:</span> {end}
-                    </div>
-                    <div>
-                      <span className="text-slate-500">Equity:</span> {currencyFormatter.format(equity)}
+                  <td className="px-4 py-2">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-semibold text-on-surface">{name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-4 align-top font-semibold text-white">
-                    {typeof run.sharpe === "number" ? run.sharpe.toFixed(2) : "—"}
+                  <td className="px-3 py-2 text-center">
+                    <span className="text-xs font-mono text-primary-dim bg-primary/5 px-2 py-0.5 rounded border border-primary/20">
+                      {run.strategy_version ?? "—"}
+                    </span>
                   </td>
-                  <td className="px-4 py-4 align-top font-semibold text-white">
-                    {typeof run.annualized_return === "number" ? formatPercent(run.annualized_return) : "—"}
+                  <td className="px-4 py-2">
+                    <span className="text-xs text-on-surface">
+                      {dateFormatter.format(new Date(run.time_created))}
+                      <span className="text-on-surface-variant/70 ml-1">{formatDuration()}</span>
+                    </span>
                   </td>
-                  <td className="px-4 py-4 align-top font-semibold text-rose-300">
-                    {drawdown === null ? "—" : formatPercent(drawdown)}
+                  <td className="px-4 py-2">
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-1.5 text-[10px] text-on-surface-variant">
+                        <span className="w-9">Start:</span>
+                        <span className="text-on-surface font-medium">{start}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-on-surface-variant/80">
+                        <span className="w-9">End:</span>
+                        <span className="text-on-surface font-medium opacity-85">{end}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-on-surface-variant/80">
+                        <span className="w-9">Equity:</span>
+                        <span className="text-on-surface font-medium opacity-85">{currencyFormatter.format(equity)}</span>
+                      </div>
+                    </div>
                   </td>
-                  <td className="px-4 py-4 align-top font-semibold text-slate-200">
-                    {typeof run.ann_vol === "number" ? formatPercent(run.ann_vol) : "—"}
+                  <td className="px-3 py-2 text-center">
+                    <span className={`text-sm font-bold ${annualizedReturn && annualizedReturn > 0 ? "text-emerald-400" : "text-error"}`}>
+                      {annualizedReturn !== null ? formatPercent(annualizedReturn, { showSign: true }) : <span className="text-on-surface-variant/50">—</span>}
+                    </span>
                   </td>
-                  <td className="px-4 py-4 align-top font-semibold text-slate-200">
-                    {typeof run.var_95 === "number" ? formatPercent(run.var_95) : "—"}
+                  <td className="px-3 py-2 text-center font-mono text-xs text-on-surface">
+                    {typeof run.sharpe === "number" ? run.sharpe.toFixed(2) : <span className="text-on-surface-variant/50">—</span>}
                   </td>
-                  <td className="px-4 py-4 align-top font-semibold text-slate-200">
-                    {typeof run.beta === "number" ? run.beta.toFixed(2) : "—"}
+                  <td className="px-3 py-2 text-center font-mono text-xs text-error-dim">
+                    {drawdown !== null ? formatPercent(drawdown) : <span className="text-on-surface-variant/50">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-center font-mono text-xs text-on-surface">
+                    {typeof run.ann_vol === "number" ? formatPercent(run.ann_vol) : <span className="text-on-surface-variant/50">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-center font-mono text-xs text-on-surface">
+                    {typeof run.var_95 === "number" ? formatPercent(run.var_95) : <span className="text-on-surface-variant/50">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-center font-mono text-xs text-on-surface">
+                    {typeof run.beta === "number" ? run.beta.toFixed(2) : <span className="text-on-surface-variant/50">—</span>}
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+      </div>
+      <div className="px-6 py-3 border-t border-white/5 flex justify-between items-center bg-[#0a0a0a]/20 gap-4">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-on-surface-variant/70 uppercase tracking-widest font-bold">
+            Show
+          </span>
+          <select
+            value={entriesCount}
+            onChange={(event) => setEntriesCount(Number(event.target.value))}
+            className="px-2 py-1 bg-surface-container-highest/50 border border-outline-variant/30 rounded text-[10px] text-on-surface cursor-pointer hover:bg-surface-container-highest transition-colors focus:outline-none focus:ring-0"
+          >
+            <option value={5}>5</option>
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+          </select>
+          <span className="text-[10px] text-on-surface-variant/70 uppercase tracking-widest font-bold">
+            entries
+          </span>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePrevPage}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded border border-outline-variant/30 bg-surface-container-highest/50 text-on-surface-variant hover:bg-surface-container-highest transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[10px] font-bold uppercase"
+            >
+              ← Prev
+            </button>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-on-surface-variant/70 font-bold">Page</span>
+              <input
+                type="number"
+                min="1"
+                max={totalPages}
+                value={pageInput}
+                onChange={(event) => setPageInput(event.target.value)}
+                onBlur={handlePageJump}
+                onKeyDown={handlePageInputKeyDown}
+                className="w-10 px-1 py-1 bg-surface-container-highest/50 border border-outline-variant/30 rounded text-[10px] text-on-surface text-center focus:outline-none focus:ring-1 focus:ring-secondary/50"
+                style={{
+                  MozAppearance: "textfield",
+                  appearance: "textfield",
+                }}
+              />
+              <style>{`
+                input[type="number"]::-webkit-outer-spin-button,
+                input[type="number"]::-webkit-inner-spin-button {
+                  -webkit-appearance: none;
+                  margin: 0;
+                }
+              `}</style>
+              <span className="text-[10px] text-on-surface-variant/70 font-bold">
+                of {totalPages}
+              </span>
+            </div>
+            <button
+              onClick={handleNextPage}
+              disabled={currentPage >= totalPages}
+              className="px-2 py-1 rounded border border-outline-variant/30 bg-surface-container-highest/50 text-on-surface-variant hover:bg-surface-container-highest transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[10px] font-bold uppercase"
+            >
+              Next →
+            </button>
+          </div>
+        </div>
       </div>
     </section>
   );

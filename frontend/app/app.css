@@ -32,7 +32,7 @@
   --color-surface-container-highest: #1c2436;
   --color-tertiary-container: #7e22ce;
   --color-outline-variant: #334155;
-  --color-secondary-fixed: #c7d2fe;
+  --color-secondary-fixed: #8557d6;
   --color-error: #ef4444;
   --color-on-primary-fixed-variant: #312e81;
   --color-primary-dim: #a78bfa;
@@ -60,16 +60,17 @@
 
 html,
 body {
-  background-color: #0d101a;
-  background-image:
-    radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.05) 0%, transparent 60%),
-    radial-gradient(at 100% 0%, rgba(59, 130, 246, 0.07) 0%, transparent 60%),
-    radial-gradient(at 50% 100%, rgba(148, 163, 184, 0.06) 0%, transparent 70%),
-    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.008'/%3E%3C/svg%3E");
-  background-attachment: scroll;
-  color-scheme: dark;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  background: none;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-color: hwb(226 10% 83%);
+  will-change: transform;
+  transform: translateZ(0); /* force GPU layer */
 }
 
 html::-webkit-scrollbar,
@@ -88,6 +89,21 @@ body::-webkit-scrollbar {
 /* Material Symbols Icon styling */
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.nav-tab-active {
+  background-color: rgba(129, 140, 248, 0.16);
+  border-bottom: 2px solid rgba(199, 210, 254, 0.95);
+}
+
+.code-editor-tab-active {
+  background: #1e1e1e;
+  color: #eef2f6;
+  border-top: 2px solid #b1beff;
+}
+
+.code-editor-tab-inactive {
+  color: #9caec2;
 }
 
 /* Sidebar content adjustment for fixed positioning */
@@ -114,4 +130,144 @@ body::-webkit-scrollbar {
 /* Global scrollbar hiding for all scrollable containers */
 *::-webkit-scrollbar {
   display: none;
+}
+
+/* Glass card styling */
+.glass-card {
+  background: rgba(10, 14, 23, 0.75);
+  backdrop-filter: blur(100px);
+  -webkit-backdrop-filter: blur(100px);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  transition: all 0.3s ease-in-out;
+}
+
+.ghost-border {
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.light-catch {
+  box-shadow: inset 1px 1px 0 0 rgba(148, 163, 184, 0.05);
+}
+
+/* Table row styling */
+.table-row-striped {
+  transition: all 0.2s ease-in-out;
+}
+
+.table-row-even {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.table-row-odd {
+  background-color: transparent;
+}
+
+.table-row-hover:hover {
+  background-color: rgba(255, 255, 255, 0.13);
+}
+
+/* Comprehensive table styling */
+.table-wrapper {
+  overflow-x: auto;
+}
+
+.table-container {
+  width: 100%;
+  text-align: left;
+  border-collapse: collapse;
+}
+
+.table-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background-color: rgba(13, 13, 13, 0.4);
+}
+
+.table-header-cell {
+  padding: 0.5rem 1.5rem;
+  font-size: 0.6875rem;
+  font-weight: bold;
+  color: #9caec2;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.table-body {
+  border-collapse: collapse;
+  divide-y: 1px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.strategy-loading-chart {
+  height: 220px;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  background:
+    radial-gradient(circle at top right, rgba(140, 100, 205, 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(13, 16, 26, 0.98));
+}
+
+.strategy-loading-chart-grid {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.12);
+  stroke-width: 1;
+}
+
+.strategy-loading-chart-area {
+  opacity: 0;
+  animation: strategy-loading-area 2.8s ease-in-out infinite;
+}
+
+.strategy-loading-chart-line {
+  fill: none;
+  stroke: url(#strategyLoadingStroke);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 900;
+  stroke-dashoffset: 900;
+  animation: strategy-loading-line 2.8s ease-in-out infinite;
+}
+
+.strategy-loading-chart-line-glow {
+  opacity: 0.3;
+}
+
+.strategy-loading-chart-dot {
+  fill: #67e8f9;
+  filter: drop-shadow(0 0 8px rgba(103, 232, 249, 0.9));
+}
+
+@keyframes strategy-loading-line {
+  0% {
+    stroke-dashoffset: 900;
+  }
+  65% {
+    stroke-dashoffset: 0;
+  }
+  82% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -900;
+  }
+}
+
+@keyframes strategy-loading-area {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  25% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  82% {
+    opacity: 0.55;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }

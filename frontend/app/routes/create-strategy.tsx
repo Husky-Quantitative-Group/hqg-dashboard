@@ -178,29 +178,29 @@ export default function CreateStrategy() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 text-slate-100">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Create Strategy</h1>
-        <p className="text-slate-400">Branch from an existing strategy and customize its metadata.</p>
+    <div className="px-6 pb-20 max-w-full mx-auto space-y-6 pt-4">
+      <header className="space-y-2 mb-6">
+        <h1 className="font-extrabold font-headline tracking-tight text-on-surface text-4xl">Create Strategy</h1>
+        <p className="text-on-surface-variant text-sm font-medium">Branch from an existing strategy and customize its metadata.</p>
       </header>
 
-      <section className="rounded-2xl border border-slate-800 bg-slate-950/50 p-6 shadow-lg space-y-4">
+      <section className="glass-card ghost-border light-catch rounded-xl overflow-hidden w-full flex flex-col p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-500">Template</p>
-            <h2 className="text-lg font-semibold">Select Template Strategy</h2>
+            <p className="text-xs uppercase tracking-wider font-bold text-on-surface-variant">Template</p>
+            <h2 className="text-lg font-semibold text-on-surface">Select Template Strategy</h2>
           </div>
-          <span className="text-xs text-slate-500">{isLoading ? "Loading..." : `${strategies.length} available`}</span>
+          <span className="text-xs text-on-surface-variant font-medium">{isLoading ? "Loading..." : `${strategies.length} available`}</span>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-[1fr_1.1fr]">
           <label className="flex flex-col gap-2">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Template Strategy</span>
+            <span className="text-xs uppercase tracking-wider font-bold text-on-surface-variant">Template Strategy</span>
             <select
               disabled={isLoading || !templateOptions.length}
               value={selectedTemplateId}
               onChange={(e) => setSelectedTemplateId(e.target.value)}
-              className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 disabled:opacity-60"
+              className="rounded-lg border border-outline-variant/30 bg-surface-container-highest/50 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-secondary/50"
             >
               {templateOptions.length === 0 ? (
                 <option value="">No strategies available</option>
@@ -214,12 +214,12 @@ export default function CreateStrategy() {
             </select>
           </label>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Template Preview</p>
+          <div className="rounded-lg border border-outline-variant/30 bg-surface-container-highest/50 p-4">
+            <p className="text-xs uppercase tracking-wider font-bold text-on-surface-variant">Template Preview</p>
             {selectedTemplate ? (
-              <div className="mt-2 space-y-2 text-sm text-slate-200">
-                <div className="font-semibold text-white">{selectedTemplate.name}</div>
-                <div className="text-slate-400 text-xs">
+              <div className="mt-2 space-y-2 text-sm text-on-surface">
+                <div className="font-semibold text-on-surface">{selectedTemplate.name}</div>
+                <div className="text-on-surface-variant text-xs">
                   Owner: {selectedTemplate.owner_display ?? selectedTemplate.owner ?? "—"} · Updated:{" "}
                   {selectedTemplate.updated_at ? new Date(selectedTemplate.updated_at).toLocaleString("en-US", {
                     year: "numeric",
@@ -230,37 +230,37 @@ export default function CreateStrategy() {
                     timeZoneName: "short",
                   }) : "-"}
                 </div>
-                <div className="text-slate-300 text-xs line-clamp-3">
+                <div className="text-on-surface-variant text-xs line-clamp-3">
                   {selectedTemplate.description || "No description provided."}
                 </div>
                 <div className="flex flex-wrap gap-1 pt-1">
                   {selectedTemplateTags.map((tag) => (
-                    <span key={tag} className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-200">
+                    <span key={tag} className="rounded-md border border-outline-variant/30 px-2 py-0.5 text-[10px] text-on-surface-variant bg-white/5">
                       {tag}
                     </span>
                   ))}
-                  {selectedTemplateTags.length === 0 && <span className="text-slate-500 text-xs">No tags</span>}
+                  {selectedTemplateTags.length === 0 && <span className="text-on-surface-variant text-xs">No tags</span>}
                 </div>
               </div>
             ) : (
-              <p className="mt-2 text-sm text-slate-500">Choose a template strategy to preview its details.</p>
+              <p className="mt-2 text-sm text-on-surface-variant">Choose a template strategy to preview its details.</p>
             )}
           </div>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-800 bg-slate-950/50 p-6 shadow-lg space-y-4">
+      <section className="glass-card ghost-border light-catch rounded-xl overflow-hidden w-full flex flex-col p-6 space-y-4">
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500">Metadata</p>
-          <h2 className="text-lg font-semibold">Define New Strategy</h2>
+          <p className="text-xs uppercase tracking-wider font-bold text-on-surface-variant">Metadata</p>
+          <h2 className="text-lg font-semibold text-on-surface">Define New Strategy</h2>
         </div>
 
         <form className="space-y-5" onSubmit={handleSubmit}>
           <label className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs uppercase tracking-wide text-slate-500">New Strategy Name</span>
+              <span className="text-xs uppercase tracking-wider font-bold text-on-surface-variant">New Strategy Name</span>
               <span
-                className={`text-xs ${strategyNameLength > STRATEGY_NAME_MAX_CHARS ? "text-rose-400" : "text-slate-500"}`}
+                className={`text-xs font-medium ${strategyNameLength > STRATEGY_NAME_MAX_CHARS ? "text-error" : "text-on-surface-variant"}`}
               >
                 {strategyNameLength}/{STRATEGY_NAME_MAX_CHARS}
               </span>
@@ -268,17 +268,17 @@ export default function CreateStrategy() {
             <input
               value={strategyName}
               onChange={(e) => setStrategyName(e.target.value)}
-              className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+              className="rounded-lg border border-outline-variant/30 bg-surface-container-highest/50 px-3 py-2 text-sm text-on-surface placeholder-on-surface-variant/60 hover:bg-surface-container-highest transition-colors focus:outline-none focus:ring-2 focus:ring-secondary/50"
               placeholder="My branched strategy"
             />
-            {strategyNameError && <p className="text-sm text-rose-400">{strategyNameError}</p>}
+            {strategyNameError && <p className="text-sm text-error">{strategyNameError}</p>}
           </label>
 
           <label className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs uppercase tracking-wide text-slate-500">Description</span>
+              <span className="text-xs uppercase tracking-wider font-bold text-on-surface-variant">Description</span>
               <span
-                className={`text-xs ${descriptionLength > DESCRIPTION_MAX_CHARS ? "text-rose-400" : "text-slate-500"}`}
+                className={`text-xs font-medium ${descriptionLength > DESCRIPTION_MAX_CHARS ? "text-error" : "text-on-surface-variant"}`}
               >
                 {descriptionLength}/{DESCRIPTION_MAX_CHARS}
               </span>
@@ -286,33 +286,33 @@ export default function CreateStrategy() {
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+              className="rounded-lg border border-outline-variant/30 bg-surface-container-highest/50 px-3 py-2 text-sm text-on-surface placeholder-on-surface-variant/60 hover:bg-surface-container-highest transition-colors focus:outline-none focus:ring-2 focus:ring-secondary/50"
               placeholder="Short strategy summary for cards and listings"
             />
-            {descriptionError && <p className="text-sm text-rose-400">{descriptionError}</p>}
+            {descriptionError && <p className="text-sm text-error">{descriptionError}</p>}
           </label>
 
           <label className="flex flex-col gap-2">
-            <span className="text-xs uppercase tracking-wide text-slate-500">README (markdown)</span>
+            <span className="text-xs uppercase tracking-wider font-bold text-on-surface-variant">README (markdown)</span>
             <textarea
               value={readmeContent}
               onChange={(e) => {
                 setHasEditedReadme(true);
                 setReadmeContent(e.target.value);
               }}
-              className="min-h-[140px] rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+              className="min-h-[140px] rounded-lg border border-outline-variant/30 bg-surface-container-highest/50 px-3 py-2 text-sm text-on-surface placeholder-on-surface-variant/60 hover:bg-surface-container-highest transition-colors focus:outline-none focus:ring-2 focus:ring-secondary/50"
               placeholder="# My strategy"
             />
-            <div className={`text-xs ${readmeLength > README_MAX_CHARS ? "text-rose-400" : "text-slate-500"}`}>
+            <div className={`text-xs font-medium ${readmeLength > README_MAX_CHARS ? "text-error" : "text-on-surface-variant"}`}>
               {readmeLength}/{README_MAX_CHARS}
             </div>
-            {readmeError && <p className="text-sm text-rose-400">{readmeError}</p>}
+            {readmeError && <p className="text-sm text-error">{readmeError}</p>}
           </label>
 
           <label className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs uppercase tracking-wide text-slate-500">Tags</span>
-                <span className={`text-xs ${tags.length > TAGS_MAX_COUNT ? "text-rose-400" : "text-slate-500"}`}>
+                <span className="text-xs uppercase tracking-wider font-bold text-on-surface-variant">Tags</span>
+                <span className={`text-xs font-medium ${tags.length > TAGS_MAX_COUNT ? "text-error" : "text-on-surface-variant"}`}>
                   {tags.length}/{TAGS_MAX_COUNT}
                 </span>
               </div>
@@ -320,10 +320,10 @@ export default function CreateStrategy() {
                 {tags.map((tag) => (
                   <span
                     key={tag}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-2 py-1 text-xs"
+                    className="inline-flex items-center gap-1 rounded-md border border-outline-variant/30 px-2 py-1 text-xs text-on-surface bg-white/5 hover:bg-white/10 transition-colors"
                   >
                     {tag}
-                    <button type="button" onClick={() => handleRemoveTag(tag)} aria-label={`Remove ${tag}`}>
+                    <button type="button" onClick={() => handleRemoveTag(tag)} aria-label={`Remove ${tag}`} className="hover:text-secondary transition-colors">
                       ×
                     </button>
                   </span>
@@ -343,36 +343,40 @@ export default function CreateStrategy() {
                     }
                   }}
                   disabled={tags.length >= TAGS_MAX_COUNT}
-                  className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 disabled:opacity-60"
+                  className="flex-1 rounded-lg border border-outline-variant/30 bg-surface-container-highest/50 px-3 py-2 text-sm text-on-surface placeholder-on-surface-variant/60 hover:bg-surface-container-highest transition-colors disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-secondary/50"
                   placeholder={`Add tag (max ${TAG_MAX_CHARS} chars)`}
                 />
                 <button
                   type="button"
                   onClick={handleAddTag}
                   disabled={tags.length >= TAGS_MAX_COUNT}
-                  className="rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  className="rounded-lg bg-secondary/20 hover:bg-secondary/30 border border-secondary/30 px-3 py-2 text-sm font-semibold text-secondary-fixed-dim transition-colors disabled:opacity-60"
                 >
                   Add
                 </button>
               </div>
-              {activeTagError && <p className="text-sm text-rose-400">{activeTagError}</p>}
+              {activeTagError && <p className="text-sm text-error">{activeTagError}</p>}
           </label>
 
-          {errorMessage && <p className="text-sm text-rose-400">{errorMessage}</p>}
-          {successMessage && <p className="text-sm text-emerald-400">{successMessage}</p>}
+          {errorMessage && <p className="text-sm text-error font-medium">{errorMessage}</p>}
+          {successMessage && <p className="text-sm text-emerald-400 font-medium">{successMessage}</p>}
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 pt-2">
             <button
               type="submit"
               disabled={!isFormValid || isSubmitting}
-              className="rounded-xl bg-gradient-to-r from-indigo-500 to-fuchsia-600 px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              className={`rounded-lg font-semibold text-xs uppercase tracking-wider px-6 py-2 transition-all duration-200 ${
+                !isFormValid || isSubmitting
+                  ? "bg-on-surface-variant/30 text-on-surface-variant/50 cursor-not-allowed"
+                  : "bg-gradient-to-r from-primary to-secondary text-on-primary hover:opacity-90 shadow-lg shadow-primary/30"
+              }`}
             >
               {isSubmitting ? "Creating..." : "Create"}
             </button>
             <button
               type="button"
-              onClick={() => navigate("/")}
-              className="rounded-xl border border-slate-700 px-5 py-2 text-sm font-semibold text-slate-100"
+              onClick={() => navigate("/strategies")}
+              className="rounded-lg border border-outline-variant/30 bg-surface-container-highest/50 text-on-surface hover:bg-surface-container-highest transition-colors font-semibold text-xs uppercase tracking-wider px-6 py-2"
             >
               Cancel
             </button>

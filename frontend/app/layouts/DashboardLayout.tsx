@@ -13,7 +13,7 @@ export default function DashboardLayout() {
           willChange: "margin-left",
           backfaceVisibility: "hidden",
           transform: "translateZ(0)",
-          transition: "margin-left 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
+          transition: "margin-left .7s cubic-bezier(0.25, 0.1, 0.25, 1)",
         }}
       >
         {/* global filters / header could go here */}

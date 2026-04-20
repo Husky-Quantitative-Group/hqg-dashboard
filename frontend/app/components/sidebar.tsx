@@ -38,8 +38,12 @@ const getAvatarColor = (name: string): string => {
 };
 
 const getAvatarText = (name: string): string => {
-  // Show first and third letter, or first and second if name is only 2 chars
   if (name.length === 0) return "";
+  if (name.includes(" ")) {
+    const words = name.split(" ").filter(word => word.length > 0);
+    if (words.length < 2) return name.charAt(0).toUpperCase();
+    return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase();
+  }
   if (name.length === 1) return name.charAt(0).toUpperCase();
   if (name.length === 2) return (name.charAt(0) + name.charAt(1)).toUpperCase();
   return (name.charAt(0) + name.charAt(2)).toUpperCase();
@@ -60,8 +64,8 @@ export default function Sidebar() {
 
   // Navigation items
   const navItems: NavItem[] = [
-    { label: "Home", to: "/home", icon: "home" },
-    { label: "Strategies", to: "/", icon: "tactic" },
+    { label: "Home", to: "/", icon: "home" },
+    { label: "Strategies", to: "/strategies", icon: "tactic" },
     ...(hasRole("FUND") || hasRole("ADMIN") ? [{ label: "Portfolio", to: "/portfolio", icon: "work" }] : []),
     ...(hasRole("FUND") || hasRole("ADMIN") ? [{ label: "Leaderboard", to: "/leaderboard", icon: "leaderboard" }] : []),
   ];
@@ -71,7 +75,8 @@ export default function Sidebar() {
     : [];
 
   const isActive = (to: string) => {
-    if (to === "/") return location.pathname === "/" || (location.pathname.includes("/strategy") && location.pathname !== "/home");
+    if (to === "/") return location.pathname === "/" || location.pathname === "/home";
+    if (to === "/strategies") return location.pathname.startsWith("/strategies") || location.pathname === "/create-strategy";
     return location.pathname === to || location.pathname.startsWith(to + "/");
   };
 
@@ -82,13 +87,13 @@ export default function Sidebar() {
         id="sidebar"
         className="fixed left-0 top-0 h-screen z-50 flex flex-col border-r"
         style={{
-          width: isCollapsed ? "68px" : "210px",
-          backgroundColor: "#0a0e17",
+          width: isCollapsed ? "75px" : "210px",
+          backgroundColor: "#14171a",
           borderColor: "rgba(148, 163, 184, 0.08)",
           willChange: "width",
           backfaceVisibility: "hidden",
           transform: "translateZ(0)",
-          transition: "width 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
+          transition: "width 0.7s cubic-bezier(0.25, 0.1, 0.25, 1)",
         }}
       >
         {/* Toggle Button */}
@@ -96,14 +101,14 @@ export default function Sidebar() {
           onClick={() => setIsCollapsed(!isCollapsed)}
           className="fixed"
           style={{
-            top: "38px",
-            left: isCollapsed ? "67px" : "190px",
+            top: "28px",
+            left: isCollapsed ? "74px" : "190px",
             width: "20px",
             height: "40px",
-            background: "rgba(10, 14, 23, 0.85)",
+            background: "#14171a",
             backdropFilter: "blur(8px)",
-            borderLeft: isCollapsed ? "1px solid transparent" : "1px solid rgba(148, 163, 184, 0.15)",
-            borderRight: isCollapsed ? "1px solid rgba(148, 163, 184, 0.15)" : "1px solid transparent",
+            borderLeft: isCollapsed ? "1px solid transparent" : "1px solid rgba(148, 163, 184, 0.12)",
+            borderRight: isCollapsed ? "1px solid rgba(148, 163, 184, 0.12)" : "1px solid transparent",
             borderTop: "1px solid rgba(148, 163, 184, 0.15)",
             borderBottom: "1px solid rgba(148, 163, 184, 0.15)",
             borderRadius: isCollapsed ? "0 6px 6px 0" : "6px 0 0 6px",
@@ -114,7 +119,7 @@ export default function Sidebar() {
             zIndex: 500,
             color: "#e2e9f0",
             boxShadow: "4px 0 12px rgba(0,0,0,0.4)",
-            transition: "all 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
+            transition: "all 0.7s cubic-bezier(0.25, 0.1, 0.25, 1)",
           }}
           title="Toggle Sidebar"
         >
@@ -123,7 +128,7 @@ export default function Sidebar() {
             style={{
               fontSize: "16px",
               transform: isCollapsed ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
+              transition: "transform 0.7s cubic-bezier(0.25, 0.1, 0.25, 1)",
             }}
           >
             chevron_left
@@ -134,28 +139,29 @@ export default function Sidebar() {
         <div
           className="flex items-center shrink-0 overflow-hidden"
           style={{
-            height: "126px",
-            paddingBottom: "24px",
-            paddingLeft: "24px",
+            height: "66px",
+            paddingLeft: "21px",
+            paddingBottom: "55px",
+            paddingTop: "48px",
             paddingRight: isCollapsed ? "22px" : "24px",
             gap: "12px",
-            transition: "padding-right 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
+            transition: "padding-right 0.7s cubic-bezier(0.5, 0.1, 0.25, 1)",
           }}
         >
           <img
             alt="HQG Logo"
             src="/hqg-logo.png"
-            className="w-6 h-6 object-contain shrink-0"
-            style={{ flexShrink: 0, minWidth: "24px", minHeight: "24px" }}
+            className="h-8 w-8 shrink-0 object-contain"
+            style={{ flexShrink: 0, minWidth: "35px", minHeight: "35px" }}
           />
           <h1
             className="font-bold tracking-tighter"
             style={{
               fontSize: "1.25rem",
               color: "#eef2f6",
-              fontFamily: "Manrope, sans-serif",
+              fontFamily: '"Plus Jakarta Sans", sans-serif',
               opacity: isCollapsed ? 0 : 1,
-              transition: "opacity 1s cubic-bezier(0.25, 0.1, 0.25, 1), width 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
+              transition: "opacity 0.7s cubic-bezier(0.25, 0.1, 0.25, 1), width 0.7s cubic-bezier(0.25, 0.1, 0.25, 1)",
               whiteSpace: "nowrap",
               width: isCollapsed ? "0" : "auto",
               overflow: "hidden",
@@ -201,7 +207,7 @@ export default function Sidebar() {
                   <div
                     style={{
                       opacity: isCollapsed ? 0 : 1,
-                      transition: "opacity 1s cubic-bezier(0.25, 0.1, 0.25, 1), width 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
+                      transition: "opacity 0.7s cubic-bezier(0.25, 0.1, 0.25, 1), width 0.7s cubic-bezier(0.25, 0.1, 0.25, 1)",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       width: isCollapsed ? "0" : "auto",
@@ -263,7 +269,7 @@ export default function Sidebar() {
                     <div
                       style={{
                         opacity: isCollapsed ? 0 : 1,
-                        transition: "opacity 1s cubic-bezier(0.25, 0.1, 0.25, 1), width 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
+                        transition: "opacity 0.7s cubic-bezier(0.25, 0.1, 0.25, 1), width 0.7s cubic-bezier(0.25, 0.1, 0.25, 1)",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         width: isCollapsed ? "0" : "auto",
@@ -314,7 +320,7 @@ export default function Sidebar() {
             <div
               style={{
                 opacity: isCollapsed ? 0 : 1,
-                transition: "opacity 1s cubic-bezier(0.25, 0.1, 0.25, 1), width 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
+                transition: "opacity 0.7s cubic-bezier(0.25, 0.1, 0.25, 1), width 0.7s cubic-bezier(0.25, 0.1, 0.25, 1)",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 width: isCollapsed ? "0" : "auto",
@@ -344,7 +350,7 @@ export default function Sidebar() {
               paddingTop: "12px",
               paddingBottom: "12px",
               gap: "16px",
-              transition: "padding-right 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
+              transition: "padding-right 0.7s cubic-bezier(0.25, 0.1, 0.25, 1)",
             }}
           >
             <div
@@ -363,7 +369,7 @@ export default function Sidebar() {
                 width: isCollapsed ? "0" : "auto",
                 flex: isCollapsed ? "0 0 0" : "1",
                 opacity: isCollapsed ? 0 : 1,
-                transition: "opacity 1s cubic-bezier(0.25, 0.1, 0.25, 1), width 1s cubic-bezier(0.25, 0.1, 0.25, 1)",
+                transition: "opacity 0.7s cubic-bezier(0.25, 0.1, 0.25, 1), width 0.7s cubic-bezier(0.25, 0.1, 0.25, 1)",
                 overflow: "hidden",
                 whiteSpace: "nowrap",
                 willChange: "width, opacity",

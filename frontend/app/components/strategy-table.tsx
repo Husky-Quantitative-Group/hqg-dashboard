@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
 import type { Strategy } from "../api/strategies";
 
 type StrategyTableProps = {
@@ -51,6 +52,34 @@ export default function StrategyTable({
       onEntriesPerPageChange(value);
     }
   };
+
+  const [pageInput, setPageInput] = useState(String(currentPage));
+
+  useEffect(() => {
+    setPageInput(String(currentPage));
+  }, [currentPage]);
+
+  const handlePageInputChange = (value: string) => {
+    setPageInput(value);
+  };
+
+  const handlePageJump = () => {
+    const pageNum = parseInt(pageInput, 10);
+    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages && onPageChange) {
+      onPageChange(pageNum);
+      setPageInput(String(pageNum));
+    } else {
+      setPageInput(String(currentPage));
+    }
+  };
+
+  const handlePageInputKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handlePageJump();
+    } else if (e.key === "Escape") {
+      setPageInput(String(currentPage));
+    }
+  };
   // Color palettes for avatars and tags
   const avatarColors = [
     "from-blue-500 to-blue-600",
@@ -81,7 +110,7 @@ export default function StrategyTable({
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
       hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = hash & hash; 
     }
     return Math.abs(hash) % colorCount;
   };
@@ -92,8 +121,16 @@ export default function StrategyTable({
   };
 
   const getAvatarText = (name: string): string => {
-    // Show first and third letter, or first and second if name is only 2 chars
     if (name.length === 0) return "";
+    
+    // Check if name contains spaces
+    if (name.includes(" ")) {
+      const words = name.split(" ").filter(word => word.length > 0);
+      if (words.length < 2) return name.charAt(0).toUpperCase();
+      return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase();
+    }
+    
+    // No spaces - use first and third letter
     if (name.length === 1) return name.charAt(0).toUpperCase();
     if (name.length === 2) return (name.charAt(0) + name.charAt(1)).toUpperCase();
     return (name.charAt(0) + name.charAt(2)).toUpperCase();
@@ -189,8 +226,6 @@ export default function StrategyTable({
                     { value: "updated_asc", label: "Updated (oldest)" },
                     { value: "name_asc", label: "Name (A → Z)" },
                     { value: "name_desc", label: "Name (Z → A)" },
-                    { value: "id_asc", label: "ID (ascending)" },
-                    { value: "id_desc", label: "ID (descending)" },
                   ].map((option) => (
                     <button
                       key={option.value}
@@ -215,46 +250,46 @@ export default function StrategyTable({
       </div>
 
       {/* Table Container */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse table-fixed">
-          <thead>
-            <tr className="border-b border-white/5 bg-[#0d0d0d]/40">
-              <th className="pl-6 pr-3 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest" style={{ width: "28%" }}>
+      <div className="table-wrapper overflow-x-auto">
+        <table className="table-container table-auto">
+          <thead className="table-header">
+            <tr>
+              <th className="table-header-cell text-left" style={{ width: "28%" }}>
                 Name
               </th>
-              <th className="px-3 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest" style={{ width: "12%" }}>
+              <th className="table-header-cell text-left" style={{ width: "14%" }}>
                 Owner
               </th>
-              <th className="px-3 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest" style={{ width: "15%" }}>
+              <th className="table-header-cell text-left" style={{ width: "12%" }}>
                 Created / Updated
               </th>
-              <th className="py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest" style={{ width: "10%" }}>
+              <th className="table-header-cell text-center" style={{ width: "10%" }}>
                 Tags
               </th>
-              <th className="px-1 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-center" style={{ width: "8%" }}>
+              <th className="table-header-cell text-center text-sm" style={{ width: "8%" }}>
                 Sharpe
               </th>
-              <th className="px-1 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-center" style={{ width: "8%" }}>
+              <th className="table-header-cell text-center text-sm" style={{ width: "8%" }}>
                 Sortino
               </th>
-              <th className="px-1 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-center" style={{ width: "8%" }}>
+              <th className="table-header-cell text-center text-sm" style={{ width: "9%" }}>
                 Max DD
               </th>
-              <th className="pl-1 pr-2 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-center" style={{ width: "8%" }}>
+              <th className="table-header-cell text-center text-sm" style={{ width: "8%" }}>
                 CAGR
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/5">
+          <tbody className="table-body">
             {isLoading ? (
               <tr>
-                <td colSpan={8} className="py-3 px-4 text-center text-on-surface-variant text-sm">
+                <td colSpan={8} className="py-2 px-4 text-center text-on-surface-variant text-sm">
                   Loading strategies...
                 </td>
               </tr>
             ) : paginatedStrategies.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-3 px-4 text-center text-on-surface-variant text-sm">
+                <td colSpan={8} className="py-2 px-4 text-center text-on-surface-variant text-sm">
                   No strategies found.
                 </td>
               </tr>
@@ -264,11 +299,11 @@ export default function StrategyTable({
                 return (
                   <tr
                     key={strategy.id}
-                    className={`hover:bg-white/[0.13] transition-colors group ${
-                      index % 2 === 0 ? "bg-white/[0.03]" : "bg-white/[0]"
+                    className={`table-row-striped table-row-hover group ${
+                      index % 2 === 0 ? "table-row-even" : "table-row-odd"
                     }`}
                   >
-                    <td className="pl-6 pr-3 py-3" style={{ width: "28%" }}>
+                    <td className="pl-6 pr-3 py-2" style={{ width: "28%" }}>
                       <div className="flex flex-col gap-0.5">
                         <Link
                           to={`/strategies/${strategy.id}`}
@@ -282,7 +317,7 @@ export default function StrategyTable({
                         </span>
                       </div>
                     </td>
-                    <td className="px-3 py-3" style={{ width: "12%" }}>
+                    <td className="px-6 py-2" style={{ width: "14%" }}>
                       <div className="flex items-center gap-2">
                         <div className={`w-5 h-5 rounded-full overflow-hidden border border-white/10 bg-gradient-to-br ${getAvatarColor(ownerLabel)} flex items-center justify-center text-[0.5rem] font-bold text-white`}>
                           {getAvatarText(ownerLabel)}
@@ -290,7 +325,7 @@ export default function StrategyTable({
                         <span className="text-xs text-on-surface">{ownerLabel}</span>
                       </div>
                     </td>
-                    <td className="px-3 py-3" style={{ width: "15%" }}>
+                    <td className="px-6 py-2" style={{ width: "12%" }}>
                       <div className="flex flex-col gap-1">
                         <span className="text-xs font-bold text-on-surface uppercase tracking-tight">
                           {formatDate(strategy.created_at)}
@@ -300,8 +335,8 @@ export default function StrategyTable({
                         </span>
                       </div>
                     </td>
-                    <td className="px-1 py-3" style={{ width: "10%" }}>
-                      <div className="flex gap-1.5 flex-wrap">
+                    <td className="px-1 py-2" style={{ width: "10%" }}>
+                      <div className="flex gap-1.5 flex-wrap justify-center">
                         {(() => {
                           const tags = strategy.tags ?? [];
                           return (
@@ -327,18 +362,18 @@ export default function StrategyTable({
                         })()}
                       </div>
                     </td>
-                    <td className="px-1 py-3 text-center font-mono text-xs text-on-surface" style={{ width: "8%" }}>
+                    <td className="px-1 py-2 text-center font-mono text-sm text-on-surface" style={{ width: "8%" }}>
                       {formatNumber(strategy.metrics?.sharpe_ratio, 2)}
                     </td>
-                    <td className="px-1 py-3 text-center font-mono text-xs text-on-surface" style={{ width: "8%" }}>
+                    <td className="px-1 py-2 text-center font-mono text-sm text-on-surface" style={{ width: "8%" }}>
                       {formatNumber(strategy.metrics?.sortino, 2)}
                     </td>
-                    <td className="px-1 py-3 text-center font-mono text-xs" style={{ width: "8%" }}>
+                    <td className="px-1 py-2 text-center font-mono text-sm" style={{ width: "8%" }}>
                       <span className={strategy.metrics?.max_drawdown !== undefined && strategy.metrics?.max_drawdown !== null ? "text-error-dim" : "text-on-surface"}>
                         {formatPercent(strategy.metrics?.max_drawdown)}
                       </span>
                     </td>
-                    <td className="pl-1 pr-2 py-3 text-center font-mono text-xs" style={{ width: "8%" }}>
+                    <td className="pl-1 pr-2 py-2 text-center font-mono text-sm" style={{ width: "8%" }}>
                       <span className={strategy.metrics?.annualized_return !== undefined ? "text-emerald-400 font-bold" : "text-on-surface"}>
                         {formatPercent(strategy.metrics?.annualized_return)}
                       </span>
@@ -361,7 +396,7 @@ export default function StrategyTable({
           <select
             value={entriesPerPage}
             onChange={(e) => handleEntriesPerPageChange(Number(e.target.value))}
-            className="px-2 py-1 bg-surface-container-highest/50 border border-outline-variant/30 rounded text-[10px] text-on-surface cursor-pointer hover:bg-surface-container-highest transition-colors"
+            className="px-2 py-1 bg-surface-container-highest/50 border border-outline-variant/30 rounded text-[10px] text-on-surface cursor-pointer hover:bg-surface-container-highest transition-colors focus:outline-none focus:ring-0"
           >
             <option value={5}>5</option>
             <option value={10}>10</option>
@@ -383,9 +418,33 @@ export default function StrategyTable({
             >
               ← Prev
             </button>
-            <span className="text-[10px] text-on-surface-variant/70 font-bold whitespace-nowrap">
-              Page {currentPage} of {Math.max(1, totalPages)}
-            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-on-surface-variant/70 font-bold">Page</span>
+              <input
+                type="number"
+                min="1"
+                max={Math.max(1, totalPages)}
+                value={pageInput}
+                onChange={(e) => handlePageInputChange(e.target.value)}
+                onBlur={handlePageJump}
+                onKeyDown={handlePageInputKeyDown}
+                className="w-10 px-1 py-1 bg-surface-container-highest/50 border border-outline-variant/30 rounded text-[10px] text-on-surface text-center focus:outline-none focus:ring-1 focus:ring-secondary/50"
+                style={{
+                  MozAppearance: "textfield",
+                  appearance: "textfield",
+                }}
+              />
+              <style>{`
+                input[type="number"]::-webkit-outer-spin-button,
+                input[type="number"]::-webkit-inner-spin-button {
+                  -webkit-appearance: none;
+                  margin: 0;
+                }
+              `}</style>
+              <span className="text-[10px] text-on-surface-variant/70 font-bold">
+                of {Math.max(1, totalPages)}
+              </span>
+            </div>
             <button
               onClick={handleNextPage}
               disabled={currentPage >= totalPages}
