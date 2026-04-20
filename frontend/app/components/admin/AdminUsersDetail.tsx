@@ -255,7 +255,7 @@ export default function AdminUsersDetail({
         ))}
       </div>
       <div className="mt-6 border-t border-slate-800 pt-4">
-        <div className="text-xs uppercase tracking-wide text-slate-500">Analytics</div>
+        <div className="text-lg font-semibold text-slate-100">Analytics</div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {analyticsRows.map(([label, value]) => (
             <div key={label} className="flex flex-col gap-1">
