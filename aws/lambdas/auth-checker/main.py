@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import urllib.request
 from functools import lru_cache
 from http.cookies import SimpleCookie
@@ -13,6 +14,7 @@ dynamo = boto3.resource("dynamodb")
 USERS_TABLE = dynamo.Table(os.environ["USERS_TABLE"])
 JWKS_BUCKET = os.environ["JWKS_BUCKET"]
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+AUTH_ACCESS_TTL_SECONDS = int(os.environ.get("AUTH_ACCESS_TTL_SECONDS", "900"))
 
 @lru_cache(maxsize=1)
 def _get_jwks() -> Dict[str, Any]:
@@ -98,6 +100,10 @@ def decode_netid(token: str) -> Optional[str]:
             options={"require": ["exp", "sub"]},
         )
     except jwt.PyJWTError:
+        return None
+
+    issued_at = payload.get("iat")
+    if not isinstance(issued_at, int) or int(time.time()) > issued_at + AUTH_ACCESS_TTL_SECONDS:
         return None
 
     netid = payload.get("sub")
