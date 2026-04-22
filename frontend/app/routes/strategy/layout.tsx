@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, useOutletContext, useParams, useLocation } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { ChartCandlestick, FileCode2, LayoutDashboard, LineChart } from "lucide-react";
@@ -34,6 +34,8 @@ export type StrategyWorkspaceContext = {
   selectRun: (runId: number) => void;
   latestBacktestData: BacktestResponse | null;
   setLatestBacktestData: (data: BacktestResponse | null) => void;
+  latestBacktestLogs: string[];
+  setLatestBacktestLogs: (logs: string[]) => void;
   latestBacktestStrategyVersion: number | string | null;
   setLatestBacktestStrategyVersion: (version: number | string | null) => void;
   latestBacktestStrategyCode: string | null;
@@ -55,10 +57,16 @@ export type StrategyWorkspaceContext = {
 };
 
 const TABS = [
-  { label: "Overview", to: ".", end: true, icon: LayoutDashboard },
-  { label: "Code", to: "code", icon: FileCode2 },
-  { label: "Backtest", to: "backtest", icon: ChartCandlestick },
-  { label: "Results", to: "results", icon: LineChart },
+  { label: "Overview", to: ".", end: true, icon: "dashboard" },
+  { label: "Code", to: "code", icon: "code" },
+  { label: "Backtest", to: "backtest", icon: "play_circle" },
+  { label: "Results", to: "results", icon: "bar_chart" },
+  { label: "Monte-Carlo", to: "monte-carlo", icon: "casino" },
+  { label: "Grid Search", to: "grid-search", icon: "grid_view" },
+];
+
+const RIGHT_TABS = [
+  { label: "Permissions", to: "permissions", icon: "lock" },
 ];
 
 function cloneFiles(items: StrategyFile[]): StrategyFile[] {
@@ -108,6 +116,7 @@ function toLastBacktestParamValues(latestRun?: BacktestRunItem): Record<string, 
 export default function StrategyLayout() {
   const { strategyId = "1" } = useParams<{ strategyId?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [strategy, setStrategy] = useState<Strategy | null>(null);
   const [files, setFiles] = useState<StrategyFile[]>([]);
   const initialFilesRef = useRef<StrategyFile[]>([]);
@@ -134,7 +143,7 @@ export default function StrategyLayout() {
   const [activeSavedRunId, setActiveSavedRunId] = useState<string | null>(null);
   const [savedBacktestRuns, setSavedBacktestRuns] = useState<BacktestRunItem[]>([]);
   const [isSavedBacktestRunsLoading, setIsSavedBacktestRunsLoading] = useState(false);
-  const [isDockExpanded, setIsDockExpanded] = useState(false);
+  const [latestBacktestLogs, setLatestBacktestLogs] = useState<string[]>([]);
 
   const refreshSavedBacktestRuns = useCallback(async () => {
     if (!strategy) return;
@@ -174,6 +183,7 @@ export default function StrategyLayout() {
           return;
         }
         setLatestBacktestData(null);
+        setLatestBacktestLogs([]);
         setLatestBacktestStrategyVersion(null);
         setLatestBacktestStrategyCode(null);
         setSavedEntrypointContent(getEntrypointContent(payload.files));
@@ -393,16 +403,16 @@ export default function StrategyLayout() {
   }, []);
 
   const toastShelf = (
-    <div className="pointer-events-none fixed right-6 top-6 z-50 space-y-3" aria-live="polite">
+    <div className="pointer-events-none fixed top-6 right-6 z-50 space-y-3" aria-live="polite">
       {toasts.map((toast) => (
         <div
           key={toast.id}
           className={`pointer-events-auto rounded-2xl border px-4 py-3 text-sm shadow-lg ${
             toast.variant === "success"
-              ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-100"
+              ? "border-emerald-500/40 bg-emerald-900 text-emerald-100"
               : toast.variant === "warning"
-                ? "border-amber-500/40 bg-amber-500/15 text-amber-200"
-                : "border-slate-500/40 bg-slate-800/80 text-slate-100"
+                ? "border-amber-500/50 bg-amber-900 text-amber-100"
+                : "border-slate-500/50 bg-slate-800 text-slate-100"
           }`}
         >
           {toast.message}
@@ -413,29 +423,105 @@ export default function StrategyLayout() {
 
   if (!strategy) {
     return (
-      <div className="flex h-full min-h-0 flex-col overflow-hidden text-slate-100">
-        <section className="relative h-full overflow-hidden rounded-[40px] border border-white/10 bg-[#040912] shadow-[0_40px_160px_rgba(2,6,23,0.75)]">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.16),transparent_28%),radial-gradient(circle_at_80%_20%,rgba(168,85,247,0.16),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(34,197,94,0.12),transparent_24%)]" />
-          <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px)] [background-size:28px_28px]" />
-
-          <div className="relative border-b border-white/10 bg-black/25 px-6 py-4 backdrop-blur-xl">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden text-on-surface">
+        <section className="glass-card ghost-border light-catch rounded-xl border border-outline-variant/20 bg-surface-container/70 shadow-none">
+          <div className="border-b border-outline-variant/20 bg-surface-container-high/70 px-6 py-4">
             <div className="flex items-center gap-3">
-              <button type="button" className="h-3.5 w-3.5 rounded-full bg-rose-500/80" aria-label="Close workspace" />
-              <span className="h-3.5 w-3.5 rounded-full bg-amber-400/80" />
-              <span className="h-3.5 w-3.5 rounded-full bg-emerald-500/80" />
-              <span className="ml-3 text-xs font-medium uppercase tracking-[0.32em] text-slate-400">Strategy Workspace</span>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-outline-variant/20 bg-surface-container-highest/60">
+                <span className="material-symbols-outlined text-on-surface-variant">tactic</span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-secondary/80">Strategy Workspace</p>
+                <h2 className="font-headline text-base font-bold tracking-tight text-on-surface">
+                  {isWorkspaceLoading ? "Opening strategy" : "Workspace unavailable"}
+                </h2>
+              </div>
             </div>
           </div>
 
-          <div className="relative h-full overflow-y-auto px-8 py-12">
-            <div className="max-w-xl space-y-3">
-              <p className="text-xs font-medium uppercase tracking-[0.38em] text-cyan-300/80">Booting Session</p>
-              <h1 className="text-3xl font-semibold tracking-tight text-white">
-                {isWorkspaceLoading ? "Loading strategy workspace..." : "Strategy workspace unavailable"}
-              </h1>
-              <p className="text-sm leading-7 text-slate-400">
-                {loadError ?? "Preparing source, results, and execution context."}
-              </p>
+          <div className="px-6 py-8">
+            <div className="max-w-2xl space-y-5">
+              {isWorkspaceLoading ? (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="h-3 w-32 rounded-full bg-surface-container-highest/70" />
+                    <div className="h-8 w-72 rounded-xl bg-surface-container-highest/70" />
+                    <div className="h-4 w-full max-w-xl rounded-full bg-surface-container-highest/50" />
+                    <div className="h-4 w-4/5 max-w-lg rounded-full bg-surface-container-highest/40"/>
+                  </div>
+                  <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-high/60 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                    <div className="mb-4 flex items-center justify-between">
+                      <div className="space-y-2">
+                        <div className="h-3 w-24 rounded-full bg-surface-container-highest/60" />
+                        <div className="h-5 w-36 rounded-full bg-surface-container-highest/70" />
+                      </div>
+                      <div className="rounded-full border border-secondary/20 bg-secondary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-secondary/85">
+                        Loading
+                      </div>
+                    </div>
+                    <div className="strategy-loading-chart">
+                      <p className="font-headline text-base text-[5px] tracking-[0.22em] pl-3 text-on-surface/2">Future Gadget Lab</p>
+                      <svg viewBox="0 0 640 240" className="h-full w-full" aria-hidden="true" preserveAspectRatio="none">
+                        <defs>
+                          <linearGradient id="strategyLoadingArea" x1="0%" x2="0%" y1="0%" y2="100%">
+                            <stop offset="0%" stopColor="rgba(140,100,205,0.32)" />
+                            <stop offset="100%" stopColor="rgba(140,100,205,0)" />
+                          </linearGradient>
+                          <linearGradient id="strategyLoadingStroke" x1="0%" x2="100%" y1="0%" y2="0%">
+                            <stop offset="0%" stopColor="rgba(167,139,250,0.35)" />
+                            <stop offset="55%" stopColor="rgba(96,165,250,0.95)" />
+                            <stop offset="100%" stopColor="rgba(52,211,153,0.9)" />
+                          </linearGradient>
+                          <filter id="strategyLoadingGlow" x="-20%" y="-20%" width="140%" height="140%">
+                            <feGaussianBlur stdDeviation="4" result="blur" />
+                            <feMerge>
+                              <feMergeNode in="blur" />
+                              <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                          </filter>
+                        </defs>
+
+                        <path
+                          d="M0 208 H640 M0 156 H640 M0 104 H640 M0 52 H640 M64 0 V240 M192 0 V240 M320 0 V240 M448 0 V240 M576 0 V240"
+                          className="strategy-loading-chart-grid"
+                        />
+                        <path
+                          d="M24 212 L24 188 L92 154 L148 168 L212 120 L276 136 L340 86 L404 100 L470 62 L534 74 L604 26 L616 18 L616 212 Z"
+                          fill="url(#strategyLoadingArea)"
+                          className="strategy-loading-chart-area"
+                        />
+                        <path
+                          d="M24 188 L92 154 L148 168 L212 120 L276 136 L340 86 L404 100 L470 62 L534 74 L604 26 L616 18"
+                          className="strategy-loading-chart-line strategy-loading-chart-line-glow"
+                          filter="url(#strategyLoadingGlow)"
+                        />
+                        <path
+                          d="M24 188 L92 154 L148 168 L212 120 L276 136 L340 86 L404 100 L470 62 L534 74 L604 26 L616 18"
+                          className="strategy-loading-chart-line"
+                        />
+                        <circle r="6" className="strategy-loading-chart-dot">
+                          <animateMotion dur="2.8s" repeatCount="indefinite" rotate="auto">
+                            <mpath href="#strategy-loading-chart-path" />
+                          </animateMotion>
+                        </circle>
+                        <path
+                          id="strategy-loading-chart-path"
+                          d="M24 188 L92 154 L148 168 L212 120 L276 136 L340 86 L404 100 L470 62 L534 74 L604 26 L616 18"
+                          fill="none"
+                          stroke="transparent"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <h1 className="text-3xl font-bold tracking-tight text-on-surface">Strategy workspace unavailable</h1>
+                  <p className="text-sm leading-7 text-on-surface-variant/90">
+                    {loadError ?? "Unable to prepare source, results, and execution context."}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -461,6 +547,8 @@ export default function StrategyLayout() {
     selectRun,
     latestBacktestData,
     setLatestBacktestData,
+    latestBacktestLogs,
+    setLatestBacktestLogs,
     latestBacktestStrategyVersion,
     setLatestBacktestStrategyVersion,
     latestBacktestStrategyCode,
@@ -481,120 +569,150 @@ export default function StrategyLayout() {
     isWriteForbidden,
   };
 
+  const formatter = new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const getActiveTab = () => {
+    const path = location.pathname.split("/").pop() || ".";
+    if (path === "overview" || path === ".") return ".";
+    return path;
+  };
+
+  const isTabActive = (tabTo: string) => {
+    const activePath = getActiveTab();
+    if (tabTo === ".") {
+      return (
+        activePath === "." ||
+        /\/strategies\/[^/]+(?:\/)?$/.test(location.pathname)
+      );
+    }
+    return activePath === tabTo;
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden text-slate-100">
-      <section className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[42px] border border-white/10 bg-[#030814] shadow-[0_44px_180px_rgba(2,6,23,0.82)]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_12%,rgba(56,189,248,0.16),transparent_24%),radial-gradient(circle_at_86%_16%,rgba(217,70,239,0.18),transparent_22%),radial-gradient(circle_at_52%_100%,rgba(34,197,94,0.1),transparent_28%)]" />
-        <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(148,163,184,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.1)_1px,transparent_1px)] [background-size:30px_30px]" />
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/60 to-transparent" />
-
-        <header className="relative border-b border-white/10 bg-[linear-gradient(180deg,rgba(10,14,24,0.96),rgba(7,11,20,0.88))] px-6 py-4 backdrop-blur-xl">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex min-w-[280px] items-center gap-4">
+      <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
+        {/* Header Section with Title, Version, and Metadata */}
+        <section className="flex flex-col @container px-6 py-2 space-y-2">
+          <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
+            {/* Left Section: Title, Description */}
+            <div className="space-y-2 max-w-3xl">
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className="h-3.5 w-3.5 rounded-full bg-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.45)] transition hover:scale-110 hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-300"
-                  aria-label="Return to home"
-                  title="Return to home"
-                />
-                <span className="h-3.5 w-3.5 rounded-full bg-amber-400/90 shadow-[0_0_18px_rgba(251,191,36,0.28)]" />
-                <span className="h-3.5 w-3.5 rounded-full bg-emerald-500/90 shadow-[0_0_18px_rgba(34,197,94,0.28)]" />
-              </div>
-
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="truncate text-[1.15rem] font-semibold tracking-[0.01em] text-white">{strategy.name}</h1>
-                  {isDirty ? <span className="h-2.5 w-2.5 rounded-full bg-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.5)]" title="Unsaved changes" /> : null}
+                <h2 className="font-extrabold font-headline tracking-tight text-on-surface text-[2.2rem]">
+                  {strategy?.name || "Strategy"}
+                </h2>
+                <div className="flex items-center gap-1">
+                  <button className="flex items-center gap-2 text-on-surface text-[13px] font-bold px-4 py-1.5 rounded-lg border border-outline-variant/30 bg-surface-container-high/80 backdrop-blur-md hover:bg-surface-container-highest transition-all shadow-lg">
+                    <span className="text-on-surface-variant font-medium">ver</span>
+                    <span className="">
+                      {typeof strategy?.current_version === "number"
+                        ? strategy.current_version
+                        : "1.0.0"}
+                    </span>
+                    <span className="material-symbols-outlined text-[18px] text-on-surface-variant">
+                      expand_more
+                    </span>
+                  </button>
+                  <button className="flex items-center justify-center p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-bright/50 transition-all">
+                    <span className="material-symbols-outlined text-[20px]">more_vert</span>
+                  </button>
                 </div>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-slate-200">Strategy {strategy.id}</span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-slate-200">Version {strategy.current_version ?? "Draft"}</span>
-                </div>
               </div>
+              <p className="text-on-surface/95 text-sm leading-relaxed">
+                {strategy?.description?.trim() || "No description provided"}
+              </p>
             </div>
 
-            <div className="flex flex-col items-end gap-2">
-              <button
-                type="button"
-                disabled={isSaving || !isDirty}
-                className={`rounded-2xl border px-4 py-2.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
-                  isSaving || !isDirty
-                    ? "cursor-not-allowed border-white/10 bg-white/5 text-slate-500 focus-visible:outline-slate-700"
-                    : "border-cyan-400/30 bg-[linear-gradient(135deg,rgba(14,165,233,0.85),rgba(59,130,246,0.85))] text-white shadow-[0_10px_30px_rgba(14,165,233,0.25)] hover:-translate-y-0.5 hover:brightness-110 focus-visible:outline-cyan-300"
-                }`}
-                onClick={handleSave}
-              >
-                {isSaving ? "Saving..." : "Save Code"}
-              </button>
-              <span className="text-[11px] uppercase tracking-[0.28em] text-slate-500">{autosaveMessage}</span>
+            {/* Right Section: Metadata */}
+            <div className="flex flex-col items-end gap-3 min-w-[320px]">
+              <div className="flex flex-col gap-1 text-right">
+                <div className="flex items-center justify-end gap-2 text-on-surface-variant text-xs font-medium">
+                  <span className="material-symbols-outlined text-xs">person</span>
+                  Owner: <span className="text-on-surface">{strategy?.owner || "Unknown"}</span>
+                </div>
+                <div className="flex items-center justify-end gap-2 text-on-surface-variant text-xs font-medium">
+                  <span className="material-symbols-outlined text-xs">calendar_today</span>
+                  Created:{" "}
+                  {strategy?.created_at ? formatter.format(new Date(strategy.created_at)) : "-"}
+                </div>
+                <div className="flex items-center justify-end gap-2 text-secondary text-xs font-medium">
+                  <span className="material-symbols-outlined text-xs">update</span>
+                  Updated:{" "}
+                  {strategy?.updated_at ? formatter.format(new Date(strategy.updated_at)) : "-"}
+                </div>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                {strategy?.tags?.map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-blue-400/10 text-blue-400/80 border border-blue-400/20 uppercase tracking-widest backdrop-blur-sm transition-colors hover:bg-blue-400/20 cursor-default"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
-        </header>
 
-        <div
-          className={`relative grid min-h-0 flex-1 transition-[grid-template-columns] duration-300 ${
-            isDockExpanded ? "grid-cols-[220px_minmax(0,1fr)]" : "grid-cols-[72px_minmax(0,1fr)]"
-          }`}
-        >
-          <aside
-            className="relative z-30 min-h-0 overflow-visible border-r border-white/10 bg-[linear-gradient(180deg,rgba(11,16,25,0.98),rgba(8,13,22,1))]"
-            onMouseEnter={() => setIsDockExpanded(true)}
-            onMouseLeave={() => setIsDockExpanded(false)}
-          >
-            <div className="absolute inset-y-0 right-0 w-px bg-white/8" />
-            <nav
-              className={`relative flex h-full min-h-0 flex-col items-start gap-1 py-3 transition-all duration-300 ${
-                isDockExpanded ? "w-[220px]" : "w-[72px]"
-              }`}
-            >
-              {TABS.map((tab) => (
-                <NavLink
-                  key={tab.label}
-                  to={tab.to}
-                  end={tab.end}
-                  className={({ isActive }) =>
-                    `group relative z-40 flex h-14 w-full items-center overflow-hidden transition-all duration-300 ${
+          {/* Horizontal Tabs Navigation */}
+          <nav className="flex items-center border-b-[2px] border-outline-variant/40 relative overflow-x-auto no-scrollbar justify-between">
+            <div className="flex items-center overflow-x-auto no-scrollbar">
+              {TABS.map((tab) => {
+                const isActive = isTabActive(tab.to);
+                return (
+                  <button
+                    key={tab.label}
+                    onClick={() => {
+                      if (tab.to === ".") {
+                        navigate(".");
+                      } else {
+                        navigate(tab.to);
+                      }
+                    }}
+                    className={`text-sm font-medium transition-all flex items-center justify-center shrink-0 py-2.5 gap-1.5 px-[17px] border-b-2 border-transparent ${
                       isActive
-                        ? "bg-white/[0.04] text-white"
-                        : "text-slate-400 hover:bg-white/[0.04] hover:text-white"
-                    } ${
-                      isDockExpanded ? "pr-3" : ""
-                    }`
-                  }
-                >
-                  {({ isActive }) => (
-                    <>
-                      <span
-                        className={`absolute left-0 top-0 h-full w-0.5 bg-[#2f81f7] transition-opacity duration-150 ${
-                          isActive ? "opacity-100" : "opacity-0"
-                        }`}
-                      />
-                      <span className="flex h-full w-[72px] shrink-0 items-center justify-center">
-                        <tab.icon
-                          aria-hidden="true"
-                          className="h-6 w-6 shrink-0"
-                          strokeWidth={1.9}
-                        />
-                      </span>
-                      <span
-                        className={`pointer-events-none overflow-hidden whitespace-nowrap text-sm font-medium tracking-[0.01em] text-white transition-[max-width,opacity] duration-200 ${
-                          isDockExpanded ? "max-w-[120px] opacity-100" : "max-w-0 opacity-0"
-                        }`}
-                      >
-                        {tab.label}
-                      </span>
-                    </>
-                  )}
-                </NavLink>
-                ))}
-              </nav>
-          </aside>
+                        ? "nav-tab-active text-on-surface font-bold backdrop-blur-md rounded-t-lg z-10"
+                        : "text-on-surface/90 hover:text-on-surface"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-xl">{tab.icon}</span>
+                    <span className="tab-label">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center ml-auto border-l border-outline-variant/40">
+              {RIGHT_TABS.map((tab) => {
+                const isActive = isTabActive(tab.to);
+                return (
+                  <button
+                    key={tab.label}
+                    onClick={() => {
+                      navigate(tab.to);
+                    }}
+                    className={`text-sm font-medium transition-all flex items-center justify-center shrink-0 py-2.5 gap-1.5 px-[17px] border-b-2 border-transparent ${
+                      isActive
+                        ? "nav-tab-active text-on-surface font-bold backdrop-blur-md rounded-t-lg z-10"
+                        : "text-on-surface/90 hover:text-on-surface"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-xl">{tab.icon}</span>
+                    <span className="tab-label">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+        </section>
 
-          <div className="relative z-10 min-h-0 min-w-0 overflow-hidden bg-[linear-gradient(180deg,rgba(7,11,20,0.52),rgba(4,8,16,0.88))]">
-            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-            <div className="h-full min-h-0 overflow-y-auto px-6 py-6">
+        <div className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)]">
+          <div className="relative z-10 min-h-0 min-w-0 overflow-hidden">
+            <div className="h-full min-h-0 overflow-y-auto px-6 pt-1 pb-6">
               <Outlet context={contextValue} />
             </div>
           </div>
