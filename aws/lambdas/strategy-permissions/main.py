@@ -31,11 +31,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
 
     if route_key == "PATCH /strategies/{id}/permissions":
         body = json.loads(event.get("body") or "{}")
-        return update_permissions(strategy_id, body, event, mode="patch")
-
-    if route_key == "DELETE /strategies/{id}/permissions":
-        body = json.loads(event.get("body") or "{}")
-        return update_permissions(strategy_id, body, event, mode="delete")
+        return update_permissions(strategy_id, body, event)
 
     return {"statusCode": 404, "body": "Not found"}
 
@@ -77,7 +73,6 @@ def update_permissions(
     strategy_id: Optional[str],
     body: Dict[str, Any],
     event: Dict[str, Any],
-    mode: str,
 ) -> Dict[str, Any]:
     if not strategy_id:
         return _json(400, {"message": "strategy id is required"})
@@ -104,15 +99,13 @@ def update_permissions(
         scope_body = body.get(scope)
         if not isinstance(scope_body, dict):
             return _json(400, {"message": f"{scope} must be an object"})
-        error = _apply_permission_changes(table, strategy_id, scope_body, mode)
+        error = _apply_permission_changes(table, strategy_id, scope_body)
         if error:
             return error
-        if scope == "write" and mode == "patch":
+        if scope == "write":
             implied_read = _read_implied_changes(scope_body)
             if implied_read:
-                error = _apply_permission_changes(
-                    READ_PERMISSIONS_DDB, strategy_id, implied_read, "patch"
-                )
+                error = _apply_permission_changes(READ_PERMISSIONS_DDB, strategy_id, implied_read)
                 if error:
                     return error
 
@@ -152,7 +145,6 @@ def _apply_permission_changes(
     table,
     strategy_id: str,
     scope_body: Dict[str, Any],
-    mode: str,
 ) -> Optional[Dict[str, Any]]:
     public = scope_body.get("public")
     fund = scope_body.get("fund")
@@ -168,30 +160,25 @@ def _apply_permission_changes(
     if remove_users is not None and not isinstance(remove_users, list):
         return _json(400, {"message": "removeUsers must be a list"})
 
-    if mode == "patch":
-        if public is True:
-            table.put_item(Item={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
-        elif public is False:
-            table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
-        if fund is True:
-            table.put_item(Item={"strategy_id": strategy_id, "principal": "ROLE#FUND"})
-        elif fund is False:
-            table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"})
-        for netid in add_users or []:
-            if isinstance(netid, str) and netid.strip():
-                principal = _principal_for_user(netid.strip())
-                table.put_item(Item={"strategy_id": strategy_id, "principal": principal})
-    elif mode == "delete":
-        if public is True:
-            table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
-        if fund is True:
-            table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"})
-        for netid in remove_users or []:
-            if isinstance(netid, str) and netid.strip():
-                principal = _principal_for_user(netid.strip())
-                table.delete_item(Key={"strategy_id": strategy_id, "principal": principal})
-    else:
-        return _json(500, {"message": "invalid mode"})
+    if public is True:
+        table.put_item(Item={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
+    elif public is False:
+        table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#PUBLIC"})
+
+    if fund is True:
+        table.put_item(Item={"strategy_id": strategy_id, "principal": "ROLE#FUND"})
+    elif fund is False:
+        table.delete_item(Key={"strategy_id": strategy_id, "principal": "ROLE#FUND"})
+
+    for netid in add_users or []:
+        if isinstance(netid, str) and netid.strip():
+            principal = _principal_for_user(netid.strip())
+            table.put_item(Item={"strategy_id": strategy_id, "principal": principal})
+
+    for netid in remove_users or []:
+        if isinstance(netid, str) and netid.strip():
+            principal = _principal_for_user(netid.strip())
+            table.delete_item(Key={"strategy_id": strategy_id, "principal": principal})
 
     return None
 

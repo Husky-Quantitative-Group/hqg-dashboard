@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useStrategyWorkspace } from "./layout";
 import {
-  deleteStrategyPermissions,
   fetchStrategyPermissions,
   patchStrategyPermissions,
   searchUsers,
@@ -47,8 +46,6 @@ export default function StrategyPermissions() {
     if (email.includes(q)) return 5;
     return 6;
   };
-
-  const labelColor = "text-slate-400";
 
   useEffect(() => {
     if (!canManagePermissions) return;
@@ -225,8 +222,8 @@ export default function StrategyPermissions() {
                       setReadQuery("");
                       setReadResults([]);
                     } else {
-                      await deleteStrategyPermissions(strategy.id, {
-                        read: { public: true },
+                      await patchStrategyPermissions(strategy.id, {
+                        read: { public: false },
                       });
                     }
                   } catch (error) {
@@ -252,8 +249,8 @@ export default function StrategyPermissions() {
                         read: { fund: true },
                       });
                     } else {
-                      await deleteStrategyPermissions(strategy.id, {
-                        read: { fund: true },
+                      await patchStrategyPermissions(strategy.id, {
+                        read: { fund: false },
                       });
                     }
                   } catch (error) {
@@ -278,7 +275,7 @@ export default function StrategyPermissions() {
                           type="button"
                           onClick={async () => {
                             try {
-                              await deleteStrategyPermissions(strategy.id, {
+                              await patchStrategyPermissions(strategy.id, {
                                 read: { removeUsers: [userItem.netid] },
                               });
                               setReadUsers((prev) =>
@@ -366,8 +363,8 @@ export default function StrategyPermissions() {
                       setWriteQuery("");
                       setWriteResults([]);
                     } else {
-                      await deleteStrategyPermissions(strategy.id, {
-                        write: { public: true },
+                      await patchStrategyPermissions(strategy.id, {
+                        write: { public: false },
                       });
                     }
                   } catch (error) {
@@ -393,8 +390,8 @@ export default function StrategyPermissions() {
                         write: { fund: true },
                       });
                     } else {
-                      await deleteStrategyPermissions(strategy.id, {
-                        write: { fund: true },
+                      await patchStrategyPermissions(strategy.id, {
+                        write: { fund: false },
                       });
                     }
                   } catch (error) {
@@ -419,7 +416,7 @@ export default function StrategyPermissions() {
                           type="button"
                           onClick={async () => {
                             try {
-                              await deleteStrategyPermissions(strategy.id, {
+                              await patchStrategyPermissions(strategy.id, {
                                 write: { removeUsers: [userItem.netid] },
                               });
                               setWriteUsers((prev) =>

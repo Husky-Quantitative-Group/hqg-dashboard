@@ -76,16 +76,6 @@ export const patchStrategyPermissions = async (
   return response.data;
 };
 
-export const deleteStrategyPermissions = async (
-  strategyId: string | number,
-  payload: StrategyPermissionsPatch
-): Promise<{ ok?: boolean }> => {
-  const response = await coreApi.delete(`/strategies/${strategyId}/permissions`, {
-    data: payload,
-  });
-  return response.data;
-};
-
 export type UserSearchResult = {
   netid: string;
   full_name?: string;
