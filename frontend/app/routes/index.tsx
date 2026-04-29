@@ -1,5 +1,5 @@
-import Strategies from "./strategies";
+import Home from "./home";
 
 export default function Index() {
-  return <Strategies />;
+  return <Home />;
 }

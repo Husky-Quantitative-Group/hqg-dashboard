@@ -12,6 +12,15 @@ function getFileKind(path: string) {
   return { label: "FILE", accent: "from-slate-400/90 to-slate-500/70" };
 }
 
+function getFileIcon(path: string) {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".py")) return "code";
+  if (lower.endsWith(".md")) return "description";
+  if (lower.endsWith(".json")) return "data_object";
+  if (lower.endsWith(".txt")) return "article";
+  return "insert_drive_file";
+}
+
 function getDisplayLanguage(language?: string) {
   if (!language) return "plaintext";
   return language;
@@ -27,6 +36,7 @@ export default function StrategyCodeWorkspace() {
     updateFileContent,
     isDirty,
     isSaving,
+    handleSave,
     loadingFilePath,
     fileLoadError,
     isWriteForbidden,
@@ -56,15 +66,6 @@ export default function StrategyCodeWorkspace() {
     [selectedFile?.path]
   );
   const isLoadingFile = loadingFilePath !== null && loadingFilePath === selectedFilePath;
-  const editorLineCount = useMemo(() => {
-    const content = selectedFile?.content ?? "";
-    return Math.max(1, content.split("\n").length);
-  }, [selectedFile?.content]);
-  const editorHeight = useMemo(() => {
-    const lineHeight = 21;
-    const topBottomPadding = 42;
-    return Math.max(620, editorLineCount * lineHeight + topBottomPadding);
-  }, [editorLineCount]);
   const loadedFileCount = useMemo(
     () => sortedCodeFiles.filter((file) => typeof file.content === "string").length,
     [sortedCodeFiles]
@@ -137,63 +138,80 @@ export default function StrategyCodeWorkspace() {
   };
 
   return (
-    <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[#050b15] shadow-[0_30px_120px_rgba(2,6,23,0.35)]">
-      <div className="min-h-[760px] bg-[linear-gradient(180deg,rgba(4,9,18,0.95),rgba(4,8,16,0.98))]">
+    <section className="glass-card ghost-border light-catch rounded-xl overflow-hidden border border-outline-variant/20 bg-[#0d0d0d] shadow-none">
+      <div className="min-h-[620px] bg-[#0d0d0d]">
         <section className="flex min-w-0 flex-col">
-          <div className="border-b border-white/10 bg-[#0a1220] px-4 pt-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex min-w-0 flex-1 flex-wrap gap-2">
-                {sortedCodeFiles.length === 0 ? (
-                  <div className="inline-flex items-center rounded-t-2xl border border-b-0 border-white/10 bg-[#101a2a] px-4 py-3 text-sm text-slate-400">
-                    No files loaded
-                  </div>
-                ) : (
-                  sortedCodeFiles.map((file) => {
-                    const isActive = file.path === selectedFilePath;
-                    const fileKind = getFileKind(file.path);
-                    return (
-                      <button
-                        key={file.path}
-                        type="button"
-                        onClick={() => selectFile(file.path)}
-                        className={`inline-flex max-w-full items-center gap-3 rounded-t-2xl border border-b-0 px-4 py-3 text-left transition ${
-                          isActive
-                            ? "border-white/10 bg-[#101a2a] text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-                            : "border-transparent bg-white/[0.03] text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
-                        }`}
-                        aria-current={isActive}
-                      >
-                        <span
-                          className={`inline-flex h-7 min-w-7 items-center justify-center rounded-lg bg-gradient-to-br ${fileKind.accent} px-1.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-white`}
-                        >
-                          {fileKind.label}
-                        </span>
-                        <span className="truncate text-sm font-medium">{file.path}</span>
-                        {isActive && isDirty ? <span className="h-2 w-2 rounded-full bg-amber-400" /> : null}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
+          <div className="flex justify-between items-stretch bg-[#181818] border-b border-white/5 pr-4">
+            <div className="flex-1 min-w-0 flex items-center gap-0">
+              {sortedCodeFiles.length === 0 ? (
+                <div className="inline-flex items-center rounded-t-2xl border border-b-0 border-white/10 bg-[#101a2a] px-3 py-2 text-sm text-slate-400">
+                  No files loaded
+                </div>
+              ) : (
+                sortedCodeFiles.map((file, index) => {
+                  const isActive = file.path === selectedFilePath;
+                  const fileIcon = getFileIcon(file.path);
+                  return (
+                    <button
+                      key={file.path}
+                      type="button"
+                      onClick={() => selectFile(file.path)}
+                      className={`flex items-center gap-2 border-r border-white/10 px-3 py-3 transition ${
+                        index > 0 ? "border-l border-white/10 " : ""
+                      }${
+                        isActive
+                          ? "code-editor-tab-active"
+                          : "code-editor-tab-inactive hover:bg-[#1e1e1e]"
+                      }`}
+                      aria-current={isActive}
+                    >
+                      <span className={`material-symbols-outlined text-[12px] ${isActive ? "text-blue-400" : "text-slate-400"}`}>
+                        {fileIcon}
+                      </span>
+                      <span className="truncate text-xs font-medium">{file.path}</span>
+                      {isActive && isDirty ? <span className="h-2 w-2 rounded-full bg-amber-400" /> : null}
+                    </button>
+                  );
+                })
+              )}
+            </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleTypeCheck}
-                  disabled={isTypeChecking || isSaving}
-                  className={`rounded-xl border px-3.5 py-2 text-sm font-semibold transition ${
-                    isTypeChecking || isSaving
-                      ? "cursor-not-allowed border-white/10 bg-white/5 text-slate-500"
-                      : "border-cyan-400/25 bg-cyan-500/15 text-cyan-100 hover:bg-cyan-500/20"
-                  }`}
-                >
-                  {isTypeChecking ? "Checking..." : "Type Check"}
-                </button>
-              </div>
+            <div className="ml-auto flex items-center gap-3 py-1.5">
+              <button
+                type="button"
+                onClick={handleTypeCheck}
+                disabled={isTypeChecking || isSaving}
+                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+                  isTypeChecking || isSaving
+                    ? "cursor-not-allowed border-white/10 bg-white/5 text-slate-500"
+                    : "border-outline-variant/30 bg-surface-container-highest/50 text-on-surface hover:bg-surface-bright"
+                }`}
+              >
+                <span className="material-symbols-outlined text-sm">spellcheck</span>
+                {isTypeChecking ? "Checking..." : "Type Check"}
+              </button>
+              <button
+                type="button"
+                disabled={isSaving || !isDirty}
+                className={`inline-flex items-stretch overflow-hidden rounded-lg border text-xs font-bold transition ${
+                  isSaving || !isDirty
+                    ? "cursor-not-allowed border-white/10 bg-white/5 text-slate-500"
+                    : "border-secondary-fixed bg-secondary-fixed text-on-secondary-fixed shadow-[0_0_20px_rgba(199,210,254,0.2)] hover:-translate-y-0.5 hover:brightness-110"
+                }`}
+                onClick={handleSave}
+              >
+                <span className="inline-flex items-center gap-2 pl-3 pr-2 py-1.5">
+                  <span className="material-symbols-outlined text-sm">save</span>
+                  {isSaving ? "Saving..." : "Save Code"}
+                </span>
+                <span className="inline-flex items-center border-l border-black/15 px-1">
+                  <span className="material-symbols-outlined text-xs">expand_more</span>
+                </span>
+              </button>
             </div>
           </div>
 
-          <div className="min-w-0 bg-[#060d18]">
+          <div className="flex-1 bg-[#1e1e1e] px-4">
             {isWriteForbidden && (
               <div className="border-b border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-amber-200">
                 Read-only mode. You don&apos;t have write permission for this strategy.
@@ -202,42 +220,49 @@ export default function StrategyCodeWorkspace() {
             {isLoadingFile ? (
               <div className="flex min-h-[620px] items-center justify-center text-sm text-slate-500">Loading file...</div>
             ) : selectedFile && editorReady ? (
-              <Editor
-                key={selectedFile.path}
-                height={editorHeight}
-                theme="vs-dark"
-                defaultLanguage={selectedFile.language}
-                language={selectedFile.language}
-                value={selectedFile.content}
-                onChange={(nextValue) => {
-                  if (!canEdit) return;
-                  updateFileContent(selectedFile.path, nextValue ?? "");
-                }}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 14,
-                  lineHeight: 21,
-                  fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo",
-                  readOnly: !canEdit,
-                  scrollBeyondLastLine: false,
-                  smoothScrolling: true,
-                  wordWrap: "off",
-                  automaticLayout: true,
-                  padding: { top: 14, bottom: 18 },
-                  scrollbar: {
-                    vertical: "hidden",
-                    horizontal: "auto",
-                    alwaysConsumeMouseWheel: false,
-                  },
-                }}
-              />
+              <div>
+                <Editor
+                  key={selectedFile.path}
+                  height="100vh"
+                  theme="vs-dark"
+                  defaultLanguage={selectedFile.language}
+                  language={selectedFile.language}
+                  value={selectedFile.content}
+                  saveViewState={false}
+                  onMount={(editor) => {
+                    editor.setScrollTop(0);
+                  }}
+                  onChange={(nextValue) => {
+                    if (!canEdit) return;
+                    updateFileContent(selectedFile.path, nextValue ?? "");
+                  }}
+                  options={{
+                    minimap: { enabled: true },
+                    fontSize: 13,
+                    lineHeight: 20,
+                    lineNumbers: "on",
+                    lineNumbersMinChars: 3,
+                    fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo",
+                    readOnly: !canEdit,
+                    scrollBeyondLastLine: false,
+                    smoothScrolling: true,
+                    wordWrap: "off",
+                    automaticLayout: true,
+                    padding: { top: 14, bottom: 18 },
+                    scrollbar: {
+                      vertical: "auto",
+                      horizontal: "auto",
+                      alwaysConsumeMouseWheel: false,
+                    },
+                  }}
+                />
+              </div>
             ) : (
               <div className="flex min-h-[620px] items-center justify-center text-sm text-slate-500">
                 {fileLoadError ? fileLoadError : "Select a file to start editing"}
               </div>
             )}
           </div>
-
         </section>
       </div>
     </section>
