@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import boto3
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 import jwt
 
 APP_ENV = os.environ.get("APP_ENV", "prod").lower()
@@ -30,11 +31,15 @@ JWKS_BUCKET = os.environ["JWKS_BUCKET"]
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 USERS_TABLE = os.environ["USERS_TABLE"]
 USER_ACCESS_APPLICATIONS_TABLE = os.environ["USER_ACCESS_APPLICATIONS_TABLE"]
+ANALYTICS_TABLE = os.environ["ANALYTICS_TABLE"]
+DAILY_USER_LOGINS_TABLE = os.environ["DAILY_USER_LOGINS_TABLE"]
 
 dynamo = boto3.resource("dynamodb")
 ssm = boto3.client("ssm")
 users_table = dynamo.Table(USERS_TABLE)
 user_access_applications_table = dynamo.Table(USER_ACCESS_APPLICATIONS_TABLE)
+analytics_table = dynamo.Table(ANALYTICS_TABLE)
+daily_user_logins_table = dynamo.Table(DAILY_USER_LOGINS_TABLE)
 
 @lru_cache(maxsize=1)
 def _get_private_key() -> str:
@@ -176,6 +181,8 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         user = _load_user(netid)
         if not user or user.get("is_banned", False):
             return _json_response(403, {"message": "Forbidden"})
+
+        _track_daily_user_login(netid)
 
         roles = user.get("roles") or []
         if not isinstance(roles, list):
@@ -444,3 +451,31 @@ def _get_latest_application(netid: str) -> Optional[Dict[str, Any]]:
     )
     items = resp.get("Items", [])
     return items[0] if items else None
+
+
+def _track_daily_user_login(netid: str) -> None:
+    today = datetime.utcnow().date().isoformat()
+    try:
+        daily_user_logins_table.put_item(
+            Item={"login_date": today, "netid": netid, "tracked_at": _now_iso()},
+            ConditionExpression="attribute_not_exists(login_date) AND attribute_not_exists(netid)",
+        )
+    except ClientError as exc:
+        if (exc.response.get("Error") or {}).get("Code") == "ConditionalCheckFailedException":
+            return
+        print(f"Failed to record daily login for {netid}: {exc}")
+        return
+
+    try:
+        analytics_table.update_item(
+            Key={"pk": "METRIC#users_logged_in", "sk": f"DAY#{today}"},
+            UpdateExpression="SET #count = if_not_exists(#count, :zero) + :inc, #updated_at = :updated_at",
+            ExpressionAttributeNames={"#count": "count", "#updated_at": "updated_at"},
+            ExpressionAttributeValues={
+                ":zero": 0,
+                ":inc": 1,
+                ":updated_at": _now_iso(),
+            },
+        )
+    except ClientError as exc:
+        print(f"Failed to increment daily logged-in users metric for {netid}: {exc}")

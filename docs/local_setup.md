@@ -53,6 +53,8 @@ python3 infra/seed/main.py \
   --strategy-backtests-table "$(terraform -chdir=infra output -raw strategy_backtests_table_name)" \
   --strategies-read-permissions-table "$(terraform -chdir=infra output -raw strategies_read_permissions_table_name)" \
   --strategies-write-permissions-table "$(terraform -chdir=infra output -raw strategies_write_permissions_table_name)" \
+  --counters-table "$(terraform -chdir=infra output -raw counters_table_name)" \
+  --analytics-table "$(terraform -chdir=infra output -raw analytics_table_name)" \
   --backtester-url "http://localhost:8005" \
   --users-table "$(terraform -chdir=infra output -raw users_table_name)" \
   --admin-netid "YOUR_NETID" \

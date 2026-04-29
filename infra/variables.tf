@@ -85,6 +85,18 @@ variable "counters_table_name" {
   default     = null
 }
 
+variable "analytics_table_name" {
+  description = "Optional explicit name for the Analytics table. Defaults to \"<project>-<env>-analytics\"."
+  type        = string
+  default     = null
+}
+
+variable "daily_user_logins_table_name" {
+  description = "Optional explicit name for the DailyUserLogins table. Defaults to \"<project>-<env>-daily-user-logins\"."
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "Additional tags to apply to resources."
   type        = map(string)

@@ -20,6 +20,7 @@ STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
 WRITE_PERMISSIONS_TABLE = dynamo.Table(os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"])
 READ_PERMISSIONS_TABLE = dynamo.Table(os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"])
+ANALYTICS_TABLE = dynamo.Table(os.environ["ANALYTICS_TABLE"])
 def handler(event, context):
     route = event["requestContext"]["routeKey"]
 
@@ -179,6 +180,7 @@ def upload_artifacts(strategy_id, body, event):
                     "strategy_version": new_version,
                     "s3_key": key,
                     "created_at": now,
+                    "created_by": netid,
                 }
             )
 
@@ -200,6 +202,8 @@ def upload_artifacts(strategy_id, body, event):
         )
     except Exception as exc:
         return _json(500, {"message": f"Failed to upload artifacts: {exc}"})
+
+    _update_analytics(netid, total_revisions_inc=len(prepared_files), last_active_at=now)
 
     return _json(200, {"ok": True, "version": new_version, "artifacts": [f.get("artifactId") for f in files]})
 
@@ -235,3 +239,30 @@ def _get_netid_from_event(event):
     netid = netid.strip()
     return netid or None
 
+
+def _update_analytics(netid, *, total_revisions_inc=0, last_active_at=None):
+    if not total_revisions_inc or not last_active_at:
+        return
+
+    try:
+        ANALYTICS_TABLE.update_item(
+            Key={"pk": f"USER#{netid}", "sk": "SUMMARY"},
+            UpdateExpression=(
+                "SET #updated_at = :updated_at, "
+                "#last_active_at = :last_active_at, "
+                "#total_revisions = if_not_exists(#total_revisions, :zero) + :total_revisions_inc"
+            ),
+            ExpressionAttributeNames={
+                "#updated_at": "updated_at",
+                "#last_active_at": "last_active_at",
+                "#total_revisions": "total_revisions",
+            },
+            ExpressionAttributeValues={
+                ":updated_at": datetime.now(timezone.utc).isoformat(),
+                ":last_active_at": last_active_at,
+                ":zero": 0,
+                ":total_revisions_inc": total_revisions_inc,
+            },
+        )
+    except Exception as exc:
+        print(f"Failed to update user analytics for {netid}: {exc}")

@@ -44,6 +44,8 @@ locals {
   strategies_read_permissions_table_name  = coalesce(var.strategies_read_permissions_table_name, "${local.name_prefix}-strategies-read-permissions")
   strategies_write_permissions_table_name = coalesce(var.strategies_write_permissions_table_name, "${local.name_prefix}-strategies-write-permissions")
   counters_table_name                     = coalesce(var.counters_table_name, "${local.name_prefix}-counters")
+  analytics_table_name                    = coalesce(var.analytics_table_name, "${local.name_prefix}-analytics")
+  daily_user_logins_table_name            = coalesce(var.daily_user_logins_table_name, "${local.name_prefix}-daily-user-logins")
 
   tags = merge(
     {
@@ -224,6 +226,60 @@ resource "aws_dynamodb_table" "counters" {
 
   attribute {
     name = "counter_name"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = local.tags
+}
+
+resource "aws_dynamodb_table" "analytics" {
+  name         = local.analytics_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "pk"
+  range_key    = "sk"
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+
+  attribute {
+    name = "sk"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = local.tags
+}
+
+resource "aws_dynamodb_table" "daily_user_logins" {
+  name         = local.daily_user_logins_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "login_date"
+  range_key    = "netid"
+
+  attribute {
+    name = "login_date"
+    type = "S"
+  }
+
+  attribute {
+    name = "netid"
     type = "S"
   }
 
@@ -512,6 +568,7 @@ data "aws_iam_policy_document" "strategy_storage" {
       aws_dynamodb_table.strategies.arn,
       aws_dynamodb_table.strategy_artifacts.arn,
       aws_dynamodb_table.strategy_artifact_versions.arn,
+      aws_dynamodb_table.analytics.arn,
       aws_dynamodb_table.strategies_read_permissions.arn,
       "${aws_dynamodb_table.strategies_read_permissions.arn}/index/*",
       aws_dynamodb_table.strategies_write_permissions.arn,
@@ -620,6 +677,31 @@ resource "aws_iam_policy" "user_access_applications_write" {
   tags = local.tags
 }
 
+data "aws_iam_policy_document" "auth_activity_tracking" {
+  statement {
+    sid    = "DynamoAuthActivityAccess"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+    ]
+
+    resources = [
+      aws_dynamodb_table.analytics.arn,
+      aws_dynamodb_table.daily_user_logins.arn,
+    ]
+  }
+}
+
+resource "aws_iam_policy" "auth_activity_tracking" {
+  name   = "${local.name_prefix}-auth-activity-tracking"
+  policy = data.aws_iam_policy_document.auth_activity_tracking.json
+
+  tags = local.tags
+}
+
 data "aws_iam_policy_document" "admin_dynamodb" {
   statement {
     sid    = "DynamoAdminAccess"
@@ -638,6 +720,13 @@ data "aws_iam_policy_document" "admin_dynamodb" {
     resources = [
       aws_dynamodb_table.users.arn,
       aws_dynamodb_table.user_access_applications.arn,
+      aws_dynamodb_table.analytics.arn,
+      aws_dynamodb_table.strategies.arn,
+      aws_dynamodb_table.strategy_backtests.arn,
+      aws_dynamodb_table.strategies_read_permissions.arn,
+      "${aws_dynamodb_table.strategies_read_permissions.arn}/index/*",
+      aws_dynamodb_table.strategies_write_permissions.arn,
+      "${aws_dynamodb_table.strategies_write_permissions.arn}/index/*",
     ]
   }
 }
@@ -686,6 +775,7 @@ data "aws_iam_policy_document" "strategy_backtests_storage" {
 
     resources = [
       aws_dynamodb_table.strategy_backtests.arn,
+      aws_dynamodb_table.analytics.arn,
       aws_dynamodb_table.strategies_write_permissions.arn,
       "${aws_dynamodb_table.strategies_write_permissions.arn}/index/*",
       aws_dynamodb_table.strategies_read_permissions.arn,
@@ -1102,6 +1192,11 @@ resource "aws_iam_role_policy_attachment" "auth_granter_lambda_user_access_appli
   policy_arn = aws_iam_policy.user_access_applications_write.arn
 }
 
+resource "aws_iam_role_policy_attachment" "auth_granter_lambda_auth_activity_tracking" {
+  role       = aws_iam_role.auth_granter_lambda.name
+  policy_arn = aws_iam_policy.auth_activity_tracking.arn
+}
+
 resource "aws_iam_role_policy_attachment" "auth_checker_lambda_basic_logs" {
   role       = aws_iam_role.auth_checker_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -1228,6 +1323,7 @@ resource "aws_lambda_function" "strategies" {
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
       USERS_TABLE                        = aws_dynamodb_table.users.name
       COUNTERS_TABLE                     = aws_dynamodb_table.counters.name
+      ANALYTICS_TABLE                    = aws_dynamodb_table.analytics.name
     }
   }
 
@@ -1252,6 +1348,7 @@ resource "aws_lambda_function" "strategy_artifacts" {
       ARTIFACT_BUCKET                    = aws_s3_bucket.strategy_artifacts.bucket
       STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
+      ANALYTICS_TABLE                    = aws_dynamodb_table.analytics.name
     }
   }
 
@@ -1281,6 +1378,8 @@ resource "aws_lambda_function" "auth_granter" {
       APP_ENV                        = var.env
       USERS_TABLE                    = aws_dynamodb_table.users.name
       USER_ACCESS_APPLICATIONS_TABLE = aws_dynamodb_table.user_access_applications.name
+      ANALYTICS_TABLE                = aws_dynamodb_table.analytics.name
+      DAILY_USER_LOGINS_TABLE        = aws_dynamodb_table.daily_user_logins.name
     }
   }
 
@@ -1385,8 +1484,13 @@ resource "aws_lambda_function" "admin" {
 
   environment {
     variables = {
-      USERS_TABLE                    = aws_dynamodb_table.users.name
-      USER_ACCESS_APPLICATIONS_TABLE = aws_dynamodb_table.user_access_applications.name
+      USERS_TABLE                        = aws_dynamodb_table.users.name
+      USER_ACCESS_APPLICATIONS_TABLE     = aws_dynamodb_table.user_access_applications.name
+      ANALYTICS_TABLE                    = aws_dynamodb_table.analytics.name
+      STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+      STRATEGY_BACKTESTS_TABLE           = aws_dynamodb_table.strategy_backtests.name
+      STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
+      STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
     }
   }
 
@@ -1414,6 +1518,7 @@ resource "aws_lambda_function" "strategy_backtests" {
       STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
       STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+      ANALYTICS_TABLE                    = aws_dynamodb_table.analytics.name
     }
   }
 
@@ -1701,9 +1806,33 @@ resource "aws_apigatewayv2_route" "get_admin_users" {
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
+resource "aws_apigatewayv2_route" "get_admin_analytics" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /admin/analytics"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "get_admin_analytics_timeseries" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /admin/analytics/timeseries"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
 resource "aws_apigatewayv2_route" "get_admin_user_by_netid" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /admin/users/{netid}"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "get_admin_user_analytics_by_netid" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /admin/users/{netid}/analytics"
   target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id

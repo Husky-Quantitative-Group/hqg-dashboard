@@ -24,6 +24,7 @@ STRATEGIES_TABLE = dynamo.Table(os.environ["STRATEGIES_TABLE"])
 ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
 VERSIONS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACT_VERSIONS_TABLE"])
 COUNTERS_TABLE = dynamo.Table(os.environ["COUNTERS_TABLE"])
+ANALYTICS_TABLE = dynamo.Table(os.environ["ANALYTICS_TABLE"])
 ARTIFACT_BUCKET = os.environ["ARTIFACT_BUCKET"]
 READ_PERMISSIONS_TABLE = os.environ["STRATEGIES_READ_PERMISSIONS_TABLE"]
 WRITE_PERMISSIONS_TABLE = os.environ["STRATEGIES_WRITE_PERMISSIONS_TABLE"]
@@ -174,11 +175,12 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
     entrypoint = source.get("entrypoint", "main.py")
 
     try:
-        _copy_artifacts_from_source(
+        revision_count = _copy_artifacts_from_source(
             source_strategy_id=source_id,
             target_strategy_id=new_strategy_id,
             target_version=new_version,
             readme_content=readme_content,
+            created_by=netid,
         )
     except Exception as exc:  # pragma: no cover
         return _json(500, {"message": f"Failed to copy artifacts: {exc}"})
@@ -204,6 +206,10 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
                     "Put": {
                         "TableName": STRATEGIES_TABLE.name,
                         "Item": _ddb_item(item),
+                        "ConditionExpression": "attribute_not_exists(#id)",
+                        "ExpressionAttributeNames": {
+                            "#id": "id",
+                        },
                     }
                 },
                 {
@@ -225,7 +231,17 @@ def create_strategy(body: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, An
             ]
         )
     except ClientError as exc:
+        error_code = (exc.response.get("Error") or {}).get("Code")
+        if error_code == "ConditionalCheckFailedException":
+            return _json(409, {"message": "Strategy id collision detected. Please try again."})
         return _json(500, {"message": f"Failed to create strategy permissions: {exc}"})
+
+    _update_analytics(
+        netid,
+        total_strategies_created_inc=1,
+        total_revisions_inc=revision_count,
+        last_active_at=now,
+    )
 
     return _json(201, item)
 
@@ -271,7 +287,8 @@ def _copy_artifacts_from_source(
     target_strategy_id: str,
     target_version: int,
     readme_content: str,
-) -> None:
+    created_by: str,
+) -> int:
     # Get all artifacts for the source strategy.
     resp = ARTIFACTS_TABLE.query(
         KeyConditionExpression=Key("strategy_id").eq(source_strategy_id)
@@ -279,6 +296,7 @@ def _copy_artifacts_from_source(
     artifacts = resp.get("Items", [])
 
     readme_uploaded = False
+    revision_count = 0
 
     for artifact in artifacts:
         artifact_id = artifact["artifact_id"]
@@ -313,7 +331,9 @@ def _copy_artifacts_from_source(
             artifact_id=artifact_id,
             version=target_version,
             s3_key=target_key,
+            created_by=created_by,
         )
+        revision_count += 1
 
     # If no README existed in source, create one.
     if not readme_uploaded:
@@ -324,7 +344,11 @@ def _copy_artifacts_from_source(
             artifact_id="README.md",
             version=target_version,
             s3_key=target_key,
+            created_by=created_by,
         )
+        revision_count += 1
+
+    return revision_count
 
 
 def _put_readme(key: str, readme_content: str) -> None:
@@ -335,7 +359,13 @@ def _put_readme(key: str, readme_content: str) -> None:
     )
 
 
-def _write_artifact_metadata(strategy_id: str, artifact_id: str, version: int, s3_key: str) -> None:
+def _write_artifact_metadata(
+    strategy_id: str,
+    artifact_id: str,
+    version: int,
+    s3_key: str,
+    created_by: str,
+) -> None:
     ARTIFACTS_TABLE.put_item(
         Item={
             "strategy_id": strategy_id,
@@ -349,6 +379,7 @@ def _write_artifact_metadata(strategy_id: str, artifact_id: str, version: int, s
             "strategy_version": version,
             "s3_key": s3_key,
             "created_at": _now(),
+            "created_by": created_by,
         }
     )
 
@@ -404,6 +435,72 @@ def _get_netid_from_event(event: Dict[str, Any]) -> Optional[str]:
 
     netid = netid.strip()
     return netid or None
+
+
+def _day_bucket(timestamp: str) -> str:
+    return timestamp.split("T")[0]
+
+
+def _update_analytics(
+    netid: str,
+    *,
+    total_strategies_created_inc: int = 0,
+    total_revisions_inc: int = 0,
+    last_active_at: str,
+) -> None:
+    update_parts = ["#updated_at = :updated_at", "#last_active_at = :last_active_at"]
+    expr_names = {
+        "#updated_at": "updated_at",
+        "#last_active_at": "last_active_at",
+    }
+    expr_values: Dict[str, Any] = {
+        ":updated_at": _now(),
+        ":last_active_at": last_active_at,
+    }
+
+    if total_strategies_created_inc:
+        expr_names["#total_strategies_created"] = "total_strategies_created"
+        expr_values[":total_strategies_created_inc"] = total_strategies_created_inc
+        update_parts.append(
+            "#total_strategies_created = if_not_exists(#total_strategies_created, :zero) + :total_strategies_created_inc"
+        )
+
+    if total_revisions_inc:
+        expr_names["#total_revisions"] = "total_revisions"
+        expr_values[":total_revisions_inc"] = total_revisions_inc
+        update_parts.append(
+            "#total_revisions = if_not_exists(#total_revisions, :zero) + :total_revisions_inc"
+        )
+
+    if len(update_parts) == 2:
+        return
+
+    expr_values[":zero"] = 0
+
+    try:
+        ANALYTICS_TABLE.update_item(
+            Key={"pk": f"USER#{netid}", "sk": "SUMMARY"},
+            UpdateExpression="SET " + ", ".join(update_parts),
+            ExpressionAttributeNames=expr_names,
+            ExpressionAttributeValues=expr_values,
+        )
+    except ClientError as exc:
+        print(f"Failed to update user analytics for {netid}: {exc}")
+        return
+
+    try:
+        ANALYTICS_TABLE.update_item(
+            Key={"pk": "METRIC#strategies_created", "sk": f"DAY#{_day_bucket(last_active_at)}"},
+            UpdateExpression="SET #count = if_not_exists(#count, :zero) + :inc, #updated_at = :updated_at",
+            ExpressionAttributeNames={"#count": "count", "#updated_at": "updated_at"},
+            ExpressionAttributeValues={
+                ":zero": 0,
+                ":inc": total_strategies_created_inc,
+                ":updated_at": _now(),
+            },
+        )
+    except ClientError as exc:
+        print(f"Failed to update strategies_created analytics metric for {netid}: {exc}")
 
 
 def _list_readable_strategy_ids(netid: str, roles: List[str]) -> List[str]:
