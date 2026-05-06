@@ -1653,14 +1653,6 @@ resource "aws_apigatewayv2_route" "patch_strategy_permissions" {
   authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
 }
 
-resource "aws_apigatewayv2_route" "delete_strategy_permissions" {
-  api_id             = aws_apigatewayv2_api.api.id
-  route_key          = "DELETE /strategies/{id}/permissions"
-  target             = "integrations/${aws_apigatewayv2_integration.strategy_permissions.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
-}
-
 resource "aws_apigatewayv2_route" "get_users_search" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /users/search"
