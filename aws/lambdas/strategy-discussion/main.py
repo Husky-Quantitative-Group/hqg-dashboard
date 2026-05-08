@@ -77,6 +77,7 @@ def list_discussion_comments(event: Dict[str, Any]) -> Dict[str, Any]:
     order = str(query_params.get("order") or "asc").strip().lower()
     if order not in {"asc", "desc"}:
         return _json(400, {"message": "order must be asc or desc"})
+    include_total = str(query_params.get("include_total") or "").strip().lower() == "true"
 
     table = dynamo.Table(STRATEGY_DISCUSSION_TABLE)
     try:
@@ -94,12 +95,20 @@ def list_discussion_comments(event: Dict[str, Any]) -> Dict[str, Any]:
 
     items = _clean_decimals(resp.get("Items", []))
     next_cursor = resp.get("LastEvaluatedKey")
+    total_count = None
+    if include_total:
+        try:
+            total_count = _count_strategy_comments(table, strategy_id)
+        except ClientError as exc:
+            code = (exc.response.get("Error") or {}).get("Code")
+            return _json(500, {"message": f"Failed to count discussion comments: {code or 'error'}"})
     return _json(
         200,
         {
             "strategy_id": strategy_id,
             "items": items,
             "next_cursor": next_cursor,
+            "total_count": total_count,
         },
     )
 
@@ -233,6 +242,24 @@ def _clean_decimals(data: Any) -> Any:
     if isinstance(data, Decimal):
         return int(data) if data % 1 == 0 else float(data)
     return data
+
+
+def _count_strategy_comments(table, strategy_id: str) -> int:
+    total = 0
+    last_key = None
+    while True:
+        query_kwargs = {
+            "KeyConditionExpression": Key("strategy_id").eq(strategy_id),
+            "Select": "COUNT",
+        }
+        if last_key:
+            query_kwargs["ExclusiveStartKey"] = last_key
+        resp = table.query(**query_kwargs)
+        total += int(resp.get("Count") or 0)
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+    return total
 
 
 def _json(code: int, body: Any) -> Dict[str, Any]:
