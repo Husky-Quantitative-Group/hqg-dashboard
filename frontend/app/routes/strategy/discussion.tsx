@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Components } from "react-markdown";
 import { ChevronDown, ChevronUp, MessageSquareText, RefreshCw, Reply, Send, X } from "lucide-react";
 
 import {
@@ -10,6 +9,7 @@ import {
   type StrategyDiscussionComment,
 } from "~/api/strategyDiscussion";
 import { useUser } from "~/context/UserConext";
+import { strategyMarkdownComponents } from "./markdownComponents";
 import { useStrategyWorkspace } from "./layout";
 
 type Segment = {
@@ -28,41 +28,6 @@ type ReplyTarget = {
 const COMMENT_MAX_CHARS = 5000;
 const PAGE_SIZE = 10;
 const SPLIT_THRESHOLD = 20;
-
-const markdownComponents: Components = {
-  code: ({ inline, children, ...props }: any) =>
-    inline ? (
-      <code
-        className="rounded-md border border-outline-variant/20 bg-black/30 px-1.5 py-0.5 font-mono text-[0.9em] text-on-surface"
-        {...props}
-      >
-        {children}
-      </code>
-    ) : (
-      <pre className="overflow-x-auto rounded-xl border border-outline-variant/10 bg-black/35 px-5 py-4">
-        <code className="block whitespace-pre text-sm leading-6 text-on-surface/90">{children}</code>
-      </pre>
-    ),
-  p: ({ children }) => <p className="text-[14px] leading-7 text-on-surface/85">{children}</p>,
-  a: ({ children, href }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer noopener"
-      className="font-medium text-secondary underline decoration-secondary/30 underline-offset-4 transition hover:text-on-surface hover:decoration-secondary/60"
-    >
-      {children}
-    </a>
-  ),
-  ul: ({ children }) => <ul className="space-y-2 pl-5 text-[14px] leading-7 text-on-surface/85 marker:text-secondary">{children}</ul>,
-  ol: ({ children }) => <ol className="space-y-2 pl-5 text-[14px] leading-7 text-on-surface/85 marker:text-secondary">{children}</ol>,
-  li: ({ children }) => <li className="pl-1">{children}</li>,
-  blockquote: ({ children }) => (
-    <blockquote className="rounded-r-xl border-l-4 border-secondary/60 bg-white/[0.03] px-4 py-2 italic text-on-surface/85">
-      {children}
-    </blockquote>
-  ),
-};
 
 function dedupeComments(comments: StrategyDiscussionComment[]): StrategyDiscussionComment[] {
   const map = new Map<string, StrategyDiscussionComment>();
@@ -297,7 +262,7 @@ function CommentCard({
           ) : null}
 
           <div className="space-y-4">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={strategyMarkdownComponents}>
               {comment.message}
             </ReactMarkdown>
           </div>

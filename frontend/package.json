@@ -23,6 +23,7 @@
     "react-minimal-pie-chart": "^9.1.2",
     "react-router": "^7.7.1",
     "react-router-dom": "^7.9.0",
+    "react-syntax-highlighter": "^16.1.1",
     "recharts": "^3.8.0",
     "remark-gfm": "^4.0.1"
   },
@@ -32,6 +33,7 @@
     "@types/node": "^20",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "tailwindcss": "^4.1.4",
     "typescript": "^5.8.3",
     "vite": "^6.3.3",
