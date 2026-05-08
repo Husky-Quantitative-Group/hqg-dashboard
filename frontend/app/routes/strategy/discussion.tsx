@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronDown, ChevronUp, Copy, MessageSquareText, RefreshCw, Reply, Send, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, MessageSquareText, MoreHorizontal, RefreshCw, Reply, Send, X } from "lucide-react";
 
 import {
   createStrategyDiscussionComment,
@@ -91,6 +91,33 @@ function initialsForComment(comment: StrategyDiscussionComment): string {
     return `${tokens[0][0] ?? ""}${tokens[1][0] ?? ""}`.toUpperCase();
   }
   return base.slice(0, 2).toUpperCase();
+}
+
+function formatRelativeTime(value: string): string {
+  const postedAt = new Date(value).getTime();
+  if (!Number.isFinite(postedAt)) return "";
+
+  const diffMs = Date.now() - postedAt;
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const week = 7 * day;
+
+  if (diffMs < hour) {
+    const minutes = Math.max(1, Math.round(diffMs / minute));
+    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  }
+  if (diffMs < day) {
+    const hours = Math.max(1, Math.round(diffMs / hour));
+    return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  }
+  if (diffMs < week) {
+    const days = Math.max(1, Math.round(diffMs / day));
+    return `${days} day${days === 1 ? "" : "s"} ago`;
+  }
+
+  const weeks = Math.max(1, Math.round(diffMs / week));
+  return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
 }
 
 function makeReplyTarget(comment: StrategyDiscussionComment): ReplyTarget {
@@ -202,6 +229,7 @@ function CommentCard({
   registerRef,
   isHighlighted,
   onCopyMarkdown,
+  isOwnerComment,
 }: {
   comment: StrategyDiscussionComment;
   onReply: (comment: StrategyDiscussionComment) => void;
@@ -209,8 +237,9 @@ function CommentCard({
   registerRef: (commentId: string, node: HTMLDivElement | null) => void;
   isHighlighted: boolean;
   onCopyMarkdown: (comment: StrategyDiscussionComment) => void;
+  isOwnerComment: boolean;
 }) {
-  const timestamp = useMemo(
+  const absoluteTimestamp = useMemo(
     () =>
       new Intl.DateTimeFormat("en", {
         month: "short",
@@ -221,33 +250,71 @@ function CommentCard({
       }).format(new Date(comment.created_at)),
     [comment.created_at]
   );
+  const relativeTimestamp = useMemo(() => formatRelativeTime(comment.created_at), [comment.created_at]);
 
   return (
     <div
       ref={(node) => registerRef(comment.comment_id, node)}
       id={`comment-${comment.comment_id}`}
-      className="grid grid-cols-[44px_minmax(0,1fr)] gap-4"
+      className="w-full"
     >
-      <div className="flex justify-center pt-1">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full border border-outline-variant/20 bg-surface-container-high text-xs font-bold uppercase tracking-wide text-on-surface">
-          {initialsForComment(comment)}
-        </div>
-      </div>
       <article className="overflow-hidden rounded-xl border border-outline-variant/12 bg-[#121215]/55 shadow-[0_18px_38px_rgba(0,0,0,0.14)]">
         <div
-          className={`flex items-start justify-between gap-4 border-b px-5 py-4 transition-all duration-700 ${
+          className={`flex items-start justify-between gap-4 border-b px-4 py-2.5 transition-all duration-700 ${
             isHighlighted
               ? "border-secondary/30 bg-secondary/12 shadow-[inset_0_0_0_1px_rgba(125,181,255,0.16)]"
               : "border-outline-variant/10 bg-black/10"
           }`}
         >
-          <div className="min-w-0">
-            <div className="truncate font-semibold text-on-surface">
-              {comment.author_display?.trim() || comment.author_netid}
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-outline-variant/20 bg-surface-container-high text-[11px] font-bold uppercase tracking-wide text-on-surface">
+              {initialsForComment(comment)}
             </div>
-            <div className="truncate text-xs text-on-surface-variant/80">{comment.author_netid}</div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <div className="truncate text-sm font-semibold leading-5 text-on-surface">
+                  {comment.author_display?.trim() || comment.author_netid}
+                </div>
+                {relativeTimestamp ? (
+                  <span className="text-[11px] leading-4 text-on-surface-variant/72">{relativeTimestamp}</span>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <div className="truncate text-[11px] leading-4 text-on-surface-variant/80">{comment.author_netid}</div>
+                <span className="text-[10px] leading-4 text-on-surface-variant/60">{absoluteTimestamp}</span>
+              </div>
+            </div>
           </div>
-          <time className="shrink-0 text-xs text-on-surface-variant/70">{timestamp}</time>
+          <div className="flex shrink-0 items-start gap-2">
+            {isOwnerComment ? (
+              <span className="rounded-full border border-secondary/30 bg-secondary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-secondary/85">
+                Owner
+              </span>
+            ) : null}
+            <details className="group relative">
+              <summary className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-transparent text-on-surface-variant/75 transition hover:border-outline-variant/15 hover:bg-black/10 hover:text-on-surface marker:content-[''] list-none">
+                <MoreHorizontal className="h-4 w-4" />
+              </summary>
+              <div className="absolute right-0 top-9 z-20 min-w-[176px] overflow-hidden rounded-xl border border-outline-variant/15 bg-[#161a22] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.32)]">
+                <button
+                  type="button"
+                  onClick={() => onCopyMarkdown(comment)}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-on-surface-variant/90 transition hover:bg-white/[0.05] hover:text-on-surface"
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy markdown
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onReply(comment)}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-on-surface-variant/90 transition hover:bg-white/[0.05] hover:text-on-surface"
+                >
+                  <Reply className="h-4 w-4" />
+                  Reply
+                </button>
+              </div>
+            </details>
+          </div>
         </div>
         <div className="space-y-4 px-5 py-4">
           {comment.parent_preview ? (
@@ -269,24 +336,6 @@ function CommentCard({
             </ReactMarkdown>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onCopyMarkdown(comment)}
-              className="inline-flex items-center gap-2 rounded-lg border border-outline-variant/12 bg-black/10 px-3 py-2 text-sm font-medium text-on-surface-variant/85 transition hover:border-secondary/30 hover:text-on-surface"
-            >
-              <Copy className="h-4 w-4" />
-              Copy markdown
-            </button>
-            <button
-              type="button"
-              onClick={() => onReply(comment)}
-              className="inline-flex items-center gap-2 rounded-lg border border-outline-variant/12 bg-black/10 px-3 py-2 text-sm font-medium text-on-surface-variant/85 transition hover:border-secondary/30 hover:text-on-surface"
-            >
-              <Reply className="h-4 w-4" />
-              Reply
-            </button>
-          </div>
         </div>
       </article>
     </div>
@@ -620,6 +669,7 @@ export default function StrategyDiscussion() {
   );
 
   const visibleCount = useMemo(() => visibleCommentCount(segments), [segments]);
+  const strategyOwnerNetid = strategy.owner?.trim().toLowerCase() ?? "";
 
   return (
     <div className="space-y-6">
@@ -670,6 +720,10 @@ export default function StrategyDiscussion() {
                     registerRef={registerCommentRef}
                     isHighlighted={highlightedCommentId === comment.comment_id}
                     onCopyMarkdown={handleCopyMarkdown}
+                    isOwnerComment={
+                      Boolean(strategyOwnerNetid) &&
+                      comment.author_netid.trim().toLowerCase() === strategyOwnerNetid
+                    }
                   />
                 ))}
 
