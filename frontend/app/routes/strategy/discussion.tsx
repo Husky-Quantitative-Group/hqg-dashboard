@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronDown, ChevronUp, MessageSquareText, RefreshCw, Reply, Send, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, MessageSquareText, RefreshCw, Reply, Send, X } from "lucide-react";
 
 import {
   createStrategyDiscussionComment,
@@ -201,12 +201,14 @@ function CommentCard({
   onJumpToParent,
   registerRef,
   isHighlighted,
+  onCopyMarkdown,
 }: {
   comment: StrategyDiscussionComment;
   onReply: (comment: StrategyDiscussionComment) => void;
   onJumpToParent: (commentId: string) => void;
   registerRef: (commentId: string, node: HTMLDivElement | null) => void;
   isHighlighted: boolean;
+  onCopyMarkdown: (comment: StrategyDiscussionComment) => void;
 }) {
   const timestamp = useMemo(
     () =>
@@ -267,7 +269,15 @@ function CommentCard({
             </ReactMarkdown>
           </div>
 
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onCopyMarkdown(comment)}
+              className="inline-flex items-center gap-2 rounded-lg border border-outline-variant/12 bg-black/10 px-3 py-2 text-sm font-medium text-on-surface-variant/85 transition hover:border-secondary/30 hover:text-on-surface"
+            >
+              <Copy className="h-4 w-4" />
+              Copy markdown
+            </button>
             <button
               type="button"
               onClick={() => onReply(comment)}
@@ -596,6 +606,19 @@ export default function StrategyDiscussion() {
     }
   }, [addToast, draft, isSubmitting, replyTarget, strategy.id]);
 
+  const handleCopyMarkdown = useCallback(
+    async (comment: StrategyDiscussionComment) => {
+      try {
+        await navigator.clipboard.writeText(comment.message);
+        addToast("Markdown copied", "success");
+      } catch (copyError) {
+        console.error("Failed to copy markdown", copyError);
+        addToast("Failed to copy markdown", "warning");
+      }
+    },
+    [addToast]
+  );
+
   const visibleCount = useMemo(() => visibleCommentCount(segments), [segments]);
 
   return (
@@ -646,6 +669,7 @@ export default function StrategyDiscussion() {
                     onJumpToParent={(commentId) => void jumpToParentComment(commentId)}
                     registerRef={registerCommentRef}
                     isHighlighted={highlightedCommentId === comment.comment_id}
+                    onCopyMarkdown={handleCopyMarkdown}
                   />
                 ))}
 
