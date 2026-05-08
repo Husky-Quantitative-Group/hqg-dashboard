@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate, useOutletContext, useParams, useLocation } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
-import { ChartCandlestick, FileCode2, LayoutDashboard, LineChart } from "lucide-react";
+import { MessageSquareText } from "lucide-react";
 import { fetchStrategyWorkspace, startStrategyRunExecution } from "./workspace";
 import type { BacktestResult } from "./workspace";
 import { fetchStrategyArtifactContent, uploadStrategyArtifacts, type StrategyFile } from "~/api/strategyArtifacts";
@@ -58,6 +58,7 @@ export type StrategyWorkspaceContext = {
 
 const TABS = [
   { label: "Overview", to: ".", end: true, icon: "dashboard" },
+  { label: "Discussion", to: "discussion", icon: MessageSquareText },
   { label: "Code", to: "code", icon: "code" },
   { label: "Backtest", to: "backtest", icon: "play_circle" },
   { label: "Results", to: "results", icon: "bar_chart" },
@@ -664,6 +665,7 @@ export default function StrategyLayout() {
             <div className="flex items-center overflow-x-auto no-scrollbar">
               {TABS.map((tab) => {
                 const isActive = isTabActive(tab.to);
+                const LucideIcon = typeof tab.icon === "string" ? null : tab.icon;
                 return (
                   <button
                     key={tab.label}
@@ -680,7 +682,11 @@ export default function StrategyLayout() {
                         : "text-on-surface/90 hover:text-on-surface"
                     }`}
                   >
-                    <span className="material-symbols-outlined text-xl">{tab.icon}</span>
+                    {typeof tab.icon === "string" ? (
+                      <span className="material-symbols-outlined text-xl">{tab.icon}</span>
+                    ) : (
+                      LucideIcon ? <LucideIcon className="h-[18px] w-[18px]" strokeWidth={2.1} /> : null
+                    )}
                     <span className="tab-label">{tab.label}</span>
                   </button>
                 );
