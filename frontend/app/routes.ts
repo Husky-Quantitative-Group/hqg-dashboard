@@ -16,6 +16,7 @@ export default [
     ]),
     route("home", "routes/home.tsx"),
     route("leaderboard", "routes/leaderboard.tsx"),
+    route("engine", "routes/engine.tsx"),
     route("portfolio", "routes/portfolio.tsx"),
     route("create-strategy", "routes/create-strategy.tsx"),
     route("admin", "routes/admin.tsx"),

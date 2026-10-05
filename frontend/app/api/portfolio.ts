@@ -24,6 +24,9 @@ export type SnapshotData = {
 };
 
 export type SnapshotResponse = {
+  account_id?: string | null;
+  mode?: "paper" | "live" | null;
+  portfolio_uuid?: string | null;
   snapshots: SnapshotData[];
 };
 
