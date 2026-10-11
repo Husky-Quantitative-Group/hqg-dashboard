@@ -116,8 +116,10 @@ def new_account(account_id, engine_id, users, approved, image_digest, service_se
 
 
 class Control:
-    def __init__(self, store, readiness, ttl=15):
+    def __init__(self, store, readiness, ttl=15, strategy_source=None):
         self.store, self.readiness, self.ttl = store, readiness, ttl
+        # Injected only by the mock service; AWS artifact deployment is a later rollout.
+        self.strategy_source = strategy_source
 
     def account(self, account_id):
         state = self.store.get(account_id, "state")
@@ -173,7 +175,40 @@ class Control:
         version = state["control_version"] + 1
         extra = {}
 
-        if kind == "configure":
+        if kind == "register":
+            if self.strategy_source is None:
+                raise Invalid("Dashboard strategy registration requires the mock stack")
+            if any(
+                state["modes"][m]["desired_state"] != "paused"
+                or not self.fresh_pause(state, m)
+                for m in MODES
+            ):
+                raise Conflict(
+                    "Pause and reconcile both modes before registering strategies"
+                )
+            from src.control.packages import validate_package
+
+            if type(body["version"]) is not int:
+                raise Invalid("An explicit saved version is required")
+            package = self.strategy_source(body["strategy_id"], body["version"])
+            identity, _ = validate_package(package)
+            for approved in state["approved_strategies"]:
+                if (approved["strategy_id"], approved["version"]) == (
+                    identity["strategy_id"],
+                    identity["version"],
+                ):
+                    if approved != identity:
+                        raise Conflict("Registered versions are immutable")
+                    break
+            else:
+                if len(state["approved_strategies"]) >= 32:
+                    raise Invalid(
+                        "Mock account supports at most 32 registered versions"
+                    )
+                updated["approved_strategies"].append(identity)
+                extra["package#" + identity["source_digest"]] = package
+
+        elif kind == "configure":
             config = body["configuration"]
             validate_configuration(config, state["approved_strategies"])
             self.authorize(state, actor, config["modes"]["live"]["enabled"])
@@ -229,6 +264,14 @@ class Control:
                         or observed.get("configuration_digest")
                         != state["configuration_digest"]
                         or not self.readiness()
+                        or any(
+                            {
+                                k: s[k]
+                                for k in ("strategy_id", "version", "source_digest")
+                            }
+                            not in observed.get("approved_strategies", [])
+                            for s in config["modes"][m]["strategies"]
+                        )
                     ):
                         raise Conflict(
                             "Resume requires fresh health, applied configuration, reconciled pause and the current incident"
@@ -303,7 +346,19 @@ class Control:
 
         if (
             body["image_digest"] != state["image_digest"]
-            or body["approved_strategies"] != state["approved_strategies"]
+            or (
+                body["approved_strategies"] != state["approved_strategies"]
+                and not (
+                    self.strategy_source is not None
+                    and isinstance(body["approved_strategies"], list)
+                    and all(
+                        item in state["approved_strategies"]
+                        for item in body["approved_strategies"]
+                    )
+                    and len({digest(item) for item in body["approved_strategies"]})
+                    == len(body["approved_strategies"])
+                )
+            )
             or set(body["modes"]) != set(MODES)
             or type(body["control_version"]) is not int
             or not 0 <= body["control_version"] <= state["control_version"]
@@ -332,7 +387,7 @@ class Control:
 
         self.store.commit(account_id, state["generation"], updated, {})
 
-        return {
+        result = {
             "account_id": account_id,
             "boot_id": body["boot_id"],
             "request_id": body["request_id"],
@@ -344,3 +399,10 @@ class Control:
             "dashboard_ready": ready,
             "permission_ttl_seconds": self.ttl,
         }
+        if self.strategy_source is not None:
+            result["strategy_packages"] = {}
+            for item in state["approved_strategies"]:
+                package = self.store.get(account_id, "package#" + item["source_digest"])
+                if package is not None:
+                    result["strategy_packages"][item["source_digest"]] = package
+        return result

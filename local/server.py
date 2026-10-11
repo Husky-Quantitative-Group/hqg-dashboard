@@ -7,14 +7,15 @@ import sqlite3
 import sys
 import threading
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 
 ACCOUNTS_DIR = Path(__file__).parents[1] / "aws/lambdas/accounts"
 sys.path.insert(0, str(ACCOUNTS_DIR))
-from control import Control, Conflict, new_account
+from control import Control, Conflict, Forbidden, new_account
+from strategies import Strategies
 import main as account_lambda
 
 
@@ -91,7 +92,8 @@ def create_app(store, provisioned, control_url, website_url):
         except Exception:
             return False
 
-    api = Control(store, readiness)
+    strategies = Strategies(store.path)
+    api = Control(store, readiness, strategy_source=strategies.package)
     app = FastAPI(title="Mock dashboard")
     app.state.control, app.state.faults = api, faults
     app.add_middleware(
@@ -136,6 +138,72 @@ def create_app(store, provisioned, control_url, website_url):
             if actor
             else JSONResponse({}, status_code=401)
         )
+
+    @app.api_route("/strategies", methods=["GET", "POST"])
+    @app.api_route("/strategies/{strategy_id}", methods=["GET"])
+    @app.api_route("/strategies/{strategy_id}/{operation}", methods=["GET", "POST"])
+    @app.get("/strategies/{strategy_id}/artifacts/{artifact_path:path}")
+    async def strategy_route(
+        request: Request,
+        strategy_id: str = "",
+        operation: str = "",
+        artifact_path: str = "",
+    ):
+        import asyncio
+
+        try:
+            body = await request.json() if request.method == "POST" else None
+        except ValueError:
+            return JSONResponse({"message": "Invalid JSON"}, status_code=400)
+        return await asyncio.to_thread(
+            strategy_response, request, strategy_id, operation, artifact_path, body
+        )
+
+    def strategy_response(request, strategy_id, operation, artifact_path, body=None):
+        try:
+            actor = request.cookies.get("mock_operator")
+            api.authorize(api.account(provisioned["account_id"]), actor)
+            if faults["backend"]:
+                return JSONResponse({"message": "Control unavailable"}, status_code=503)
+            if not strategy_id:
+                return (
+                    strategies.list()
+                    if request.method == "GET"
+                    else strategies.create(body, actor)
+                )
+            metadata = strategies.get(strategy_id)
+            if not operation and not artifact_path:
+                return metadata
+            if operation == "permissions":
+                return {
+                    "canWrite": strategies.can_write(metadata, actor),
+                    "read": {"public": False, "fund": True, "users": []},
+                    "write": {"public": False, "users": [{"netid": metadata["owner"]}]},
+                }
+            if operation == "backtests":
+                return {"items": []}
+            if artifact_path:
+                files = strategies.package(strategy_id, metadata["current_version"])[
+                    "files"
+                ]
+                if artifact_path not in files:
+                    raise HTTPException(404, "Artifact not found")
+                return PlainTextResponse(files[artifact_path])
+            if operation == "artifacts":
+                if request.method == "POST":
+                    return strategies.upload(strategy_id, body, actor)
+                return {
+                    "artifacts": list(
+                        strategies.package(strategy_id, metadata["current_version"])[
+                            "files"
+                        ]
+                    )
+                }
+            raise HTTPException(404, "Not found")
+        except Forbidden as exc:
+            return JSONResponse({"message": str(exc)}, status_code=403)
+        except (ValueError, KeyError, TypeError) as exc:
+            return JSONResponse({"message": str(exc)}, status_code=400)
 
     async def dispatch(accountId: str, operation: str, request: Request):
         import asyncio

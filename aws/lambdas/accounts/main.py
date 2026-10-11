@@ -104,11 +104,16 @@ def handle(event, api):
         elif route in (
             "PUT /accounts/{accountId}/configuration",
             "POST /accounts/{accountId}/actions",
+            "POST /accounts/{accountId}/strategies",
         ):
             result = api.change(
                 account_id,
                 actor,
-                "configure" if route.startswith("PUT") else "action",
+                (
+                    "configure"
+                    if route.startswith("PUT")
+                    else "register" if route.endswith("/strategies") else "action"
+                ),
                 body,
             )
 
@@ -120,7 +125,7 @@ def handle(event, api):
         return response(403, {"message": str(exc)})
     except Conflict as exc:
         return response(409, {"message": str(exc)})
-    except (Invalid, ValueError, KeyError, TypeError) as exc:
+    except (Invalid, ValueError, KeyError, TypeError, SyntaxError) as exc:
         return response(400, {"message": str(exc)})
     except Exception:
         return response(503, {"message": "Account control unavailable"})

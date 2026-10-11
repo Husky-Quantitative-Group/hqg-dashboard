@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { coreApi } from "~/api/core";
+import {
+    fetchStrategies,
+    type Strategy as SavedStrategy,
+} from "~/api/strategies";
 
 type Mode = "paper" | "live";
 type Strategy = {
@@ -23,6 +27,7 @@ type ObservedMode = {
     outstanding_orders: unknown[];
     order_outcomes: unknown[];
     last_successful_cycle: number | null;
+    strategy_error?: string | null;
 };
 type Status = {
     account_id: string;
@@ -38,6 +43,7 @@ type Status = {
         sync_error?: string | null;
         boot_id: string;
         worker_session: string | null;
+        approved_strategies?: Strategy[];
         modes: Record<Mode, ObservedMode>;
     } | null;
     online: boolean;
@@ -55,6 +61,12 @@ export default function EngineControl() {
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
     const [enableLive, setEnableLive] = useState(false);
+    const [savedStrategies, setSavedStrategies] = useState<SavedStrategy[]>([]);
+    const [registerId, setRegisterId] = useState("");
+    const [registerVersion, setRegisterVersion] = useState(1);
+    const [allocations, setAllocations] = useState<
+        Record<Mode, Record<string, number>>
+    >({ paper: {}, live: {} });
     const [pendingRequest, setPendingRequest] = useState<{
         path: string;
         body: unknown;
@@ -66,6 +78,12 @@ export default function EngineControl() {
                 `/accounts/${accountId}/status`,
             );
             setStatus(data);
+            try {
+                setSavedStrategies(await fetchStrategies());
+            } catch (err) {
+                setSavedStrategies([]);
+                setError(message(err));
+            }
         } catch (err) {
             setStatus(null);
             setError(message(err));
@@ -78,6 +96,30 @@ export default function EngineControl() {
         const timer = setInterval(refresh, 2000);
         return () => clearInterval(timer);
     }, [refresh]);
+    useEffect(() => {
+        if (!status) return;
+        setEnableLive(status.configuration?.modes.live.enabled ?? false);
+        setAllocations(
+            Object.fromEntries(
+                modes.map((mode) => [
+                    mode,
+                    Object.fromEntries(
+                        (
+                            status.configuration?.modes[mode].strategies ??
+                            status.approved_strategies
+                                .filter(
+                                    (s) => s.strategy_id === "mock-balanced",
+                                )
+                                .map((s) => ({ ...s, allocation: 1 }))
+                        ).map((s) => [
+                            s.source_digest,
+                            (s.allocation ?? 0) * 100,
+                        ]),
+                    ),
+                ]),
+            ) as Record<Mode, Record<string, number>>,
+        );
+    }, [accountId, status?.configuration_revision]);
 
     async function send(request: NonNullable<typeof pendingRequest>) {
         setBusy(true);
@@ -125,17 +167,24 @@ export default function EngineControl() {
                         portfolio_id:
                             status.configuration?.modes[mode].portfolio_id ??
                             crypto.randomUUID(),
-                        enabled: mode === "paper" || enableLive,
+                        enabled:
+                            (mode === "paper" || enableLive) &&
+                            Object.keys(allocations[mode]).length > 0,
                         strategies:
                             mode === "paper" || enableLive
-                                ? status.approved_strategies.map(
-                                      (strategy) => ({
+                                ? status.approved_strategies
+                                      .filter(
+                                          (s) =>
+                                              s.source_digest in
+                                              allocations[mode],
+                                      )
+                                      .map((strategy) => ({
                                           ...strategy,
                                           allocation:
-                                              1 /
-                                              status.approved_strategies.length,
-                                      }),
-                                  )
+                                              allocations[mode][
+                                                  strategy.source_digest
+                                              ] / 100,
+                                      }))
                                 : [],
                     },
                 ]),
@@ -151,6 +200,39 @@ export default function EngineControl() {
             },
         });
     }
+    function register() {
+        if (!status) return;
+        void send({
+            path: `/accounts/${accountId}/strategies`,
+            method: "post",
+            body: {
+                strategy_id: registerId,
+                version: registerVersion,
+                idempotency_key: crypto.randomUUID(),
+                expected_control_version: status.control_version,
+            },
+        });
+    }
+    function selectStrategy(mode: Mode, strategy: Strategy, checked: boolean) {
+        setAllocations((previous) => {
+            const next = { ...previous[mode] };
+            for (const item of status?.approved_strategies ?? []) {
+                if (item.strategy_id === strategy.strategy_id)
+                    delete next[item.source_digest];
+            }
+            if (checked) next[strategy.source_digest] = 100;
+            return { ...previous, [mode]: next };
+        });
+    }
+    const validAllocations = modes.every((mode) => {
+        if (mode === "live" && !enableLive) return true;
+        const values = Object.values(allocations[mode]);
+        return (
+            values.every(
+                (value) => Number.isFinite(value) && value > 0 && value <= 100,
+            ) && values.reduce((sum, value) => sum + value, 0) <= 100
+        );
+    });
     const paused =
         status?.online &&
         modes.every(
@@ -222,6 +304,164 @@ export default function EngineControl() {
                     </p>
                     <div className="flex flex-wrap items-center gap-3">
                         <label>
+                            Saved strategy{" "}
+                            <select
+                                className="rounded bg-slate-900 p-2"
+                                value={registerId}
+                                onChange={(event) => {
+                                    setRegisterId(event.target.value);
+                                    setRegisterVersion(
+                                        savedStrategies.find(
+                                            (s) => s.id === event.target.value,
+                                        )?.current_version ?? 1,
+                                    );
+                                }}
+                            >
+                                <option value="">Select a strategy</option>
+                                {savedStrategies.map((strategy) => (
+                                    <option
+                                        key={strategy.id}
+                                        value={strategy.id}
+                                    >
+                                        {strategy.name} (latest v
+                                        {strategy.current_version ?? 1})
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label>
+                            Version{" "}
+                            <input
+                                aria-label="Saved strategy version"
+                                type="number"
+                                min={1}
+                                step={1}
+                                className="w-20 rounded bg-slate-900 p-2"
+                                value={registerVersion}
+                                onChange={(event) =>
+                                    setRegisterVersion(
+                                        event.target.valueAsNumber,
+                                    )
+                                }
+                            />
+                        </label>
+                        <button
+                            className={button}
+                            disabled={
+                                busy ||
+                                !!pendingRequest ||
+                                !paused ||
+                                !registerId ||
+                                !Number.isInteger(registerVersion) ||
+                                registerVersion < 1
+                            }
+                            onClick={register}
+                        >
+                            Register saved version
+                        </button>
+                    </div>
+                    <p className="text-sm text-slate-400">
+                        Save code in the strategy workspace first. Registering
+                        pins that saved version; edits require registering a new
+                        version. Stop both modes before registering or
+                        configuring.
+                    </p>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        {modes.map((mode) => (
+                            <fieldset
+                                key={mode}
+                                className="space-y-2 rounded border border-slate-700 p-4"
+                            >
+                                <legend className="capitalize">
+                                    {mode} strategies
+                                </legend>
+                                {status.approved_strategies.map((strategy) => {
+                                    const selected =
+                                        strategy.source_digest in
+                                        allocations[mode];
+                                    const installed =
+                                        status.observed?.approved_strategies?.some(
+                                            (s) =>
+                                                s.source_digest ===
+                                                strategy.source_digest,
+                                        );
+                                    const name =
+                                        savedStrategies.find(
+                                            (s) =>
+                                                s.id === strategy.strategy_id,
+                                        )?.name ?? strategy.strategy_id;
+                                    return (
+                                        <div
+                                            key={strategy.source_digest}
+                                            className="flex flex-wrap items-center gap-2"
+                                        >
+                                            <label>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selected}
+                                                    onChange={(event) =>
+                                                        selectStrategy(
+                                                            mode,
+                                                            strategy,
+                                                            event.target
+                                                                .checked,
+                                                        )
+                                                    }
+                                                />{" "}
+                                                {name} v{strategy.version} ·{" "}
+                                                {installed
+                                                    ? "Registered"
+                                                    : "Pending engine sync"}
+                                            </label>
+                                            {selected && (
+                                                <label>
+                                                    Allocation %{" "}
+                                                    <input
+                                                        type="number"
+                                                        min={0.01}
+                                                        max={100}
+                                                        step="any"
+                                                        aria-label={`${mode} ${name} v${strategy.version} allocation percent`}
+                                                        className="w-20 rounded bg-slate-900 p-2"
+                                                        value={
+                                                            allocations[mode][
+                                                                strategy
+                                                                    .source_digest
+                                                            ]
+                                                        }
+                                                        onChange={(event) =>
+                                                            setAllocations(
+                                                                (previous) => ({
+                                                                    ...previous,
+                                                                    [mode]: {
+                                                                        ...previous[
+                                                                            mode
+                                                                        ],
+                                                                        [strategy.source_digest]:
+                                                                            event
+                                                                                .target
+                                                                                .valueAsNumber,
+                                                                    },
+                                                                }),
+                                                            )
+                                                        }
+                                                    />
+                                                </label>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </fieldset>
+                        ))}
+                    </div>
+                    {!validAllocations && (
+                        <p role="alert" className="text-rose-300">
+                            Allocations must be positive and total at most 100%
+                            per enabled mode.
+                        </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-3">
+                        <label>
                             <input
                                 type="checkbox"
                                 checked={enableLive}
@@ -233,10 +473,15 @@ export default function EngineControl() {
                         </label>
                         <button
                             className={button}
-                            disabled={busy || !!pendingRequest || !paused}
+                            disabled={
+                                busy ||
+                                !!pendingRequest ||
+                                !paused ||
+                                !validAllocations
+                            }
                             onClick={configure}
                         >
-                            Configure approved strategies
+                            Configure selected strategies
                         </button>
                         <button
                             className={`${button} border-rose-500`}
@@ -295,6 +540,14 @@ export default function EngineControl() {
                                             ? "reconciled"
                                             : "cleanup pending / uncertain"}
                                     </p>
+                                    {observed?.strategy_error && (
+                                        <p
+                                            role="alert"
+                                            className="text-rose-300"
+                                        >
+                                            Strategy: {observed.strategy_error}
+                                        </p>
+                                    )}
                                     {!!observed?.outstanding_orders.length && (
                                         <pre className="overflow-auto text-xs">
                                             {JSON.stringify(
