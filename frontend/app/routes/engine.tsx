@@ -106,11 +106,7 @@ export default function EngineControl() {
                     Object.fromEntries(
                         (
                             status.configuration?.modes[mode].strategies ??
-                            status.approved_strategies
-                                .filter(
-                                    (s) => s.strategy_id === "mock-balanced",
-                                )
-                                .map((s) => ({ ...s, allocation: 1 }))
+                            []
                         ).map((s) => [
                             s.source_digest,
                             (s.allocation ?? 0) * 100,

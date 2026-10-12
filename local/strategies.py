@@ -35,16 +35,16 @@ class Strategies:
                     db,
                     {
                         "id": "1",
-                        "name": "Mock balanced template",
+                        "name": "Balanced template",
                         "owner": "operator",
                         "entrypoint": "main.py",
                         "current_version": 1,
-                        "project_id": "mock",
-                        "project_name": "Mock strategies",
+                        "project_id": "local",
+                        "project_name": "Local strategies",
                         "tags": [],
-                        "description": "Editable template for mock execution",
+                        "description": "Editable template for Alpaca execution",
                     },
-                    {"main.py": TEMPLATE, "README.md": "# Mock balanced template"},
+                    {"main.py": TEMPLATE, "README.md": "# Balanced template"},
                 )
 
     def _save(self, db, metadata, files):

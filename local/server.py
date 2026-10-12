@@ -262,14 +262,12 @@ def create_app(store, provisioned, control_url, website_url):
 
 
 def from_environment():
-    from src.control.contract import APPROVED, IMAGE_DIGEST
-
     state = new_account(
         os.environ["HQG_ACCOUNT_ID"],
         os.environ["HQG_ENGINE_ID"],
         {"operator": ["control", "live"], "paper-operator": ["control"]},
-        APPROVED,
-        IMAGE_DIGEST,
+        [],
+        None,
         os.environ["DASHBOARD_SYNC_SECRET"],
     )
 
