@@ -4,6 +4,12 @@ This repo has two main parts:
 - `frontend/` for the React Router UI
 - `infra/` + `aws/` for the AWS infrastructure and Lambda APIs
 
+The runtime local AWS substitutes and fake login have been removed. Use the
+real AWS backend and CAS login described below for dashboard development. Engine
+strategy registration/package delivery and provider HTTPS integration remain
+unfinished; this cleanup adds no AWS functionality. Existing offline integration
+fixtures are confined to `tests/fixtures/` and `../hqg-engine/tests/integration/fixtures/`.
+
 ## Prerequisites
 - Node.js + npm (LTS) for the frontend: https://nodejs.org/en/download
 - Terraform (>= 1.5) for infra work: https://developer.hashicorp.com/terraform/downloads

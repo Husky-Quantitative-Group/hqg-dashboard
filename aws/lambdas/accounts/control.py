@@ -1,4 +1,4 @@
-"""Account control shared by the Lambda and the local HTTP dashboard."""
+"""Account control shared by the Lambda and offline tests."""
 
 import copy
 import hashlib
@@ -118,7 +118,7 @@ def new_account(account_id, engine_id, users, approved, image_digest, service_se
 class Control:
     def __init__(self, store, readiness, ttl=15, strategy_source=None):
         self.store, self.readiness, self.ttl = store, readiness, ttl
-        # Injected only by the mock service; AWS artifact deployment is a later rollout.
+        # Injected only by tests; production artifact integration remains unimplemented.
         self.strategy_source = strategy_source
 
     def account(self, account_id):
@@ -177,7 +177,7 @@ class Control:
 
         if kind == "register":
             if self.strategy_source is None:
-                raise Invalid("Dashboard strategy registration requires the mock stack")
+                raise Invalid("Strategy registration is not available in this deployment")
             if any(
                 state["modes"][m]["desired_state"] != "paused"
                 or not self.fresh_pause(state, m)
@@ -203,7 +203,7 @@ class Control:
             else:
                 if len(state["approved_strategies"]) >= 32:
                     raise Invalid(
-                        "Mock account supports at most 32 registered versions"
+                        "Account supports at most 32 registered versions"
                     )
                 updated["approved_strategies"].append(identity)
                 extra["package#" + identity["source_digest"]] = package

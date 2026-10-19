@@ -1,7 +1,6 @@
-"""Mock dashboard: identical control handlers, local durable store and fake login."""
+"""Test-only dashboard adapter, SQLite store, strategy fixture and injected login."""
 
 import json
-import os
 from pathlib import Path
 import sqlite3
 import sys
@@ -12,9 +11,9 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 
-ACCOUNTS_DIR = Path(__file__).parents[1] / "aws/lambdas/accounts"
+ACCOUNTS_DIR = Path(__file__).resolve().parents[2] / "aws/lambdas/accounts"
 sys.path.insert(0, str(ACCOUNTS_DIR))
-from control import Control, Conflict, Forbidden, new_account
+from control import Control, Conflict, Forbidden
 from strategies import Strategies
 import main as account_lambda
 
@@ -260,20 +259,3 @@ def create_app(store, provisioned, control_url, website_url):
 
     return app
 
-
-def from_environment():
-    state = new_account(
-        os.environ["HQG_ACCOUNT_ID"],
-        os.environ["HQG_ENGINE_ID"],
-        {"operator": ["control", "live"], "paper-operator": ["control"]},
-        [],
-        None,
-        os.environ["DASHBOARD_SYNC_SECRET"],
-    )
-
-    return create_app(
-        LocalStore(os.environ["MOCK_DASHBOARD_DB"]),
-        state,
-        os.environ["CONTROL_READINESS_URL"],
-        os.environ["WEBSITE_READINESS_URL"],
-    )

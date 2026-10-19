@@ -1,4 +1,4 @@
-"""Local equivalents of the dashboard strategy/artifact APIs, without AWS."""
+"""Test-only strategy/artifact fixtures for offline integration tests."""
 
 import json
 import sqlite3

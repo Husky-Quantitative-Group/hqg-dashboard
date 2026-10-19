@@ -54,8 +54,7 @@ const modes: Mode[] = ["paper", "live"];
 
 export default function EngineControl() {
     const [accountId, setAccountId] = useState(
-        import.meta.env.ENGINE_ACCOUNT_ID ??
-            "00000000-0000-4000-8000-000000000001",
+        import.meta.env.ENGINE_ACCOUNT_ID ?? "",
     );
     const [status, setStatus] = useState<Status | null>(null);
     const [error, setError] = useState("");
@@ -73,6 +72,12 @@ export default function EngineControl() {
         method: "post" | "put";
     } | null>(null);
     const refresh = useCallback(async () => {
+        // Check for invalid account ID, https://stackoverflow.com/a/13653180/10629172
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(accountId)) {
+            setStatus(null);
+            setError("Configure ENGINE_ACCOUNT_ID or enter a valid account UUID.");
+            return;
+        }
         try {
             const { data } = await coreApi.get<Status>(
                 `/accounts/${accountId}/status`,
