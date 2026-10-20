@@ -1,78 +1,24 @@
-"""Test-only dashboard adapter, SQLite store, strategy fixture and injected login."""
+"""Test HTTP adapter for actual Lambda handlers with injected auth/readiness/faults."""
 
+import asyncio
+import base64
 import json
-from pathlib import Path
-import sqlite3
-import sys
-import threading
+import os
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse, PlainTextResponse
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request
+from fastapi.responses import Response, JSONResponse
 import httpx
 
-ACCOUNTS_DIR = Path(__file__).resolve().parents[2] / "aws/lambdas/accounts"
-sys.path.insert(0, str(ACCOUNTS_DIR))
-from control import Control, Conflict, Forbidden
-from strategies import Strategies
-import main as account_lambda
+from aws_fixture import load
+from control import Control
+from packages import StrategySource
 
 
-class LocalStore:
-    def __init__(self, path):
-        self.path, self.lock = path, threading.Lock()
-        with sqlite3.connect(path) as db:
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS records (account_id TEXT, record TEXT, body TEXT, PRIMARY KEY(account_id, record))"
-            )
-
-    def get(self, account_id, record):
-        with sqlite3.connect(self.path) as db:
-            row = db.execute(
-                "SELECT body FROM records WHERE account_id=? AND record=?",
-                (account_id, record),
-            ).fetchone()
-
-            return json.loads(row[0]) if row else None
-
-    def provision(self, state):
-        with sqlite3.connect(self.path) as db:
-            db.execute(
-                "INSERT OR IGNORE INTO records VALUES (?, 'state', ?)",
-                (state["account_id"], json.dumps(state)),
-            )
-
-    def commit(self, account_id, generation, state, extra):
-        with self.lock, sqlite3.connect(self.path) as db:
-            db.execute("BEGIN IMMEDIATE")
-            row = db.execute(
-                "SELECT body FROM records WHERE account_id=? AND record='state'",
-                (account_id,),
-            ).fetchone()
-
-            if not row or json.loads(row[0])["generation"] != generation:
-                raise Conflict("Concurrent update")
-
-            db.execute(
-                "UPDATE records SET body=? WHERE account_id=? AND record='state'",
-                (json.dumps(state), account_id),
-            )
-
-            for record, body in extra.items():
-                db.execute(
-                    "INSERT INTO records VALUES (?, ?, ?)",
-                    (account_id, record, json.dumps(body)),
-                )
-
-
-def create_app(store, provisioned, control_url, website_url):
-    store.provision(provisioned)
-    faults = {
-        "backend": False,
-        "delay": 0,
-        "response": None,
-        "lose_action_response": False,
-    }
+def create_app(store, control_url, website_url, dynamo, s3):
+    accounts = load("account_handler", "aws/lambdas/accounts/main.py")
+    strategies = load("strategy_handler", "aws/lambdas/strategies/main.py")
+    artifacts = load("artifact_handler", "aws/lambdas/strategy_artifacts/main.py")
+    faults = dict(backend=False, delay=0, response=None, lose_action_response=False)
 
     def readiness():
         try:
@@ -86,176 +32,90 @@ def create_app(store, provisioned, control_url, website_url):
                     result = client.get(url)
                     if result.status_code != 200 or marker not in result.text:
                         return False
-                return True
-
+            return True
         except Exception:
             return False
 
-    strategies = Strategies(store.path)
-    api = Control(store, readiness, strategy_source=strategies.package)
-    app = FastAPI(title="Mock dashboard")
-    app.state.control, app.state.faults = api, faults
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+    api = Control(
+        store, readiness, strategy_source=StrategySource(dynamo, s3, os.environ)
     )
+    app = FastAPI()
+    app.state.control, app.state.faults = api, faults
 
-    @app.get("/control")
-    async def control_probe():
-        try:
-            if faults["backend"]:
-                raise RuntimeError("Control unavailable")
-            api.account(provisioned["account_id"])
-            return {"application": "hqg-account-control-ready"}
-
-        except Exception:
-            return JSONResponse({}, status_code=503)
+    @app.post("/test/login")
+    async def login(request: Request):
+        actor = (await request.json()).get("actor", "operator")
+        response = JSONResponse({"netid": actor})
+        response.set_cookie("test_actor", actor)
+        return response
 
     @app.post("/test/faults")
     async def set_faults(request: Request):
         faults.update(await request.json())
         return faults
 
-    @app.post("/test/login")
-    async def login(request: Request):
-        body = await request.json()
-        actor = body.get("actor", "operator")
-        response = JSONResponse({"netid": actor, "roles": ["FUND"]})
-        response.set_cookie("mock_operator", actor, httponly=True, samesite="lax")
-
-        return response
-
-    @app.get("/auth/me")
-    async def me(request: Request):
-        actor = request.cookies.get("mock_operator")
-
-        return (
-            JSONResponse({"netid": actor, "roles": ["FUND"], "display_name": actor})
-            if actor
-            else JSONResponse({}, status_code=401)
-        )
-
-    @app.api_route("/strategies", methods=["GET", "POST"])
-    @app.api_route("/strategies/{strategy_id}", methods=["GET"])
-    @app.api_route("/strategies/{strategy_id}/{operation}", methods=["GET", "POST"])
-    @app.get("/strategies/{strategy_id}/artifacts/{artifact_path:path}")
-    async def strategy_route(
-        request: Request,
-        strategy_id: str = "",
-        operation: str = "",
-        artifact_path: str = "",
-    ):
-        import asyncio
-
-        try:
-            body = await request.json() if request.method == "POST" else None
-        except ValueError:
-            return JSONResponse({"message": "Invalid JSON"}, status_code=400)
-        return await asyncio.to_thread(
-            strategy_response, request, strategy_id, operation, artifact_path, body
-        )
-
-    def strategy_response(request, strategy_id, operation, artifact_path, body=None):
-        try:
-            actor = request.cookies.get("mock_operator")
-            api.authorize(api.account(provisioned["account_id"]), actor)
-            if faults["backend"]:
-                return JSONResponse({"message": "Control unavailable"}, status_code=503)
-            if not strategy_id:
-                return (
-                    strategies.list()
-                    if request.method == "GET"
-                    else strategies.create(body, actor)
-                )
-            metadata = strategies.get(strategy_id)
-            if not operation and not artifact_path:
-                return metadata
-            if operation == "permissions":
-                return {
-                    "canWrite": strategies.can_write(metadata, actor),
-                    "read": {"public": False, "fund": True, "users": []},
-                    "write": {"public": False, "users": [{"netid": metadata["owner"]}]},
-                }
-            if operation == "backtests":
-                return {"items": []}
-            if artifact_path:
-                files = strategies.package(strategy_id, metadata["current_version"])[
-                    "files"
-                ]
-                if artifact_path not in files:
-                    raise HTTPException(404, "Artifact not found")
-                return PlainTextResponse(files[artifact_path])
-            if operation == "artifacts":
-                if request.method == "POST":
-                    return strategies.upload(strategy_id, body, actor)
-                return {
-                    "artifacts": list(
-                        strategies.package(strategy_id, metadata["current_version"])[
-                            "files"
-                        ]
-                    )
-                }
-            raise HTTPException(404, "Not found")
-        except Forbidden as exc:
-            return JSONResponse({"message": str(exc)}, status_code=403)
-        except (ValueError, KeyError, TypeError) as exc:
-            return JSONResponse({"message": str(exc)}, status_code=400)
-
-    async def dispatch(accountId: str, operation: str, request: Request):
-        import asyncio
-
+    @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH"])
+    async def dispatch(path: str, request: Request):
         if faults["backend"]:
-            return JSONResponse({"message": "Control unavailable"}, status_code=503)
-
-        internal = request.url.path.startswith("/internal/")
-        route = f"{request.method} /{'internal/v1/' if internal else ''}accounts/{{accountId}}/{operation}"
+            return JSONResponse({}, status_code=503)
+        parts, params = path.split("/"), {}
+        if path.startswith("internal/v1/accounts/"):
+            params["accountId"] = parts[3]
+            operation = parts[4]
+            template = f"internal/v1/accounts/{{accountId}}/{operation}"
+            if operation == "strategy-packages":
+                template += "/{sourceDigest}"
+                params["sourceDigest"] = parts[5]
+            target = lambda event: accounts.handle(event, api)
+        elif path.startswith("accounts/"):
+            params["accountId"] = parts[1]
+            template = "accounts/{accountId}/" + parts[2]
+            target = lambda event: accounts.handle(event, api)
+        else:
+            template = "strategies"
+            if len(parts) > 1:
+                template += "/{id}"
+                params["id"] = parts[1]
+            if len(parts) > 2:
+                template += "/artifacts"
+            if len(parts) > 3:
+                template += "/{artifactId}"
+                params["artifactId"] = "/".join(parts[3:])
+            handler = artifacts.handler if len(parts) > 2 else strategies.handler
+            target = lambda event: handler(event, None)
         event = {
             "requestContext": {
-                "routeKey": route,
+                "routeKey": request.method + " /" + template,
                 "authorizer": {
-                    "lambda": {"netid": request.cookies.get("mock_operator")}
+                    "lambda": {
+                        "netid": request.cookies.get("test_actor"),
+                        "roles": ["FUND"],
+                    }
                 },
             },
-            "pathParameters": {"accountId": accountId},
+            "pathParameters": params,
             "headers": dict(request.headers),
             "body": (await request.body()).decode(),
         }
-
-        # Local service injects the same Control object used by the Lambda.
-        result = await asyncio.to_thread(call, event)
+        result = await asyncio.to_thread(target, event)
         if faults["delay"]:
             await asyncio.sleep(faults["delay"])
-
-        if internal and faults["response"]:
+        if path.startswith("internal/") and faults["response"]:
             return JSONResponse(faults["response"])
-
         if (
-            not internal
-            and faults["lose_action_response"]
+            faults["lose_action_response"]
+            and not path.startswith("internal/")
             and request.method != "GET"
             and result["statusCode"] == 200
         ):
-            return JSONResponse(
-                {"message": "Response lost after commit"}, status_code=503
-            )
-
-        return JSONResponse(
-            json.loads(result["body"]), status_code=result["statusCode"]
+            return JSONResponse({}, status_code=503)
+        body = (
+            base64.b64decode(result["body"])
+            if result.get("isBase64Encoded")
+            else result["body"]
+        )
+        return Response(
+            body, status_code=result["statusCode"], headers=result.get("headers")
         )
 
-    def call(event):
-        # Handler accepts an injected service to avoid cross-account global state in tests.
-        return account_lambda.handle(event, api)
-
-    app.add_api_route(
-        "/accounts/{accountId}/{operation}", dispatch, methods=["GET", "PUT", "POST"]
-    )
-    app.add_api_route(
-        "/internal/v1/accounts/{accountId}/{operation}", dispatch, methods=["POST"]
-    )
-
     return app
-
