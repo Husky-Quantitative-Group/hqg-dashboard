@@ -118,7 +118,6 @@ def new_account(account_id, engine_id, users, approved, image_digest, service_se
 class Control:
     def __init__(self, store, readiness, ttl=15, strategy_source=None):
         self.store, self.readiness, self.ttl = store, readiness, ttl
-        # Injected only by tests; production artifact integration remains unimplemented.
         self.strategy_source = strategy_source
 
     def account(self, account_id):
@@ -147,7 +146,7 @@ class Control:
             >= state["modes"][mode]["stop_version"]
         )
 
-    def change(self, account_id, actor, kind, body):
+    def change(self, account_id, actor, kind, body, roles=()):
         state = self.account(account_id)
         self.authorize(
             state,
@@ -186,11 +185,13 @@ class Control:
                 raise Conflict(
                     "Pause and reconcile both modes before registering strategies"
                 )
-            from src.control.packages import validate_package
+            from validation import validate_package
 
             if type(body["version"]) is not int:
                 raise Invalid("An explicit saved version is required")
-            package = self.strategy_source(body["strategy_id"], body["version"])
+            package = self.strategy_source.resolve(
+                body["strategy_id"], body["version"], actor, roles
+            )
             identity, _ = validate_package(package)
             for approved in state["approved_strategies"]:
                 if (approved["strategy_id"], approved["version"]) == (
@@ -206,7 +207,9 @@ class Control:
                         "Account supports at most 32 registered versions"
                     )
                 updated["approved_strategies"].append(identity)
-                extra["package#" + identity["source_digest"]] = package
+                extra["package#" + identity["source_digest"]] = self.strategy_source.snapshot(
+                    account_id, package
+                )
 
         elif kind == "configure":
             config = body["configuration"]
@@ -326,13 +329,7 @@ class Control:
         return state
 
     def sync(self, account_id, secret, body):
-        import hmac
-
-        state = self.account(account_id)
-        if not hmac.compare_digest(
-            hashlib.sha256(secret.encode()).hexdigest(), state["service_secret_hash"]
-        ):
-            raise Forbidden("Invalid service credential")
+        state = self.authenticate_service(account_id, secret)
 
         if (
             body["account_id"] != account_id
@@ -349,8 +346,7 @@ class Control:
             or (
                 body["approved_strategies"] != state["approved_strategies"]
                 and not (
-                    self.strategy_source is not None
-                    and isinstance(body["approved_strategies"], list)
+                    isinstance(body["approved_strategies"], list)
                     and all(
                         item in state["approved_strategies"]
                         for item in body["approved_strategies"]
@@ -399,10 +395,23 @@ class Control:
             "dashboard_ready": ready,
             "permission_ttl_seconds": self.ttl,
         }
-        if self.strategy_source is not None:
-            result["strategy_packages"] = {}
-            for item in state["approved_strategies"]:
-                package = self.store.get(account_id, "package#" + item["source_digest"])
-                if package is not None:
-                    result["strategy_packages"][item["source_digest"]] = package
+        result["approved_strategies"] = state["approved_strategies"]
         return result
+
+    def authenticate_service(self, account_id, secret):
+        import hmac
+        state = self.account(account_id)
+        if not hmac.compare_digest(
+            hashlib.sha256(secret.encode()).hexdigest(), state["service_secret_hash"]
+        ):
+            raise Forbidden("Invalid service credential")
+        return state
+
+    def download(self, account_id, secret, source_digest):
+        state = self.authenticate_service(account_id, secret)
+        if source_digest not in {item["source_digest"] for item in state["approved_strategies"]}:
+            raise Forbidden("Package is not registered to this account")
+        reference = self.store.get(account_id, "package#" + source_digest)
+        if reference is None:
+            raise Invalid("Registered snapshot missing")
+        return self.strategy_source.download(reference, source_digest)

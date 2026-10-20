@@ -4,6 +4,8 @@ import os
 from decimal import Decimal
 import base64
 from datetime import datetime, timezone
+from uuid import uuid4
+from boto3.dynamodb.types import TypeSerializer
 
 from hqg_permissions import (
     get_roles_from_event,
@@ -13,6 +15,7 @@ from hqg_permissions import (
 
 s3 = boto3.client("s3")
 dynamo = boto3.resource("dynamodb")
+dynamo_client = boto3.client("dynamodb")
 
 BUCKET = os.environ["ARTIFACT_BUCKET"]
 ARTIFACTS_TABLE = dynamo.Table(os.environ["STRATEGY_ARTIFACTS_TABLE"])
@@ -151,7 +154,7 @@ def upload_artifacts(strategy_id, body, event):
         artifact_id = f.get("artifactId")
         content = f.get("content")
         # Input validation
-        if not artifact_id or content is None:
+        if not isinstance(artifact_id, str) or not artifact_id or content is None:
             return _json(400, {"message": "Each file must include artifactId and content"})
         if not isinstance(content, str):
             return _json(400, {"message": f"Invalid content for {artifact_id}"})
@@ -163,43 +166,71 @@ def upload_artifacts(strategy_id, body, event):
 
         prepared_files.append({"artifact_id": artifact_id, "content_bytes": content_bytes})
     
-    uploaded = []
+    # Two records per file plus the publication pointer must fit one transaction.
+    artifact_ids = [item["artifact_id"] for item in prepared_files]
+    if len(artifact_ids) > 49 or len(set(artifact_ids)) != len(artifact_ids):
+        return _json(400, {"message": "Save 1-49 unique artifacts at a time"})
+    serializer = TypeSerializer()
+
+    def serialize(value):
+        return {key: serializer.serialize(val) for key, val in value.items()}
+
+    writes = []
     try:
         for item in prepared_files:
             artifact_id = item["artifact_id"]
-            content_bytes = item["content_bytes"]
-
-            key = f"{strategy_id}/v{new_version}/{artifact_id}"
-            s3.put_object(Bucket=BUCKET, Key=key, Body=content_bytes)
-            uploaded.append(key)
-
-            VERSIONS_TABLE.put_item(
-                Item={
-                    "strategy_artifact_id": f"{strategy_id}#{artifact_id}",
-                    "strategy_version": new_version,
-                    "s3_key": key,
-                    "created_at": now,
-                }
+            # Concurrent or failed saves must never overwrite a published object.
+            key = f"{strategy_id}/v{new_version}/{uuid4()}/{artifact_id}"
+            result = s3.put_object(Bucket=BUCKET, Key=key, Body=item["content_bytes"])
+            version = dict(
+                strategy_artifact_id=f"{strategy_id}#{artifact_id}",
+                strategy_version=new_version,
+                s3_key=key,
+                created_at=now,
             )
-
-            ARTIFACTS_TABLE.put_item(
-                Item={
-                    "strategy_id": strategy_id,
-                    "artifact_id": artifact_id,
-                    "latest_version": new_version,
-                }
+            if result.get("VersionId"):
+                version["s3_version_id"] = result["VersionId"]
+            writes.extend(
+                [
+                    {
+                        "Put": {
+                            "TableName": VERSIONS_TABLE.name,
+                            "Item": serialize(version),
+                            "ConditionExpression": "attribute_not_exists(strategy_artifact_id)",
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": ARTIFACTS_TABLE.name,
+                            "Item": serialize(
+                                dict(
+                                    strategy_id=strategy_id,
+                                    artifact_id=artifact_id,
+                                    latest_version=new_version,
+                                )
+                            ),
+                        }
+                    },
+                ]
             )
-
-        STRATEGIES_TABLE.update_item(
-            Key={"id": strategy_id},
-            UpdateExpression="SET current_version = :v, updated_at = :u",
-            ExpressionAttributeValues={
-                ":v": new_version,
-                ":u": now,
-            },
+        writes.append(
+            {
+                "Update": {
+                    "TableName": STRATEGIES_TABLE.name,
+                    "Key": serialize({"id": strategy_id}),
+                    "UpdateExpression": "SET current_version = :v, updated_at = :u",
+                    "ConditionExpression": "current_version = :old",
+                    "ExpressionAttributeValues": serialize(
+                        {":v": new_version, ":u": now, ":old": current_version}
+                    ),
+                }
+            }
         )
-    except Exception as exc:
-        return _json(500, {"message": f"Failed to upload artifacts: {exc}"})
+        dynamo_client.transact_write_items(TransactItems=writes)
+    except dynamo_client.exceptions.TransactionCanceledException:
+        return _json(409, {"message": "Strategy changed; refresh before saving"})
+    except Exception:
+        return _json(503, {"message": "Artifact save unavailable"})
 
     return _json(200, {"ok": True, "version": new_version, "artifacts": [f.get("artifactId") for f in files]})
 
