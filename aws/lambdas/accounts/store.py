@@ -30,8 +30,7 @@ class DynamoStore:
                 },
             }
 
-            if record == "state":
-                put["Item"]["generation"] = {"N": str(state["generation"])}
+            if record == "state" and generation is not None:
                 put.update(
                     ConditionExpression="generation = :old",
                     ExpressionAttributeValues={":old": {"N": str(generation)}},
@@ -40,6 +39,8 @@ class DynamoStore:
             else:
                 put["ConditionExpression"] = "attribute_not_exists(account_id)"
 
+            if record == "state":
+                put["Item"]["generation"] = {"N": str(state["generation"])}
             writes.append({"Put": put})
 
         try:
