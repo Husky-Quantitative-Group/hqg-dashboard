@@ -4,6 +4,8 @@ import urllib.request
 
 from control import Control, Conflict, Forbidden, Invalid
 from store import DynamoStore
+from packages import StrategySource
+from hqg_permissions import get_roles_from_event
 
 
 def readiness():
@@ -63,6 +65,9 @@ def service():
         _service = Control(
             DynamoStore(boto3.client("dynamodb"), os.environ["ACCOUNTS_TABLE"]),
             readiness,
+            strategy_source=StrategySource(
+                boto3.resource("dynamodb"), boto3.client("s3"), os.environ
+            ),
         )
     return _service
 
@@ -79,24 +84,20 @@ def handle(event, api):
         actor = authorizer.get("lambda", authorizer).get("netid")
         body = json.loads(event.get("body") or "{}")
 
-        if route == "GET /internal/v1/accounts/{accountId}/readiness":
-            import hashlib
-            import hmac
-
-            state = api.account(account_id)
-            token = event.get("headers", {}).get("authorization", "")
-            if not token.startswith("Bearer ") or not hmac.compare_digest(
-                hashlib.sha256(token[7:].encode()).hexdigest(),
-                state["service_secret_hash"],
-            ):
-                raise Forbidden("Service authentication required")
-            result = {"application": "hqg-account-control-ready"}
-
-        elif route == "POST /internal/v1/accounts/{accountId}/sync":
+        if route.startswith(("GET /internal/", "POST /internal/")):
             token = event.get("headers", {}).get("authorization", "")
             if not token.startswith("Bearer "):
                 raise Forbidden("Service authentication required")
-            result = api.sync(account_id, token[7:], body)
+            secret = token[7:]
+            if route == "GET /internal/v1/accounts/{accountId}/readiness":
+                api.authenticate_service(account_id, secret)
+                result = {"application": "hqg-account-control-ready"}
+            elif route == "POST /internal/v1/accounts/{accountId}/sync":
+                result = api.sync(account_id, secret, body)
+            elif route == "GET /internal/v1/accounts/{accountId}/strategy-packages/{sourceDigest}":
+                result = api.download(account_id, secret, event["pathParameters"]["sourceDigest"])
+            else:
+                return response(404, {"message": "Not found"})
 
         elif route == "GET /accounts/{accountId}/status":
             result = api.status(account_id, actor)
@@ -115,6 +116,7 @@ def handle(event, api):
                     else "register" if route.endswith("/strategies") else "action"
                 ),
                 body,
+                roles=get_roles_from_event(event),
             )
 
         else:
