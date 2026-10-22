@@ -1,7 +1,7 @@
 """One DynamoDB table where each accepted change is a conditional transaction."""
 
 import json
-from control import Conflict
+from control import ConcurrentUpdate
 
 
 class DynamoStore:
@@ -46,4 +46,4 @@ class DynamoStore:
         try:
             self.client.transact_write_items(TransactItems=writes)
         except self.client.exceptions.TransactionCanceledException as exc:
-            raise Conflict("Concurrent account update") from exc
+            raise ConcurrentUpdate("Concurrent account update") from exc

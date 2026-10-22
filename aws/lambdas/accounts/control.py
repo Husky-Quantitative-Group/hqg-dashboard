@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import time
+from functools import wraps
 from uuid import UUID
 
 MODES = ("paper", "live")
@@ -22,6 +23,24 @@ def digest(value):
 
 class Conflict(Exception):
     pass
+
+
+class ConcurrentUpdate(Conflict):
+    pass
+
+
+def retry_concurrent_updates(operation):
+    @wraps(operation)
+    def wrapped(*args, **kwargs):
+        # Re-read and revalidate after a lost conditional write; limit to three attempts.
+        for attempt in range(3):
+            try:
+                return operation(*args, **kwargs)
+            except ConcurrentUpdate:
+                if attempt == 2:
+                    raise
+
+    return wrapped
 
 
 class Invalid(Exception):
@@ -147,6 +166,10 @@ class Control:
         )
 
     def change(self, account_id, actor, kind, body, roles=()):
+        return self._change(account_id, actor, kind, body, roles, {})
+
+    @retry_concurrent_updates
+    def _change(self, account_id, actor, kind, body, roles, registration):
         state = self.account(account_id)
         self.authorize(
             state,
@@ -189,9 +212,11 @@ class Control:
 
             if type(body["version"]) is not int:
                 raise Invalid("An explicit saved version is required")
-            package = self.strategy_source.resolve(
-                body["strategy_id"], body["version"], actor, roles
-            )
+            if "package" not in registration:
+                registration["package"] = self.strategy_source.resolve(
+                    body["strategy_id"], body["version"], actor, roles
+                )
+            package = registration["package"]
             identity, _ = validate_package(package)
             for approved in state["approved_strategies"]:
                 if (approved["strategy_id"], approved["version"]) == (
@@ -207,9 +232,11 @@ class Control:
                         "Account supports at most 32 registered versions"
                     )
                 updated["approved_strategies"].append(identity)
-                extra["package#" + identity["source_digest"]] = self.strategy_source.snapshot(
-                    account_id, package
-                )
+                if "snapshot" not in registration:
+                    registration["snapshot"] = self.strategy_source.snapshot(
+                        account_id, package
+                    )
+                extra["package#" + identity["source_digest"]] = registration["snapshot"]
 
         elif kind == "configure":
             config = body["configuration"]
@@ -329,6 +356,12 @@ class Control:
         return state
 
     def sync(self, account_id, secret, body):
+        self.authenticate_service(account_id, secret)
+        ready = self.readiness()
+        return self._sync(account_id, secret, body, ready)
+
+    @retry_concurrent_updates
+    def _sync(self, account_id, secret, body, ready):
         state = self.authenticate_service(account_id, secret)
 
         if (
@@ -372,7 +405,6 @@ class Control:
             ):
                 raise Invalid("Invalid observed mode")
 
-        ready = self.readiness()
         updated = copy.deepcopy(state)
         updated.update(
             boot_id=body["boot_id"],
