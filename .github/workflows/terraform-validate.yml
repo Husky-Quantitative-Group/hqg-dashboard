@@ -6,6 +6,8 @@ on:
     paths:
       - "infra/**"
       - "aws/**"
+      - "tests/**"
+      - "requirements-test.txt"
       - ".github/workflows/terraform-validate.yml"
   workflow_dispatch:
 
@@ -35,6 +37,12 @@ jobs:
 
       - name: Build Lambda layers
         run: bash scripts/build_layers.sh
+
+      - name: Test Lambda handlers and deployment imports
+        working-directory: .
+        run: |
+          pip install -r requirements-test.txt
+          pytest tests
 
       - name: Check formatting
         run: terraform fmt -check -recursive

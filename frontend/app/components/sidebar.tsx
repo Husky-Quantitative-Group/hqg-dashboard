@@ -65,6 +65,7 @@ export default function Sidebar() {
   // Navigation items
   const navItems: NavItem[] = [
     { label: "Home", to: "/", icon: "home" },
+    { label: "Engine", to: "/engine", icon: "settings_power" },
     { label: "Strategies", to: "/strategies", icon: "tactic" },
     ...(hasRole("FUND") || hasRole("ADMIN") ? [{ label: "Portfolio", to: "/portfolio", icon: "work" }] : []),
     ...(hasRole("FUND") || hasRole("ADMIN") ? [{ label: "Leaderboard", to: "/leaderboard", icon: "leaderboard" }] : []),

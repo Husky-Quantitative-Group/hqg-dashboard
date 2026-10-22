@@ -4,6 +4,9 @@ This repo has two main parts:
 - `frontend/` for the React Router UI
 - `infra/` + `aws/` for the AWS infrastructure and Lambda APIs
 
+Interactive development requires the deployed AWS backend and real CAS login.
+For account-free automated tests, see the [offline test guide](../../hqg-engine/docs/offline-testing.md).
+
 ## Prerequisites
 - Node.js + npm (LTS) for the frontend: https://nodejs.org/en/download
 - Terraform (>= 1.5) for infra work: https://developer.hashicorp.com/terraform/downloads
@@ -22,10 +25,13 @@ Edit `infra/dev.tfvars` with your values:
 - `project`, `env`, `aws_region`
 - `frontend_base_url` (CORS / allowed origin)
 
+Use development resource names and a separate Terraform state/backend from
+production. Changing `env` in tfvars alone does not separate state.
+
 ### Build Lambda Layers
 This repository uses AWS Lambda Layers to manage Python dependencies that are shared across Lambdas (for example, JWT libraries).
 
-This step is only required when you add/update any lambda layers in `/aws/lambda_layers`.
+Build the layers before Terraform validation or deployment:
 
 ```bash
 bash infra/scripts/build_layers.sh
@@ -148,3 +154,49 @@ If you're running the dashboard locally, set the backtester URL in `frontend/.en
 ```ini
 BACKTESTER_URL=http://localhost:8005
 ```
+
+## Engine accounts and readiness
+
+Run these commands from the dashboard repo root after deploying the backend.
+Set a service secret in `DASHBOARD_SYNC_SECRET`, choose account and engine UUIDs,
+and provision the account using AWS credentials with access to the account table:
+
+```bash
+python aws/lambdas/accounts/admin.py --table <engine_accounts_table> provision \
+  --account-id <account-UUID> --engine-id <engine-UUID> --netid <your-NetID>
+```
+
+This creates the account record; it does not start an engine. Existing accounts
+are not overwritten. Accounts start paused; add `--allow-live` to grant live control.
+
+Configure these Terraform inputs:
+
+- `engine_frontend_readiness_url`: the deployed frontend's HTTPS URL.
+- `engine_control_readiness_url`: the HTTPS API URL, including its stage and
+  `/internal/v1/accounts/<account-UUID>/readiness`.
+- `engine_control_readiness_token`: the same service secret, supplied through
+  protected Terraform inputs. Terraform state contains this secret.
+
+Keep `frontend_base_url` set to the login/CORS origin. Missing or failed readiness
+checks prevent execution.
+
+Start the engine using the [engine README](../../hqg-engine/README.md), with the same
+account UUID, engine UUID and service secret. Sign in through CAS and enter the
+account UUID in the Engine page; `ENGINE_ACCOUNT_ID` is an optional default.
+With both modes paused and reconciled, register a saved strategy version, wait for
+acknowledgement, configure allocations, and explicitly Resume the intended mode.
+
+Before replacing a provider, stop the old process and wait at least 15 seconds
+after its last heartbeat, then run:
+
+```bash
+python aws/lambdas/accounts/admin.py --table <engine_accounts_table> authorize-replacement \
+  --account-id <account-UUID> --actor <maintainer-NetID>
+```
+
+Configuration and registered packages are retained. Start the replacement, wait
+for reconciliation and explicitly Resume again.
+
+Stop/reconcile both modes before `docker compose down`, which retains history.
+`down -v` and Terraform destroy delete data. Legacy strategy data is not migrated
+automatically; manually export and re-upload any source you want to retain.
