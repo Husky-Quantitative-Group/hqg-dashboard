@@ -35,8 +35,8 @@ resource "aws_iam_role_policy_attachment" "accounts_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-resource "aws_iam_role_policy" "accounts_storage" {
-  role = aws_iam_role.accounts_lambda.id
+resource "aws_iam_policy" "accounts_storage" {
+  name = "${local.name_prefix}-accounts-storage"
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -63,6 +63,12 @@ resource "aws_iam_role_policy" "accounts_storage" {
       Resource = "${aws_s3_bucket.strategy_artifacts.arn}/engine-packages/*"
     }]
   })
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "accounts_storage" {
+  role       = aws_iam_role.accounts_lambda.name
+  policy_arn = aws_iam_policy.accounts_storage.arn
 }
 
 variable "engine_control_readiness_url" {
