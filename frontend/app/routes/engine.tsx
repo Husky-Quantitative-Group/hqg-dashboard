@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { coreApi } from "~/api/core";
 import {
     fetchStrategies,
@@ -56,7 +56,9 @@ export default function EngineControl() {
     const [accountId, setAccountId] = useState(
         import.meta.env.ENGINE_ACCOUNT_ID ?? "",
     );
-    const [status, setStatus] = useState<Status | null>(null);
+    const [accountStatus, setStatus] = useState<Status | null>(null);
+    const status = accountStatus?.account_id === accountId ? accountStatus : null;
+    const accountGeneration = useRef(0);
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
     const [enableLive, setEnableLive] = useState(false);
@@ -72,6 +74,7 @@ export default function EngineControl() {
         method: "post" | "put";
     } | null>(null);
     const refresh = useCallback(async () => {
+        const generation = accountGeneration.current;
         // Check for invalid account ID, https://stackoverflow.com/a/13653180/10629172
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(accountId)) {
             setStatus(null);
@@ -82,14 +85,19 @@ export default function EngineControl() {
             const { data } = await coreApi.get<Status>(
                 `/accounts/${accountId}/status`,
             );
+            if (generation !== accountGeneration.current) return;
             setStatus(data);
             try {
-                setSavedStrategies(await fetchStrategies());
+                const strategies = await fetchStrategies();
+                if (generation !== accountGeneration.current) return;
+                setSavedStrategies(strategies);
             } catch (err) {
+                if (generation !== accountGeneration.current) return;
                 setSavedStrategies([]);
                 setError(message(err));
             }
         } catch (err) {
+            if (generation !== accountGeneration.current) return;
             setStatus(null);
             setError(message(err));
         }
@@ -99,7 +107,11 @@ export default function EngineControl() {
         setPendingRequest(null);
         void refresh();
         const timer = setInterval(refresh, 2000);
-        return () => clearInterval(timer);
+        return () => {
+            clearInterval(timer);
+            // Invalidate callbacks from the previous account, including mutations.
+            accountGeneration.current += 1;
+        };
     }, [refresh]);
     useEffect(() => {
         if (!status) return;
@@ -123,6 +135,8 @@ export default function EngineControl() {
     }, [accountId, status?.configuration_revision]);
 
     async function send(request: NonNullable<typeof pendingRequest>) {
+        if (!request.path.startsWith(`/accounts/${accountId}/`)) return;
+        const generation = accountGeneration.current;
         setBusy(true);
         setError("");
         try {
@@ -131,9 +145,11 @@ export default function EngineControl() {
                 method: request.method,
                 data: request.body,
             });
+            if (generation !== accountGeneration.current) return;
             setPendingRequest(null);
             await refresh();
         } catch (err) {
+            if (generation !== accountGeneration.current) return;
             // Preserve the exact key and payload after a lost response.
             setPendingRequest(request);
             setError(message(err));
