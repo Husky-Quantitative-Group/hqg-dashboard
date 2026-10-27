@@ -232,6 +232,51 @@ def test_registration_limit_and_unversioned_bucket_fail_closed(aws):
         source.snapshot(ACCOUNT, PACKAGE)
 
 
+@pytest.mark.parametrize(
+    "image_digest, status_code", [(None, 200), ("sha256:" + "a" * 64, 400)]
+)
+def test_provisioned_account_sync_requires_matching_image_digest(
+    aws, image_digest, status_code
+):
+    store, _, api = services(aws)
+    initial = store.get(ACCOUNT, "state")
+    assert initial["image_digest"] is None
+    report = dict(
+        account_id=ACCOUNT,
+        engine_instance_id=ENGINE,
+        boot_id=str(uuid4()),
+        request_id=str(uuid4()),
+        image_digest=image_digest,
+        approved_strategies=[],
+        control_version=0,
+        configuration_digest=None,
+        modes={
+            mode: dict(
+                incident_id=str(uuid4()),
+                state="unconfigured",
+                gate_open=False,
+                reconciled=True,
+            )
+            for mode in ("paper", "live")
+        },
+    )
+    request = event(report, "POST /internal/v1/accounts/{accountId}/sync")
+    request["headers"] = {"authorization": "Bearer test-secret"}
+
+    result = main.handle(request, api)
+
+    assert result["statusCode"] == status_code
+    state = store.get(ACCOUNT, "state")
+    if status_code == 400:
+        assert json.loads(result["body"]) == {
+            "message": "Invalid sync contract or installed image"
+        }
+        assert state == initial
+    else:
+        assert state["observed"] == report
+        assert state["boot_id"] == report["boot_id"]
+
+
 def test_provision_duplicates_and_safe_replacement(aws):
     store, _, _ = services(aws)
     initial = store.get(ACCOUNT, "state")
