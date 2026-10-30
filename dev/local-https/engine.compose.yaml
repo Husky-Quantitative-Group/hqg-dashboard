@@ -1,0 +1,15 @@
+# Local development only: makes hqg-engine's provider trust the HTTPS proxy in
+# ./compose.yaml. The engine picks this file up through two settings in its .env:
+#   COMPOSE_FILE=compose.yaml:../hqg-dashboard/dev/local-https/engine.compose.yaml
+#   DASHBOARD_SYNC_URL=https://hqg-dashboard-https
+services:
+  provider-api:
+    environment:
+      # The CAs the provider's HTTPS client trusts: the public ones and the local one.
+      SSL_CERT_FILE: /etc/hqg-dashboard-https/ca-bundle.pem
+    volumes:
+      - hqg-dashboard-https-ca:/etc/hqg-dashboard-https:ro
+
+volumes:
+  hqg-dashboard-https-ca:
+    external: true

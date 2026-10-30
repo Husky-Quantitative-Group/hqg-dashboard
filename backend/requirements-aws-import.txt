@@ -1,0 +1,3 @@
+# Only for the one-time `python -m hqg_dashboard import-aws`; the service never uses AWS.
+-r requirements.txt
+boto3==1.43.122

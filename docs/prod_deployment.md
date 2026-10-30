@@ -1,208 +1,244 @@
 # Prod Deployment — HQG Dashboard
 
-Use this runbook to deploy `prod` from a fresh clone.
+Use this runbook to deploy `prod` on the HQG VPS from a fresh clone. The API and its
+PostgreSQL database run with Docker Compose, like the other HQG services; nginx on
+the host terminates TLS. The frontend stays on GitHub Pages.
+
+If an AWS deployment holds the data you want to keep, follow
+[aws_migration.md](./aws_migration.md) alongside this runbook.
 
 ## 1) Clone the repo
 
 ```bash
+cd /home/software
 git clone https://github.com/Husky-Quantitative-Group/hqg-dashboard.git
 cd hqg-dashboard
 ```
 
-## 2) Install required tools
-
-- AWS CLI
-- Terraform `>= 1.5`
-- Python 3 + pip (for seed script)
-- IAM principal used by `hqg-prod` must include permissions in `infra/deploy_iam_policy.json`
-
-## 3) Create and verify AWS profile
-
-Create profile:
+## 2) Configure
 
 ```bash
-aws configure --profile hqg-prod
-aws configure set region us-east-1 --profile hqg-prod
+cp .env.example .env
+chmod 600 .env
 ```
 
-Verify credentials:
+Edit `.env`:
+
+- `POSTGRES_PASSWORD`: letters and digits only, e.g. `openssl rand -hex 24`.
+- `FRONTEND_BASE_URL=https://dashboard.uconnquant.com` and
+  `PUBLIC_API_URL=https://api.uconnquant.com`. Keeping the AWS API's hostname means
+  the frontend and the CAS service URL (`https://api.uconnquant.com/auth/callback`)
+  stay the same.
+- The engine readiness settings, once an engine account exists (see
+  [Engine accounts](#engine-accounts)).
+- The proxy variables, if the VPS needs a proxy for outbound HTTPS.
+
+## 3) Start
 
 ```bash
-AWS_PROFILE=hqg-prod aws sts get-caller-identity
+docker network create hqg_network 2>/dev/null || true
+docker-compose up -d --build
+curl -s http://127.0.0.1:5000/health
 ```
 
-## 4) Create Terraform backend resources (one-time in prod account)
+The API applies database migrations and creates its session signing key when it
+starts. It listens on `127.0.0.1:5000` only (`API_PORT` changes the host port).
 
-```bash
-export AWS_PROFILE=hqg-prod
-export AWS_REGION=us-east-1
-export ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
-export STATE_BUCKET="hqg-prod-terraform-state-${ACCOUNT_ID}"
-export LOCK_TABLE="hqg-prod-terraform-locks"
+## 4) nginx and TLS
 
-aws s3api create-bucket --bucket "${STATE_BUCKET}" --region "${AWS_REGION}"
-aws s3api put-bucket-versioning \
-  --bucket "${STATE_BUCKET}" \
-  --versioning-configuration Status=Enabled
+Add a server block for the API, e.g. `/etc/nginx/sites-available/hqg-dashboard-api`,
+enable it and reload nginx:
 
-aws dynamodb create-table \
-  --table-name "${LOCK_TABLE}" \
-  --attribute-definitions AttributeName=LockID,AttributeType=S \
-  --key-schema AttributeName=LockID,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST \
-  --region "${AWS_REGION}"
-```
+```nginx
+# API Gateway's limits: 50 requests per second, bursts of 25.
+limit_req_zone $server_name zone=hqg_dashboard_api:1m rate=50r/s;
 
-If these already exist, AWS will return `BucketAlreadyOwnedByYou` / `ResourceInUseException`; that is fine, continue.
+server {
+    listen 80;
+    server_name api.uconnquant.com;
+    return 301 https://$host$request_uri;
+}
 
-## 5) Create local backend config in `infra/`
+server {
+    listen 443 ssl;
+    server_name api.uconnquant.com;
 
-`infra/backend.tf`:
+    ssl_certificate     /etc/letsencrypt/live/api.uconnquant.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.uconnquant.com/privkey.pem;
 
-```
-terraform {
-  backend "s3" {}
+    # Backtest uploads are up to 25 MiB (BACKTEST_UPLOAD_MAX_BYTES).
+    client_max_body_size 30m;
+
+    limit_req zone=hqg_dashboard_api burst=25 nodelay;
+    limit_req_status 429;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 }
 ```
 
-`infra/backend.hcl`:
+Issue the certificate the same way as for the other HQG hostnames, e.g.
+`sudo certbot certonly --nginx -d api.uconnquant.com`.
 
+In Squarespace DNS, replace the `api` CNAME (the API Gateway target) with a record for
+the VPS. If the VPS is only reachable through the university's reverse proxy, ITS has
+to forward `api.uconnquant.com` as well. Without a new hostname, the API can instead
+be served under a path of an existing one:
+
+```nginx
+# Inside the existing server block of platform.uconnquant.com:
+location /dashboard-api/ {
+    proxy_pass http://127.0.0.1:5000/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    client_max_body_size 30m;
+}
 ```
-bucket         = "hqg-prod-terraform-state-<your-account-id>"
-key            = "hqg-prod-dashboard/prod/terraform.tfstate"
-region         = "us-east-1"
-dynamodb_table = "hqg-prod-terraform-locks"
-encrypt        = true
-```
 
-Replace `<your-account-id>` with the account from step 4.
+Then use `https://platform.uconnquant.com/dashboard-api` as `PUBLIC_API_URL` and as
+every URL of the API below. CAS must accept the new service URL,
+`https://platform.uconnquant.com/dashboard-api/auth/callback`.
 
-In the original prod version, we dropped the account id.
+## 5) Point the frontend and services at the API
 
-## 6) Build Lambda layer artifacts
+- Frontend: the GitHub repository variable `CORE_API_URL` (Settings → Secrets and
+  variables → Actions → Variables) is the API's URL, `https://api.uconnquant.com`.
+  `BACKTESTER_URL` and `ENGINE_URL` are unchanged. Pushing to `prod` deploys the
+  frontend as before.
+- hqg-platform `.env`:
+  - `HQG_DASH_JWKS_URL=https://api.uconnquant.com/.well-known/jwks.json`
+  - `DASHBOARD_CORE_URL=http://hqg-dashboard-api:5000`, for the control readiness
+    check. Both containers are on `hqg_network`, and the platform makes this request
+    without a proxy.
+- hqg-backtester `.env`: `HQG_DASH_JWKS_URL=https://api.uconnquant.com/.well-known/jwks.json`
+- hqg-engine `.env`: `DASHBOARD_SYNC_URL=https://api.uconnquant.com`. The engine
+  requires HTTPS, so it connects through nginx.
 
-From repo root:
+Restart each service after changing its `.env`.
+
+## 6) Verify
 
 ```bash
-bash infra/scripts/build_layers.sh
+curl -i https://api.uconnquant.com/health
+curl -s https://api.uconnquant.com/.well-known/jwks.json
 ```
 
-## 7) Configure prod tfvars
+Then sign in at https://dashboard.uconnquant.com.
 
-Create/edit `infra/prod.tfvars`:
-
-```hcl
-project                    = "hqg"
-env                        = "prod"
-aws_region                 = "us-east-1"
-frontend_base_url          = "https://dashboard.uconnquant.com"
-api_custom_domain_name     = "api.uconnquant.com"
-api_custom_domain_activate = false
-```
-
-## 8) Initialize Terraform
+## 7) Seed initial data (first deploy only, without an AWS import)
 
 ```bash
-AWS_PROFILE=hqg-prod terraform -chdir=infra init -reconfigure -backend-config=backend.hcl
+docker-compose exec api python -m hqg_dashboard seed --admin-netid <your-netid> \
+  --backtester-url http://hqg-backtester:8005
+# Optional: --skip-backtests instead of --backtester-url
 ```
 
-## 9) One-time custom domain + CNAME setup (do once)
+## 8) Deploying updates
 
-This section is only for initial setup of `api.uconnquant.com`. After this is done, use step 10 for normal deploys.
-
-Run first apply with `api_custom_domain_activate = false` to request the ACM cert:
+The hqg-deployment scripts work unchanged for this repo:
 
 ```bash
-AWS_PROFILE=hqg-prod terraform -chdir=infra plan -var-file=prod.tfvars
-AWS_PROFILE=hqg-prod terraform -chdir=infra apply -var-file=prod.tfvars
+cd /home/software/hqg-dashboard
+git pull
+docker network create hqg_network 2>/dev/null || true
+docker-compose down
+docker-compose up -d --build --remove-orphans
+docker image prune -f
 ```
 
-Get ACM validation records:
+The database lives in the `hqg-dashboard-postgres-data` volume, which `down` keeps.
+`docker-compose down -v` deletes it.
+
+## Operations
+
+### Logs and database shell
 
 ```bash
-terraform -chdir=infra output -json api_custom_domain_validation_records
+docker-compose logs -f api
+docker-compose exec db psql -U hqg hqg_dashboard
+docker-compose exec api python -m hqg_dashboard --help
 ```
 
-In Squarespace DNS, add one CNAME per record:
+### Backups
 
-- Type: `CNAME`
-- Host: `record_name` (if Squarespace expects relative host, drop `.uconnquant.com` and trailing `.`)
-- Data: `record_value` (trailing `.` is optional)
-
-Wait for cert status `ISSUED` in ACM (`us-east-1`):
+Back up the database regularly, e.g. daily from cron:
 
 ```bash
-AWS_PROFILE=hqg-prod aws acm list-certificates --region us-east-1
-AWS_PROFILE=hqg-prod aws acm describe-certificate --region us-east-1 --certificate-arn <arn>
+docker-compose exec -T db pg_dump -U hqg -d hqg_dashboard --format=custom \
+  > /home/software/backups/hqg-dashboard-$(date +%F).dump
 ```
 
-Then set in `infra/prod.tfvars`:
-
-```hcl
-api_custom_domain_activate = true
-```
-
-Apply again:
+Restore into a running stack with:
 
 ```bash
-AWS_PROFILE=hqg-prod terraform -chdir=infra apply -var-file=prod.tfvars
+docker-compose exec -T db pg_restore -U hqg -d hqg_dashboard --clean --if-exists \
+  < /home/software/backups/hqg-dashboard-<date>.dump
 ```
 
-Get API Gateway domain target:
+A backup contains the session signing keys, so keep it as private as `.env`.
+
+### Session signing keys
+
+The API signs session cookies with RSA keys kept in the database and published at
+`/.well-known/jwks.json`. It starts a new key on the first check of each month, as
+the AWS key rotator did, and keeps publishing the previous key until the sessions it
+signed have expired, so rotation signs nobody out.
+
+To start a new key immediately:
 
 ```bash
-AWS_PROFILE=hqg-prod terraform -chdir=infra output -raw api_custom_domain_target
+docker-compose exec api python -m hqg_dashboard rotate-keys
 ```
 
-Create final API DNS record in Squarespace:
-
-- Type: `CNAME`
-- Host: `api`
-- Data: `<value from api_custom_domain_target>`
-
-## 10) Normal prod deploy (recurring)
-
-After one-time domain setup is complete, use this for normal deploys:
+Sessions signed with older keys stay valid until they expire (24 hours). To end them
+at once, e.g. after a leak, also delete the older keys:
 
 ```bash
-AWS_PROFILE=hqg-prod terraform -chdir=infra plan -var-file=prod.tfvars
-AWS_PROFILE=hqg-prod terraform -chdir=infra apply -var-file=prod.tfvars
+docker-compose exec db psql -U hqg hqg_dashboard -c \
+  "DELETE FROM jwt_signing_keys WHERE created_at < (SELECT max(created_at) FROM jwt_signing_keys)"
 ```
 
+### Admins
 
-## 11) Verify endpoint
+Admins manage members, roles and access requests in the dashboard. The first admin of
+a new install comes from `seed --admin-netid` (step 7); an AWS import keeps the
+existing admins.
+
+### Engine accounts
+
+Choose account and engine UUIDs and a service secret (`openssl rand -hex 32`), and
+set in `.env`:
+
+- `CONTROL_READINESS_TOKEN`: the service secret.
+- `CONTROL_READINESS_URL=https://platform.uconnquant.com/control/accounts/<account-UUID>/readiness`
+- `WEBSITE_READINESS_URL=https://dashboard.uconnquant.com`
+
+The API checks both URLs directly, never through a proxy, as the Lambda did, so the
+VPS must reach them without one. Missing or failed checks prevent execution.
+
+Apply the settings and provision the account:
 
 ```bash
-dig +short api.uconnquant.com CNAME
-curl -i https://api.uconnquant.com
+docker-compose up -d
+docker-compose exec api python -m hqg_dashboard provision-account \
+  --secret-env CONTROL_READINESS_TOKEN \
+  --account-id <account-UUID> --engine-id <engine-UUID> --netid <your-NetID>
+# Optional: --allow-live
 ```
 
-## 12) Seed initial data (first deploy only)
+Give the engine the same account UUID, engine UUID and secret (`DASHBOARD_SYNC_SECRET`).
+Before replacing a provider, stop the old process, wait at least 15 seconds after its
+last heartbeat, then run:
 
 ```bash
-python3 -m pip install --user boto3
-
-AWS_PROFILE=hqg-prod python3 infra/seed/main.py \
-  --bucket "$(terraform -chdir=infra output -raw artifacts_bucket_name)" \
-  --backtests-bucket "$(terraform -chdir=infra output -raw backtests_bucket_name)" \
-  --strategies-table "$(terraform -chdir=infra output -raw strategies_table_name)" \
-  --artifacts-table "$(terraform -chdir=infra output -raw strategy_artifacts_table_name)" \
-  --artifact-versions-table "$(terraform -chdir=infra output -raw strategy_artifact_versions_table_name)" \
-  --strategy-backtests-table "$(terraform -chdir=infra output -raw strategy_backtests_table_name)" \
-  --backtester-url "http://localhost:8005" \
-  --users-table "$(terraform -chdir=infra output -raw users_table_name)" \
-  --admin-netid "<your-netid>" \
-  --region us-east-1
-# Optional: --skip-backtests
+docker-compose exec api python -m hqg_dashboard authorize-replacement \
+  --account-id <account-UUID> --actor <maintainer-NetID>
 ```
 
-Add `--skip-backtests` to the command if you want to seed strategies/artifacts/users without generating backtest runs.
-
-## 13) Frontend wiring (if needed)
-
-If your frontend should call this prod API directly (without local Vite proxy), set:
-
-```ini
-CORE_API_URL=https://api.uconnquant.com
-IS_PROD=1
-```
+See [local_setup.md](./local_setup.md#engine-accounts-and-readiness) for the full
+account workflow.

@@ -1,0 +1,69 @@
+# The dashboard API and its PostgreSQL database. The frontend is a static site,
+# published to GitHub Pages by .github/workflows/frontend.yml.
+services:
+  db:
+    image: postgres:17
+    container_name: hqg-dashboard-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hqg_dashboard}
+      POSTGRES_USER: ${POSTGRES_USER:-hqg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal
+
+  api:
+    build:
+      context: backend
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+        http_proxy: ${HTTP_PROXY:-}
+        https_proxy: ${HTTPS_PROXY:-}
+        no_proxy: ${NO_PROXY:-}
+    container_name: hqg-dashboard-api
+    env_file:
+      - .env
+    environment:
+      # The database's container name, not its service name: the api is also on
+      # hqg_network, where other projects run containers named "db".
+      DATABASE_URL: postgresql://${POSTGRES_USER:-hqg}:${POSTGRES_PASSWORD}@hqg-dashboard-db:5432/${POSTGRES_DB:-hqg_dashboard}
+    ports:
+      # Loopback only: nginx on the host terminates TLS and proxies to it.
+      - "127.0.0.1:${API_PORT:-5000}:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request as r; r.build_opener(r.ProxyHandler({})).open('http://localhost:5000/health', timeout=5)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+      - hqg_network
+
+volumes:
+  postgres-data:
+    # Named explicitly, so the data does not depend on the checkout's directory name.
+    name: hqg-dashboard-postgres-data
+
+networks:
+  internal:
+  hqg_network:
+    external: true

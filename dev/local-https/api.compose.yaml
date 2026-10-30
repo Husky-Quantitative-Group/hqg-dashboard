@@ -1,0 +1,15 @@
+# Local development only: makes the dashboard API trust the HTTPS proxy in
+# ./compose.yaml, so the engine readiness checks can use it. Enabled through the repo's
+# .env:
+#   COMPOSE_FILE=docker-compose.yml:dev/local-https/api.compose.yaml
+services:
+  api:
+    environment:
+      # The CAs the API's HTTPS requests trust: the public ones and the local one.
+      SSL_CERT_FILE: /etc/hqg-dashboard-https/ca-bundle.pem
+    volumes:
+      - hqg-dashboard-https-ca:/etc/hqg-dashboard-https:ro
+
+volumes:
+  hqg-dashboard-https-ca:
+    external: true

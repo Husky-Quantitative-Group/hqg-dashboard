@@ -2,7 +2,11 @@
 .vscode
 node_modules
 
-aws/lambda_layers/*/build/
-
 __pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# `terraform output -json` of the AWS deployment, for the one-time import.
+aws-outputs.json
 .codex

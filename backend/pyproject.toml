@@ -1,0 +1,27 @@
+[project]
+name = "hqg-dashboard"
+version = "2.0.0"
+description = "HQG dashboard API: FastAPI on PostgreSQL"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [
+    # Kept as they were in the AWS deployment, in step with the engine's copies.
+    "hqg_dashboard/accounts/control.py",
+    "hqg_dashboard/accounts/validation.py",
+    # Sample strategies, seeded verbatim.
+    "seed",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["hqg_dashboard", "support"]

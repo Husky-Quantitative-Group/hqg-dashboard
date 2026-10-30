@@ -2,78 +2,64 @@
 
 This repo has two main parts:
 - `frontend/` for the React Router UI
-- `infra/` + `aws/` for the AWS infrastructure and Lambda APIs
+- `backend/` for the API and its PostgreSQL database
 
-Interactive development requires the deployed AWS backend and real CAS login.
-For account-free automated tests, see the [offline test guide](../../hqg-engine/docs/offline-testing.md).
+Sign-in uses the real UConn CAS server. For account-free automated tests, see
+[Tests](#4-tests) and the [offline test guide](../../hqg-engine/docs/offline-testing.md).
 
 ## Prerequisites
-- Node.js + npm (LTS) for the frontend: https://nodejs.org/en/download
-- Terraform (>= 1.5) for infra work: https://developer.hashicorp.com/terraform/downloads
-- AWS credentials for Terraform: https://developer.hashicorp.com/terraform/language/providers/aws#authentication
+- Docker with Compose: https://docs.docker.com/get-started/get-docker/
+- Node.js 20 + npm for the frontend: https://nodejs.org/en/download
+- Python 3.12, only to run the API or its tests outside Docker
 
-## 1) Infra (AWS / Terraform)
+## 1) API and database
 
-If you already have a deployed API, you can skip this section and just set `CORE_API_URL` in `frontend/.env`.
-
-### Create your tfvars file
+Make a new `.env` file in the repo root:
 ```bash
-cp infra/example.tfvars infra/dev.tfvars
+cp .env.example .env
 ```
 
-Edit `infra/dev.tfvars` with your values:
-- `project`, `env`, `aws_region`
-- `frontend_base_url` (CORS / allowed origin)
-
-Use development resource names and a separate Terraform state/backend from
-production. Changing `env` in tfvars alone does not separate state.
-
-### Build Lambda Layers
-This repository uses AWS Lambda Layers to manage Python dependencies that are shared across Lambdas (for example, JWT libraries).
-
-Build the layers before Terraform validation or deployment:
-
-```bash
-bash infra/scripts/build_layers.sh
+Edit `.env` for local development:
+```ini
+POSTGRES_PASSWORD=localdev
+FRONTEND_BASE_URL=http://localhost:5173
+PUBLIC_API_URL=
+APP_ENV=dev
 ```
 
-### Init / plan / apply
-Deploy the infrastructure from repo root:
+- With `PUBLIC_API_URL` empty, the API expects browsers to reach it through the Vite
+  dev server's `/api` proxy, as the AWS development stack did. CAS then returns
+  sign-ins to `http://localhost:5173/api/auth/callback`.
+- `APP_ENV=dev` issues session cookies for the current host, without `Secure`.
+
+Start the API and database:
 ```bash
-terraform -chdir=infra init # only needed once
-terraform -chdir=infra plan -var-file=dev.tfvars
-terraform -chdir=infra apply -var-file=dev.tfvars # same as plan, but with option to deploy
+docker network create hqg_network 2>/dev/null || true
+docker compose up -d --build
+curl http://localhost:5000/health
 ```
 
-### Seed data (required on first deploy)
-Seeding is required the first time you create a new stack.
+The API applies database migrations and creates its session signing key when it starts.
 
+### Seed data (required on first run)
+Seeding loads the sample strategies and makes your NetID an admin:
 ```bash
-python3 -m pip install --user boto3
-python3 infra/seed/main.py \
-  --bucket "$(terraform -chdir=infra output -raw artifacts_bucket_name)" \
-  --backtests-bucket "$(terraform -chdir=infra output -raw backtests_bucket_name)" \
-  --strategies-table "$(terraform -chdir=infra output -raw strategies_table_name)" \
-  --artifacts-table "$(terraform -chdir=infra output -raw strategy_artifacts_table_name)" \
-  --artifact-versions-table "$(terraform -chdir=infra output -raw strategy_artifact_versions_table_name)" \
-  --strategy-backtests-table "$(terraform -chdir=infra output -raw strategy_backtests_table_name)" \
-  --strategies-read-permissions-table "$(terraform -chdir=infra output -raw strategies_read_permissions_table_name)" \
-  --strategies-write-permissions-table "$(terraform -chdir=infra output -raw strategies_write_permissions_table_name)" \
-  --backtester-url "http://localhost:8005" \
-  --users-table "$(terraform -chdir=infra output -raw users_table_name)" \
-  --admin-netid "YOUR_NETID" \
-  --region us-east-1
-# Optional: --skip-backtests
+docker compose exec api python -m hqg_dashboard seed --admin-netid YOUR_NETID --skip-backtests
 ```
 
-Run this from the repo root and use the same region as `aws_region` in `dev.tfvars`.
-If the backtester URL is unreachable or blocked, strategies still seed and backtests are skipped with a summary at the end.
-You can also force skipping backtests with `--skip-backtests`.
-Seeded strategies are private by default. To mark a strategy public at seed time, add `"public": true` to its entry in `infra/seed/strategies.json`.
+To also run the sample backtests, start the [backtester](#3-backtester) and replace
+`--skip-backtests` with `--backtester-url http://hqg-backtester:8005`. If the backtester
+is unreachable or blocked, strategies still seed and backtests are skipped with a
+summary at the end. Seeding again resets the sample strategies' files and backtests,
+but keeps their sharing settings.
 
-### Tear down
+### Useful commands
 ```bash
-terraform -chdir=infra destroy -var-file=dev.tfvars
+docker compose logs -f api                         # API logs
+docker compose exec db psql -U hqg hqg_dashboard   # database shell
+docker compose exec api python -m hqg_dashboard --help
+docker compose down                                # stop; keeps the data
+docker compose down -v                             # stop and delete the database
 ```
 
 ## 2) Frontend
@@ -90,19 +76,16 @@ Make a new `.env` file.
 cp frontend/.env.example frontend/.env
 ```
 
-Get the deployed API Gateway URL
-```bash
-terraform -chdir=../infra output -raw http_api_endpoint
-```
-
 Edit `frontend/.env`:
 ```ini
-CORE_API_URL=https://your-api.execute-api.us-east-1.amazonaws.com/dev
+CORE_API_URL=http://localhost:5000
 IS_PROD=0
 ```
 
-- `CORE_API_URL` should point at the deployed API Gateway URL.
+- `CORE_API_URL` is where the Vite dev server proxies `/api`.
 - `IS_PROD=0` keeps local proxy behavior (`/api` and `/backtester-api`) for development.
+- Restart `npm run dev` after changing `frontend/.env`; its automatic restart can keep
+  the old values.
 
 ### Run the dev server
 ```bash
@@ -111,10 +94,10 @@ npm run dev
 
 Open `http://localhost:5173`.
 
-## 4) Backtester
+## 3) Backtester
 
-### Docker
-In order to have the backtester working, make sure you have [Docker Desktop](https://www.docker.com/get-started/) installed onto your device. The hqg-backtester repo is required for setup. It is recommonded to follow a similar file structure if you don't have the backtester repo cloned already:
+The hqg-backtester repo is required for backtests. It is recommended to follow a
+similar file structure:
 
 ```text
 hqg/
@@ -129,16 +112,11 @@ git clone https://github.com/Husky-Quantitative-Group/hqg-backtester.git
 cd hqg-backtester
 ```
 
-Set the backtester environment variable `HQG_JWKS_URL` to the JWKS endpoint from Terraform:
+To have the backtester verify dashboard sessions, set `HQG_DASH_JWKS_URL` in its `.env`
+to the dashboard's key set. Both containers are on `hqg_network`:
 
-```bash
-terraform output -raw jwks_object_url
-```
-
-If you're running this from the `hqg-backtester` directory, point Terraform at the dashboard infra folder:
-
-```bash
-terraform -chdir=../hqg-dashboard/infra output -raw jwks_object_url
+```ini
+HQG_DASH_JWKS_URL=http://hqg-dashboard-api:5000/.well-known/jwks.json
 ```
 
 Run the backtester:
@@ -149,48 +127,98 @@ docker compose up --build
 
 The API should be available at http://localhost:8005
 
-If you're running the dashboard locally, set the backtester URL in `frontend/.env` so the Vite proxy can reach it:
+Set the backtester URL in `frontend/.env` so the Vite proxy can reach it:
 
 ```ini
 BACKTESTER_URL=http://localhost:8005
 ```
 
-## Engine accounts and readiness
+## 4) Tests
 
-Run these commands from the dashboard repo root after deploying the backend.
-Set a service secret in `DASHBOARD_SYNC_SECRET`, choose account and engine UUIDs,
-and provision the account using AWS credentials with access to the account table:
+The API tests need a disposable PostgreSQL database; its name must contain `test`.
+They make no other network connections.
 
 ```bash
-python aws/lambdas/accounts/admin.py --table <engine_accounts_table> provision \
+docker run -d --name hqg-dashboard-test-db -p 127.0.0.1:55432:5432 \
+  -e POSTGRES_USER=hqg -e POSTGRES_PASSWORD=hqg -e POSTGRES_DB=hqg_test postgres:17
+
+cd backend
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+TEST_DATABASE_URL=postgresql://hqg:hqg@127.0.0.1:55432/hqg_test .venv/bin/python -m pytest
+
+.venv/bin/ruff format --check . && .venv/bin/ruff check .   # formatting and lint
+```
+
+To run the API itself outside Docker, install `requirements.txt`, export the settings
+from `.env` with a `DATABASE_URL`, and run:
+
+```bash
+uvicorn --factory hqg_dashboard.app:create_app --port 5000 --reload
+```
+
+## Engine accounts and readiness
+
+The engine connects to the dashboard only over HTTPS, and the dashboard allows
+execution only while two readiness checks pass over HTTPS: one for account control and
+one for the website. Locally, `dev/local-https` provides the HTTPS: an nginx container
+on `hqg_network` that serves this API as `https://hqg-dashboard-https` and a build of
+the frontend as `https://hqg-dashboard-https:8443`, with certificates from a local
+certificate authority it creates on first start. Start it:
+
+```bash
+docker compose -f dev/local-https/compose.yaml up -d --build
+```
+
+Choose account and engine UUIDs and a service secret (`openssl rand -hex 32`), and
+configure these settings in `.env`:
+
+```ini
+CONTROL_READINESS_TOKEN=<service secret>
+CONTROL_READINESS_URL=https://hqg-dashboard-https/internal/v1/accounts/<account-UUID>/readiness
+WEBSITE_READINESS_URL=https://hqg-dashboard-https:8443/
+COMPOSE_FILE=docker-compose.yml:dev/local-https/api.compose.yaml
+```
+
+Locally, the control check calls this API's own readiness endpoint; in prod it goes
+through hqg-platform (see [prod_deployment.md](./prod_deployment.md#engine-accounts)).
+`COMPOSE_FILE` adds `dev/local-https/api.compose.yaml`, which makes the API trust the
+local certificate authority. Keep `FRONTEND_BASE_URL` set to the login/CORS origin.
+Missing or failed readiness checks prevent execution. The API makes both checks
+directly, never through an outbound proxy such as `HTTPS_PROXY`.
+
+Apply the settings and provision the account, reading the secret from the setting:
+
+```bash
+docker compose up -d
+docker compose exec api python -m hqg_dashboard provision-account \
+  --secret-env CONTROL_READINESS_TOKEN \
   --account-id <account-UUID> --engine-id <engine-UUID> --netid <your-NetID>
 ```
 
 This creates the account record; it does not start an engine. Existing accounts
 are not overwritten. Accounts start paused; add `--allow-live` to grant live control.
 
-Configure these Terraform inputs:
-
-- `engine_frontend_readiness_url`: the deployed frontend's HTTPS URL.
-- `engine_control_readiness_url`: the HTTPS API URL, including its stage and
-  `/internal/v1/accounts/<account-UUID>/readiness`.
-- `engine_control_readiness_token`: the same service secret, supplied through
-  protected Terraform inputs. Terraform state contains this secret.
-
-Keep `frontend_base_url` set to the login/CORS origin. Missing or failed readiness
-checks prevent execution.
-
 Start the engine using the [engine README](../../hqg-engine/README.md), with the same
-account UUID, engine UUID and service secret. Sign in through CAS and enter the
-account UUID in the Engine page; `ENGINE_ACCOUNT_ID` is an optional default.
-With both modes paused and reconciled, register a saved strategy version, wait for
-acknowledgement, configure allocations, and explicitly Resume the intended mode.
+account UUID, engine UUID and service secret (its `DASHBOARD_SYNC_SECRET`), and these
+settings in its `.env`. The second adds `dev/local-https/engine.compose.yaml`, which
+makes the engine trust the local certificate authority:
+
+```ini
+DASHBOARD_SYNC_URL=https://hqg-dashboard-https
+COMPOSE_FILE=compose.yaml:../hqg-dashboard/dev/local-https/engine.compose.yaml
+```
+
+Sign in through CAS and enter the account UUID in the Engine page; `ENGINE_ACCOUNT_ID`
+is an optional default. With both modes paused and reconciled, register a saved
+strategy version, wait for acknowledgement, configure allocations, and explicitly
+Resume the intended mode.
 
 Before replacing a provider, stop the old process and wait at least 15 seconds
 after its last heartbeat, then run:
 
 ```bash
-python aws/lambdas/accounts/admin.py --table <engine_accounts_table> authorize-replacement \
+docker compose exec api python -m hqg_dashboard authorize-replacement \
   --account-id <account-UUID> --actor <maintainer-NetID>
 ```
 
@@ -198,5 +226,4 @@ Configuration and registered packages are retained. Start the replacement, wait
 for reconciliation and explicitly Resume again.
 
 Stop/reconcile both modes before `docker compose down`, which retains history.
-`down -v` and Terraform destroy delete data. Legacy strategy data is not migrated
-automatically; manually export and re-upload any source you want to retain.
+`down -v` deletes the dashboard database.

@@ -1,0 +1,44 @@
+# Local development only. hqg-engine connects to the dashboard over HTTPS alone, and the
+# local API serves plain HTTP, so this serves the API as https://hqg-dashboard-https on
+# hqg_network, with a certificate from a local certificate authority. It also serves a
+# build of the frontend at https://hqg-dashboard-https:8443 for the website readiness
+# check. In prod, nginx on the host and GitHub Pages do this with public certificates.
+# See docs/local_setup.md.
+name: hqg-dashboard-https
+
+services:
+  proxy:
+    build:
+      context: ../../frontend
+      dockerfile_inline: |
+        FROM node:20-alpine AS frontend
+        WORKDIR /app
+        COPY package.json package-lock.json ./
+        RUN npm ci
+        COPY . .
+        RUN npm run build
+
+        FROM nginx:alpine
+        RUN apk add --no-cache openssl
+        COPY --from=frontend /app/build/client /usr/share/nginx/html
+    container_name: hqg-dashboard-https
+    volumes:
+      - ./generate-certs.sh:/docker-entrypoint.d/05-generate-certs.sh:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - keys:/etc/nginx/keys
+      - ca:/etc/nginx/ca
+    restart: unless-stopped
+    networks:
+      - hqg_network
+
+volumes:
+  # The private keys and the server certificate.
+  keys:
+    name: hqg-dashboard-https-keys
+  # The CA certificate, alone and bundled with the public CAs, for clients to trust.
+  ca:
+    name: hqg-dashboard-https-ca
+
+networks:
+  hqg_network:
+    external: true
