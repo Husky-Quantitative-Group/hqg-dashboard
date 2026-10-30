@@ -31,7 +31,9 @@ Edit `.env`:
   stay the same.
 - The engine readiness settings, once an engine account exists (see
   [Engine accounts](#engine-accounts)).
-- The proxy variables, if the VPS needs a proxy for outbound HTTPS.
+- The proxy variables, if the VPS needs a proxy for outbound HTTPS. The readiness
+  checks use a proxy only through `READINESS_PROXY_URL` (see
+  [Engine accounts](#engine-accounts)).
 
 ## 3) Start
 
@@ -117,7 +119,8 @@ every URL of the API below. CAS must accept the new service URL,
     without a proxy.
 - hqg-backtester `.env`: `HQG_DASH_JWKS_URL=https://api.uconnquant.com/.well-known/jwks.json`
 - hqg-engine `.env`: `DASHBOARD_SYNC_URL=https://api.uconnquant.com`. The engine
-  requires HTTPS, so it connects through nginx.
+  requires HTTPS, so it connects through nginx. It ignores the proxy variables; if the
+  VPS reaches Alpaca only through a proxy, also set `ALPACA_PROXY_URL` to it.
 
 Restart each service after changing its `.env`.
 
@@ -218,8 +221,10 @@ set in `.env`:
 - `CONTROL_READINESS_URL=https://platform.uconnquant.com/control/accounts/<account-UUID>/readiness`
 - `WEBSITE_READINESS_URL=https://dashboard.uconnquant.com`
 
-The API checks both URLs directly, never through a proxy, as the Lambda did, so the
-VPS must reach them without one. Missing or failed checks prevent execution.
+The API checks both URLs directly, ignoring the proxy variables, as the Lambda did. If
+the VPS reaches them only through a proxy, set `READINESS_PROXY_URL` to it; hosts that
+`NO_PROXY` lists are still reached directly. Missing or failed checks prevent
+execution.
 
 Apply the settings and provision the account:
 

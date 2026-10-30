@@ -22,6 +22,7 @@ def test_defaults_match_the_aws_deployment():
     assert settings.is_prod
     assert settings.auth_cookie_domain == ".uconnquant.com"
     assert settings.auth_cookie_max_age_seconds == 86400
+    assert settings.readiness_proxy_url == ""
 
 
 def test_production_settings():
@@ -31,11 +32,13 @@ def test_production_settings():
             "FRONTEND_BASE_URL": "https://dashboard.uconnquant.com",
             "PUBLIC_API_URL": "https://api.uconnquant.com/",
             "BACKTEST_UPLOAD_MAX_BYTES": "1000",
+            "READINESS_PROXY_URL": " http://proxy.test:3128 ",
         }
     )
     assert settings.public_api_url == "https://api.uconnquant.com"
     assert settings.cas_callback_url == "https://api.uconnquant.com/auth/callback"
     assert settings.backtest_upload_max_bytes == 1000
+    assert settings.readiness_proxy_url == "http://proxy.test:3128"
 
 
 def test_development_cookies_have_no_domain():

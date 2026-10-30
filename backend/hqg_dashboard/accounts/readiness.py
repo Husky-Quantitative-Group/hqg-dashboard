@@ -17,12 +17,18 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 class ReadinessProbe:
     """True only when the public control and website URLs both answer, over HTTPS,
-    with their markers. No cached generic /health response can grant permission."""
+    with their markers. No cached generic /health response can grant permission.
 
-    def __init__(self, control_url: str, control_token: str, website_url: str) -> None:
+    The probes ignore the proxy environment variables. Given proxy_url, they connect
+    through that proxy, except to hosts that NO_PROXY lists."""
+
+    def __init__(
+        self, control_url: str, control_token: str, website_url: str, proxy_url: str = ""
+    ) -> None:
         self.control_url = control_url
         self.control_token = control_token
         self.website_url = website_url
+        self.proxies = {"https": proxy_url} if proxy_url else {}
 
     def __call__(self) -> bool:
         probes = (
@@ -34,7 +40,9 @@ class ReadinessProbe:
             (self.website_url, WEBSITE_READY_MARKER, {}),
         )
         try:
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+            opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler(self.proxies), NoRedirect()
+            )
             for url, marker, headers in probes:
                 if not url.startswith("https://"):
                     return False

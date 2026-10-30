@@ -26,6 +26,8 @@ class Settings:
     control_readiness_url: str = ""
     control_readiness_token: str = ""
     website_readiness_url: str = ""
+    # The only proxy the readiness probes use; they ignore HTTPS_PROXY and the like.
+    readiness_proxy_url: str = ""
     backtest_upload_max_bytes: int = 25 * MIB
     backtest_payload_max_bytes: int = 256 * MIB
     database_pool_size: int = 10
@@ -64,6 +66,7 @@ class Settings:
             control_readiness_url=get("CONTROL_READINESS_URL"),
             control_readiness_token=get("CONTROL_READINESS_TOKEN"),
             website_readiness_url=get("WEBSITE_READINESS_URL"),
+            readiness_proxy_url=get("READINESS_PROXY_URL"),
             backtest_upload_max_bytes=int(get("BACKTEST_UPLOAD_MAX_BYTES", str(25 * MIB))),
             backtest_payload_max_bytes=int(get("BACKTEST_PAYLOAD_MAX_BYTES", str(256 * MIB))),
             database_pool_size=int(get("DATABASE_POOL_SIZE", "10")),

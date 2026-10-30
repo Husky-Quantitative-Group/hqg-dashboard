@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import http.client
 import time
 from uuid import uuid4
 
@@ -330,6 +331,34 @@ def test_readiness_requires_both_real_https_probes(monkeypatch, fault):
         assert seen[0].get_header("Authorization") == "Bearer test-secret"
         assert seen[1].get_header("Authorization") is None
     assert readiness.NoRedirect().redirect_request(None, None, None, None, None, None) is None
+
+
+@pytest.mark.parametrize(
+    ("proxy_url", "no_proxy", "connection"),
+    [
+        ("", "", ("control.test", None)),
+        ("http://proxy.test:3128", "", ("proxy.test", "control.test")),
+        ("http://proxy.test:3128", "control.test", ("control.test", None)),
+    ],
+)
+def test_readiness_probes_use_only_their_own_proxy(monkeypatch, proxy_url, no_proxy, connection):
+    monkeypatch.setenv("https_proxy", "http://environment-proxy.test:3128")
+    monkeypatch.setenv("no_proxy", no_proxy)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    connections = []
+
+    def connect(self):
+        # The host connected to, and the host tunnelled to through it, if any.
+        connections.append((self.host, self._tunnel_host))
+        raise OSError("Unreachable")
+
+    monkeypatch.setattr(http.client.HTTPSConnection, "connect", connect)
+    probe = readiness.ReadinessProbe(
+        "https://control.test/", "test-secret", "https://website.test/", proxy_url
+    )
+    assert probe() is False
+    assert connections == [connection]
 
 
 def test_concurrent_artifact_save_cannot_change_a_published_version(

@@ -65,6 +65,7 @@ def create_app(
             settings.control_readiness_url,
             settings.control_readiness_token,
             settings.website_readiness_url,
+            settings.readiness_proxy_url,
         ),
         strategy_source=StrategySource(db),
     )

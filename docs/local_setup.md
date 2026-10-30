@@ -185,7 +185,8 @@ through hqg-platform (see [prod_deployment.md](./prod_deployment.md#engine-accou
 `COMPOSE_FILE` adds `dev/local-https/api.compose.yaml`, which makes the API trust the
 local certificate authority. Keep `FRONTEND_BASE_URL` set to the login/CORS origin.
 Missing or failed readiness checks prevent execution. The API makes both checks
-directly, never through an outbound proxy such as `HTTPS_PROXY`.
+directly, ignoring outbound proxy settings such as `HTTPS_PROXY`, unless
+`READINESS_PROXY_URL` names a proxy for them.
 
 Apply the settings and provision the account, reading the secret from the setting:
 
