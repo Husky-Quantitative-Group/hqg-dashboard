@@ -29,10 +29,19 @@ jobs:
     env:
       TF_IN_AUTOMATION: "true"
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_VAR_engine_frontend_readiness_url: ${{ vars.ENGINE_FRONTEND_READINESS_URL }}
+      TF_VAR_engine_control_readiness_url: ${{ vars.ENGINE_CONTROL_READINESS_URL }}
+      TF_VAR_engine_control_readiness_token: ${{ secrets.DASHBOARD_SYNC_SECRET }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Verify engine readiness settings
+        run: |
+          test -n "$TF_VAR_engine_frontend_readiness_url" || (echo "Missing repository variable ENGINE_FRONTEND_READINESS_URL" && exit 1)
+          test -n "$TF_VAR_engine_control_readiness_url" || (echo "Missing repository variable ENGINE_CONTROL_READINESS_URL" && exit 1)
+          test -n "$TF_VAR_engine_control_readiness_token" || (echo "Missing repository secret DASHBOARD_SYNC_SECRET" && exit 1)
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -89,6 +98,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan-${{ github.run_id }}
-          path: |
-            infra/tfplan
-            infra/plan.txt
+          # Binary plans contain sensitive input values; publish only the text output.
+          path: infra/plan.txt

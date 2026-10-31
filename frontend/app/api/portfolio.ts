@@ -10,11 +10,6 @@ export const engineApi = axios.create({
 
 export type Timeframe = "3M" | "6M" | "YTD" | null;
 
-export type TradeResponse = {
-  success: boolean;
-  message: string;
-};
-
 export type SnapshotData = {
   equity: number;
   capital: number;
@@ -24,6 +19,9 @@ export type SnapshotData = {
 };
 
 export type SnapshotResponse = {
+  account_id?: string | null;
+  mode?: "paper" | "live" | null;
+  portfolio_uuid?: string | null;
   snapshots: SnapshotData[];
 };
 
@@ -161,20 +159,5 @@ export const fetchPortfolioAllocationEvents = async (
     `/portfolio/${portfolioId}/events/allocations`,
     { params: withTimeframe(timeframe) }
   );
-  return response.data;
-};
-
-export const stopPortfolioTrading = async (portfolioId: string | number): Promise<TradeResponse> => {
-  const response = await engineApi.post<TradeResponse>(`/portfolio/${portfolioId}/stop`);
-  return response.data;
-};
-
-export const resumePortfolioTrading = async (portfolioId: string | number): Promise<TradeResponse> => {
-  const response = await engineApi.post<TradeResponse>(`/portfolio/${portfolioId}/resume`);
-  return response.data;
-};
-
-export const liquidatePortfolio = async (portfolioId: string | number): Promise<TradeResponse> => {
-  const response = await engineApi.post<TradeResponse>(`/portfolio/${portfolioId}/liquidate`);
   return response.data;
 };

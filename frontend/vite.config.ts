@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
     envPrefix: ["VITE_", "CORE_", "IS_", "BACKTESTER_", "ENGINE_"],
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
     server: {
+      allowedHosts: ["host.docker.internal"],
       proxy: {
         // Backtester rerouting (docker local host)
         "/backtester-api": {

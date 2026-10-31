@@ -1,4 +1,5 @@
 import axios from "axios";
+import { Link } from "react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ColorType,
@@ -17,9 +18,6 @@ import {
   fetchPortfolioMetrics,
   fetchPortfolioSnapshot,
   fetchPortfolioStrategyAllocations,
-  liquidatePortfolio,
-  resumePortfolioTrading,
-  stopPortfolioTrading,
   type AssetAllocationsResponse,
   type EquityResponse,
   type MetricsResponse,
@@ -62,7 +60,6 @@ type PortfolioMetric = {
   trend: "up" | "down" | "neutral";
 };
 
-type PortfolioAction = "stop" | "resume" | "liquidate";
 
 type PortfolioEquityChartProps = {
   data: LineData[];
@@ -135,14 +132,11 @@ export default function Portfolio() {
   const [allocationView, setAllocationView] = useState<AllocationView>("strategy");
   const [timeframe, setTimeframe] = useState<Exclude<Timeframe, null>>("YTD");
   const [portfolioIdInput, setPortfolioIdInput] = useState("1");
+  const [portfolioMode, setPortfolioMode] = useState<string | null>(null);
   const [portfolioId, setPortfolioId] = useState<number>(1);
-  const [refreshNonce, setRefreshNonce] = useState(0);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
-  const [actionPending, setActionPending] = useState<PortfolioAction | null>(null);
 
   const [latestSnapshot, setLatestSnapshot] = useState<SnapshotData | null>(null);
   const [equity, setEquity] = useState<EquityResponse["data"]>([]);
@@ -154,6 +148,7 @@ export default function Portfolio() {
   useEffect(() => {
     let cancelled = false;
     const loadPortfolio = async () => {
+      setPortfolioMode(null);
       setIsLoading(true);
       setError(null);
       try {
@@ -179,6 +174,7 @@ export default function Portfolio() {
           return;
         }
 
+        setPortfolioMode(snapshotResponse.mode ?? null);
         setLatestSnapshot(snapshotResponse.snapshots?.[0] ?? null);
         setEquity(equityResponse.data ?? []);
         setMetrics(metricsResponse.metrics ?? null);
@@ -231,44 +227,13 @@ export default function Portfolio() {
     return () => {
       cancelled = true;
     };
-  }, [portfolioId, timeframe, refreshNonce]);
+  }, [portfolioId, timeframe]);
 
   const handlePortfolioIdInputChange = (nextValue: string) => {
     setPortfolioIdInput(nextValue);
     const next = Number(nextValue);
     if (Number.isInteger(next) && next > 0) {
       setPortfolioId(next);
-    }
-  };
-
-  const handlePortfolioAction = async (action: PortfolioAction) => {
-    setActionPending(action);
-    setActionError(null);
-    setActionSuccess(null);
-
-    try {
-      const response =
-        action === "stop"
-          ? await stopPortfolioTrading(portfolioId)
-          : action === "resume"
-            ? await resumePortfolioTrading(portfolioId)
-            : await liquidatePortfolio(portfolioId);
-
-      setActionSuccess(response.message || "Portfolio action completed.");
-      setRefreshNonce((value) => value + 1);
-    } catch (actionRequestError) {
-      console.error("Failed to run portfolio action", actionRequestError);
-      if (axios.isAxiosError(actionRequestError)) {
-        const detail =
-          typeof actionRequestError.response?.data?.detail === "string"
-            ? actionRequestError.response.data.detail
-            : "Failed to run portfolio action.";
-        setActionError(detail);
-      } else {
-        setActionError("Failed to run portfolio action.");
-      }
-    } finally {
-      setActionPending(null);
     }
   };
 
@@ -399,7 +364,7 @@ export default function Portfolio() {
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Portfolio</p>
-          <h1 className="text-3xl font-semibold text-white">Multi-Strategy Portfolio</h1>
+          <h1 className="text-3xl font-semibold capitalize text-white">{portfolioMode ?? "Unmapped"} Portfolio</h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <label className="text-xs uppercase tracking-[0.25em] text-slate-500" htmlFor="portfolio-id-input">
@@ -413,30 +378,9 @@ export default function Portfolio() {
             value={portfolioIdInput}
             onChange={(event) => handlePortfolioIdInputChange(event.target.value)}
           />
-          <button
-            type="button"
-            onClick={() => void handlePortfolioAction("stop")}
-            disabled={actionPending !== null}
-            className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-200 transition hover:border-amber-400 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {actionPending === "stop" ? "Stopping..." : "Stop"}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handlePortfolioAction("liquidate")}
-            disabled={actionPending !== null}
-            className="rounded-lg border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-200 transition hover:border-rose-400 hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {actionPending === "liquidate" ? "Liquidating..." : "Liquidate"}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handlePortfolioAction("resume")}
-            disabled={actionPending !== null}
-            className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-200 transition hover:border-emerald-400 hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {actionPending === "resume" ? "Resuming..." : "Resume"}
-          </button>
+          <Link to="/engine" className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200">
+            Engine control
+          </Link>
         </div>
       </header>
 
@@ -445,17 +389,6 @@ export default function Portfolio() {
           {error}
         </div>
       ) : null}
-      {actionError ? (
-        <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
-          {actionError}
-        </div>
-      ) : null}
-      {actionSuccess ? (
-        <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-          {actionSuccess}
-        </div>
-      ) : null}
-
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(260px,1fr)]">
         <div className="space-y-6">
           <PortfolioEquityChart

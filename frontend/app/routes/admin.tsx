@@ -10,11 +10,13 @@ import AdminUsersTable from "~/components/admin/AdminUsersTable";
 import AdminUsersDetail from "~/components/admin/AdminUsersDetail";
 import AdminAccessRequestsTable from "~/components/admin/AdminAccessRequestsTable";
 import AdminAccessRequestDetail from "~/components/admin/AdminAccessRequestDetail";
+import AdminEngineAccountForm from "~/components/admin/AdminEngineAccountForm";
 import { useUser } from "~/context/UserConext";
 
 const TABS = [
   { id: "users", label: "Users" },
   { id: "access", label: "Access Requests" },
+  { id: "accounts", label: "Engine Accounts" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -147,19 +149,21 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {loading && (
+      {tab === "accounts" && <AdminEngineAccountForm />}
+
+      {tab !== "accounts" && loading && (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 text-slate-400">
           Loading admin data...
         </div>
       )}
 
-      {!loading && error && (
+      {tab !== "accounts" && !loading && error && (
         <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-6 text-red-200">
           {error}
         </div>
       )}
 
-      {!loading && !error && (
+      {tab !== "accounts" && !loading && !error && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
           <div>
             {tab === "users" ? (
