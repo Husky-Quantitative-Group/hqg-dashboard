@@ -7,6 +7,7 @@ export default [
     route("strategies", "routes/strategies.tsx"),
     route("strategies/:strategyId", "routes/strategy/layout.tsx", [
       index("routes/strategy/overview.tsx"),
+      route("discussion", "routes/strategy/discussion.tsx"),
       route("code", "routes/strategy/code.tsx"),
       route("backtest", "routes/strategy/backtest.tsx"),
       route("results", "routes/strategy/results.tsx"),      

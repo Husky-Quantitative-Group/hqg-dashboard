@@ -1,4 +1,5 @@
 import axios from "axios";
+import { attachAuthRefreshInterceptor } from "./core";
 import { engineApiOrigin, isProd } from "./runtime";
 
 const engineApiBaseUrl = isProd ? engineApiOrigin : engineApiOrigin;
@@ -7,6 +8,8 @@ export const engineApi = axios.create({
   baseURL: engineApiBaseUrl,
   withCredentials: true,
 });
+
+attachAuthRefreshInterceptor(engineApi);
 
 export type Timeframe = "3M" | "6M" | "YTD" | null;
 
