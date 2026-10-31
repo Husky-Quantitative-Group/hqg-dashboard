@@ -157,7 +157,17 @@ BACKTESTER_URL=http://localhost:8005
 
 ## Engine accounts and readiness
 
-Run these commands from the dashboard repo root after deploying the backend.
+After deploying the backend and frontend, dashboard users with the `ADMIN` role can
+open **Admin → Engine Accounts** and provision the configured account. Enter the
+account UUID from `engine_control_readiness_url`, the engine UUID, and the
+controlling NetID. Live control permission is off by default. The backend uses
+`engine_control_readiness_token` as the service secret; it is not sent to the
+browser. The engine's `DASHBOARD_SYNC_SECRET` must match that token. Accounts start
+paused, and existing accounts cannot be overwritten. This replaces the AWS
+credentials and CLI command for provisioning only; engine setup and provider
+replacement still follow the instructions below.
+
+Alternatively, run these commands from the dashboard repo root after deploying the backend.
 Set a service secret in `DASHBOARD_SYNC_SECRET`, choose account and engine UUIDs,
 and provision the account using AWS credentials with access to the account table:
 

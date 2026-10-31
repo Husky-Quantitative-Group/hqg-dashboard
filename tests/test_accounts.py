@@ -67,6 +67,125 @@ def event(body, route="POST /accounts/{accountId}/strategies", actor="operator")
     )
 
 
+def provision_event(body, roles=("ADMIN",), actor="maintainer"):
+    return {
+        "requestContext": {
+            "routeKey": "POST /admin/engine-accounts",
+            "authorizer": {"lambda": {"netid": actor, "roles": json.dumps(roles)}},
+        },
+        "body": json.dumps(body),
+    }
+
+
+@pytest.mark.parametrize("live", [False, True])
+def test_admin_provisions_configured_account_without_exposing_secret(
+    aws, monkeypatch, live
+):
+    monkeypatch.setenv("CONTROL_READINESS_TOKEN", "server-secret")
+    monkeypatch.setenv(
+        "CONTROL_READINESS_URL",
+        f"https://api.test/prod/internal/v1/accounts/{ACCOUNT}/readiness",
+    )
+    monkeypatch.setattr(main, "_service", None)
+    body = {
+        "account_id": ACCOUNT,
+        "engine_id": ENGINE,
+        "netid": "operator",
+        "actor": "forged-actor",
+        "secret": "forged-secret",
+    }
+    if live:
+        body["allow_live"] = True
+    result = main.handler(provision_event(body), None)
+    assert result["statusCode"] == 201
+    assert json.loads(result["body"]) == {
+        "account_id": ACCOUNT,
+        "engine_id": ENGINE,
+        "netid": "operator",
+        "allow_live": live,
+        "state": "paused",
+    }
+    api = main.service()
+    state = api.authenticate_service(ACCOUNT, "server-secret")
+    assert state["engine_instance_id"] == ENGINE
+    assert state["users"] == {"operator": ["control", "live"] if live else ["control"]}
+    assert all(mode["desired_state"] == "paused" for mode in state["modes"].values())
+    assert state["configuration"] is None
+    with pytest.raises(Forbidden):
+        api.authenticate_service(ACCOUNT, "forged-secret")
+    records = aws[0].Table(os.environ["ACCOUNTS_TABLE"]).scan()["Items"]
+    audits = [
+        json.loads(item["body"])
+        for item in records
+        if item["record"].startswith("audit#")
+    ]
+    assert len(audits) == 1
+    assert audits[0]["actor"] == "maintainer"
+    assert audits[0]["netid"] == "operator"
+    duplicate = main.handler(provision_event({**body, "engine_id": str(uuid4())}), None)
+    assert duplicate["statusCode"] == 409
+    assert api.store.get(ACCOUNT, "state") == state
+
+
+@pytest.mark.parametrize(
+    "roles, actor",
+    [([], "maintainer"), (["FUND"], "maintainer"), (["ADMIN"], None)],
+)
+def test_provision_requires_authenticated_admin_before_parsing_body(aws, roles, actor):
+    request = provision_event({}, roles, actor)
+    request["body"] = "not JSON"
+    api = Control(
+        DynamoStore(boto3.client("dynamodb"), os.environ["ACCOUNTS_TABLE"]), lambda: False
+    )
+    assert main.handle(request, api)["statusCode"] == 403
+    assert aws[0].Table(os.environ["ACCOUNTS_TABLE"]).scan()["Items"] == []
+
+
+@pytest.mark.parametrize("changes", [
+    {"account_id": "invalid"},
+    {"engine_id": "invalid"},
+    {"netid": "  "},
+    {"netid": []},
+    {"allow_live": "true"},
+    {"account_id": str(uuid4())},
+    None,
+])
+def test_provision_rejects_invalid_input_and_unconfigured_accounts(
+    aws, monkeypatch, changes
+):
+    monkeypatch.setenv("CONTROL_READINESS_TOKEN", "server-secret")
+    monkeypatch.setenv(
+        "CONTROL_READINESS_URL",
+        f"https://api.test/internal/v1/accounts/{ACCOUNT}/readiness",
+    )
+    body = {"account_id": ACCOUNT, "engine_id": ENGINE, "netid": "operator"}
+    body = [] if changes is None else {**body, **changes}
+    api = Control(
+        DynamoStore(boto3.client("dynamodb"), os.environ["ACCOUNTS_TABLE"]), lambda: False
+    )
+    assert main.handle(provision_event(body), api)["statusCode"] == 400
+    assert aws[0].Table(os.environ["ACCOUNTS_TABLE"]).scan()["Items"] == []
+
+
+@pytest.mark.parametrize("missing", ["CONTROL_READINESS_TOKEN", "CONTROL_READINESS_URL"])
+def test_provision_requires_server_configuration(aws, monkeypatch, missing):
+    monkeypatch.setenv("CONTROL_READINESS_TOKEN", "server-secret")
+    monkeypatch.setenv(
+        "CONTROL_READINESS_URL",
+        f"https://api.test/internal/v1/accounts/{ACCOUNT}/readiness",
+    )
+    monkeypatch.delenv(missing)
+    api = Control(
+        DynamoStore(boto3.client("dynamodb"), os.environ["ACCOUNTS_TABLE"]), lambda: False
+    )
+    result = main.handle(
+        provision_event({"account_id": ACCOUNT, "engine_id": ENGINE, "netid": "operator"}),
+        api,
+    )
+    assert result["statusCode"] == 503
+    assert aws[0].Table(os.environ["ACCOUNTS_TABLE"]).scan()["Items"] == []
+
+
 def test_historical_versions_partial_saves_and_later_files(aws):
     _, source, _ = services(aws)
     artifacts = load("artifact_handler", "aws/lambdas/strategy_artifacts/main.py")
