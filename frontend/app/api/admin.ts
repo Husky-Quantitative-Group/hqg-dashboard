@@ -61,3 +61,18 @@ export async function denyAccessRequest(netid: string, decisionNotes: string) {
     decision_notes: decisionNotes,
   });
 }
+
+export type ProvisionEngineAccountInput = {
+  account_id: string;
+  engine_id: string;
+  netid: string;
+  allow_live: boolean;
+};
+
+export async function provisionEngineAccount(payload: ProvisionEngineAccountInput) {
+  const response = await coreApi.post<ProvisionEngineAccountInput & { state: "paused" }>(
+    "/admin/engine-accounts",
+    payload,
+  );
+  return response.data;
+}

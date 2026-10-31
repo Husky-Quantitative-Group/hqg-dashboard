@@ -10,7 +10,7 @@ from control import Conflict, new_account, uuid
 from store import DynamoStore
 
 
-def provision(store, account_id, engine_id, netid, secret, live=False):
+def provision(store, account_id, engine_id, netid, secret, live=False, *, actor=None):
     if not netid.strip() or not secret:
         raise ValueError("An explicit NetID and nonempty service secret are required")
     grants = ["control"] + (["live"] if live else [])
@@ -22,7 +22,8 @@ def provision(store, account_id, engine_id, netid, secret, live=False):
         {
             "audit#"
             + str(uuid4()): {
-                "actor": netid,
+                "actor": actor or netid,
+                "netid": netid,
                 "kind": "provision",
                 "timestamp": time.time(),
             }

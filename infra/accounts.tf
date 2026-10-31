@@ -122,6 +122,7 @@ resource "aws_apigatewayv2_integration" "accounts" {
 
 resource "aws_apigatewayv2_route" "account_actions" {
   for_each = toset([
+    "POST /admin/engine-accounts",
     "PUT /accounts/{accountId}/configuration",
     "POST /accounts/{accountId}/actions",
     "GET /accounts/{accountId}/status",

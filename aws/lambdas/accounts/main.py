@@ -1,8 +1,10 @@
 import json
 import os
 import urllib.request
+from urllib.parse import urlsplit
 
-from control import Control, Conflict, Forbidden, Invalid
+from admin import provision
+from control import Control, Conflict, Forbidden, Invalid, uuid
 from store import DynamoStore
 from packages import StrategySource
 from hqg_permissions import get_roles_from_event
@@ -79,9 +81,20 @@ def handler(event, _context):
 def handle(event, api):
     try:
         route = event["requestContext"]["routeKey"]
-        account_id = event["pathParameters"]["accountId"]
         authorizer = event["requestContext"].get("authorizer", {})
         actor = authorizer.get("lambda", authorizer).get("netid")
+        if route == "POST /admin/engine-accounts":
+            if (
+                not isinstance(actor, str)
+                or not actor.strip()
+                or "ADMIN" not in get_roles_from_event(event)
+            ):
+                raise Forbidden("Administrator permission required")
+            return provision_account(
+                api.store, actor, json.loads(event.get("body") or "{}")
+            )
+
+        account_id = event["pathParameters"]["accountId"]
         body = json.loads(event.get("body") or "{}")
 
         if route.startswith(("GET /internal/", "POST /internal/")):
@@ -131,6 +144,44 @@ def handle(event, api):
         return response(400, {"message": str(exc)})
     except Exception:
         return response(503, {"message": "Account control unavailable"})
+
+
+def provision_account(store, actor, body):
+    fields = ("account_id", "engine_id", "netid")
+    if not isinstance(body, dict) or not all(
+        isinstance(body.get(field), str) and body[field].strip() for field in fields
+    ):
+        raise Invalid("account_id, engine_id and netid are required")
+    account_id = uuid(body["account_id"].strip())
+    engine_id = uuid(body["engine_id"].strip())
+    netid = body["netid"].strip()
+    live = body.get("allow_live", False)
+    if type(live) is not bool:
+        raise Invalid("allow_live must be a boolean")
+
+    secret = os.environ.get("CONTROL_READINESS_TOKEN", "")
+    readiness_url = urlsplit(os.environ.get("CONTROL_READINESS_URL", ""))
+    if not secret.strip() or readiness_url.scheme != "https" or not readiness_url.netloc:
+        return response(503, {
+            "message": "Configure the control readiness URL and token before provisioning"
+        })
+    if not readiness_url.path.rstrip("/").endswith(f"/accounts/{account_id}/readiness"):
+        raise Invalid("Account UUID must match the configured control readiness URL")
+
+    try:
+        provision(store, account_id, engine_id, netid, secret, live, actor=actor)
+    except Conflict as exc:
+        raise Conflict("Account already exists; provisioning cannot overwrite it") from exc
+    return response(
+        201,
+        {
+            "account_id": account_id,
+            "engine_id": engine_id,
+            "netid": netid,
+            "allow_live": live,
+            "state": "paused",
+        },
+    )
 
 
 def response(code, body):
