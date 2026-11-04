@@ -159,9 +159,10 @@ def test_sync_returns_concurrent_stop_without_stopping_live(aws, monkeypatch, ti
     stop = action(store, "stop")
     probes = 0
 
-    def readiness():
+    def readiness(control=True):
         nonlocal probes
         probes += 1
+        assert not control  # A sync skips the control API self-probe.
         if timing == "readiness":
             api.change(ACCOUNT, "operator", "action", stop)
         return True

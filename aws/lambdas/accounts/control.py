@@ -357,7 +357,9 @@ class Control:
 
     def sync(self, account_id, secret, body):
         self.authenticate_service(account_id, secret)
-        ready = self.readiness()
+        # This request just proved the control API and service secret work. Skip the
+        # self-probe, which needs a second, possibly cold, Lambda instance.
+        ready = self.readiness(control=False)
         return self._sync(account_id, secret, body, ready)
 
     @retry_concurrent_updates

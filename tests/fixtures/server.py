@@ -20,7 +20,7 @@ def create_app(store, control_url, website_url, dynamo, s3):
     artifacts = load("artifact_handler", "aws/lambdas/strategy_artifacts/main.py")
     faults = dict(backend=False, delay=0, response=None, lose_action_response=False)
 
-    def readiness():
+    def readiness(control=True):
         try:
             with httpx.Client(
                 timeout=0.3, trust_env=False, follow_redirects=False
@@ -29,6 +29,8 @@ def create_app(store, control_url, website_url, dynamo, s3):
                     (control_url, "hqg-account-control-ready"),
                     (website_url, "hqg-dashboard-app"),
                 ):
+                    if url == control_url and not control:
+                        continue
                     result = client.get(url)
                     if result.status_code != 200 or marker not in result.text:
                         return False

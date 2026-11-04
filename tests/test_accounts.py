@@ -34,7 +34,7 @@ def services(aws):
     admin.provision(store, ACCOUNT, ENGINE, "operator", "test-secret")
     source = StrategySource(dynamo, s3, os.environ)
     seed_package(dynamo, s3, PACKAGE)
-    return store, source, Control(store, lambda: True, strategy_source=source)
+    return store, source, Control(store, lambda **_: True, strategy_source=source)
 
 
 def paused(store):
@@ -483,6 +483,9 @@ def test_readiness_requires_both_real_https_probes(monkeypatch, fault):
         assert len(seen) == 2
         assert seen[0].get_header("Authorization") == "Bearer test-secret"
         assert seen[1].get_header("Authorization") is None
+        seen.clear()
+        assert main.readiness(control=False) is True
+        assert [request.full_url for request in seen] == ["https://website.test/"]
     assert (
         main.NoRedirect().redirect_request(None, None, None, None, None, None) is None
     )
