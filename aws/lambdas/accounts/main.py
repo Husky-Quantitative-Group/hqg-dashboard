@@ -10,14 +10,14 @@ from packages import StrategySource
 from hqg_permissions import get_roles_from_event
 
 
-def readiness():
+def readiness(control=True):
     # No cached generic /health response can grant permission.
     try:
         opener = urllib.request.build_opener(
             urllib.request.ProxyHandler({}), NoRedirect()
         )
 
-        for prefix in ("CONTROL", "WEBSITE"):
+        for prefix in ("CONTROL", "WEBSITE") if control else ("WEBSITE",):
             url, expected = (
                 os.environ[f"{prefix}_READINESS_URL"],
                 os.environ[f"{prefix}_READINESS_CONTENT"],
