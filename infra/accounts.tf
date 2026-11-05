@@ -90,6 +90,7 @@ resource "aws_lambda_function" "accounts" {
   runtime          = "python3.12"
   handler          = "main.handler"
   timeout          = 10
+  memory_size      = 512
   filename         = data.archive_file.accounts_lambda.output_path
   source_code_hash = data.archive_file.accounts_lambda.output_base64sha256
   layers           = [aws_lambda_layer_version.hqg_permissions.arn]
