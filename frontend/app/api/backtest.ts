@@ -1,4 +1,5 @@
 import axios from "axios";
+import { attachAuthRefreshInterceptor } from "./core";
 import { backtesterApiOrigin, isProd } from "./runtime";
 
 
@@ -11,6 +12,8 @@ export const backtesterApi = axios.create({
   baseURL: backtesterApiBaseUrl,
   withCredentials: true,
 });
+
+attachAuthRefreshInterceptor(backtesterApi);
 
 export type BacktestOrder = {
   id: string;
