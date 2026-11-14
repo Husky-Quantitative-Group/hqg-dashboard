@@ -8,6 +8,7 @@ import {
   createChart,
   type ChartOptions,
   type DeepPartial,
+  type ISeriesApi,
   type LineData,
   type UTCTimestamp,
 } from "lightweight-charts";
@@ -588,8 +589,23 @@ function PortfolioEquityChart({ data, highlights, timeframe, onChangeTimeframe }
 
 function StrategyReplayChart({ series, error }: StrategyReplayChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartSeriesRef = useRef(new Map<string, ISeriesApi<"Line">>());
   const [hoverDate, setHoverDate] = useState<string | null>(null);
+  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
   const hasData = Boolean(series?.[0]?.data.length);
+  const visibleCount = series?.filter((item) => !hiddenSeries.has(item.id)).length ?? 0;
+
+  const toggleSeries = (id: string) => {
+    setHiddenSeries((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!containerRef.current || !series || !hasData) {
@@ -599,14 +615,14 @@ function StrategyReplayChart({ series, error }: StrategyReplayChartProps) {
     const container = containerRef.current;
     const chart = createChart(container, { ...CHART_OPTIONS, width: container.clientWidth, height: 360 });
     for (const item of series) {
-      chart
-        .addSeries(LineSeries, {
-          color: item.color,
-          lineWidth: item.id === "total" ? 3 : 2,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        })
-        .setData(item.data.map((point) => ({ time: toUnixTime(point.timestamp), value: point.equity_value })));
+      const line = chart.addSeries(LineSeries, {
+        color: item.color,
+        lineWidth: item.id === "total" ? 3 : 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      line.setData(item.data.map((point) => ({ time: toUnixTime(point.timestamp), value: point.equity_value })));
+      chartSeriesRef.current.set(item.id, line);
     }
     chart.timeScale().fitContent();
     // The legend reads the values on the hovered date.
@@ -618,9 +634,16 @@ function StrategyReplayChart({ series, error }: StrategyReplayChartProps) {
     resizeObserver.observe(container);
     return () => {
       resizeObserver.disconnect();
+      chartSeriesRef.current.clear();
       chart.remove();
     };
   }, [series, hasData]);
+
+  useEffect(() => {
+    for (const [id, line] of chartSeriesRef.current) {
+      line.applyOptions({ visible: !hiddenSeries.has(id) });
+    }
+  }, [hiddenSeries, series]);
 
   const readoutDate = hoverDate ?? series?.[0]?.data.at(-1)?.timestamp;
 
@@ -650,28 +673,41 @@ function StrategyReplayChart({ series, error }: StrategyReplayChartProps) {
 
       {series && hasData ? (
         <>
-          <div ref={containerRef} className="mt-6 h-[360px] w-full overflow-hidden rounded-2xl border border-slate-900/50" />
-          <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+          <div className="relative mt-6">
+            <div ref={containerRef} className="h-[360px] w-full overflow-hidden rounded-2xl border border-slate-900/50" />
+            {visibleCount === 0 ? (
+              <p role="status" className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-slate-400">
+                Select at least one curve to display.
+              </p>
+            ) : null}
+          </div>
+          <ul aria-label="Chart curves" className="mt-4 grid gap-2 sm:grid-cols-2">
             {series.map((item) => {
               const point = hoverDate ? item.data.find((entry) => entry.timestamp === hoverDate) : item.data.at(-1);
               const change = point ? point.equity_value / REPLAY_CAPITAL - 1 : 0;
               return (
-                <li
-                  key={item.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-900/60 bg-slate-950/40 px-3 py-2"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="h-0.5 w-4 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
-                    <span className="truncate text-sm text-slate-200">{item.label}</span>
-                  </span>
-                  <span className="shrink-0 text-sm tabular-nums">
-                    <span className="font-semibold text-white">{point ? currencyFormatter.format(point.equity_value) : "—"}</span>
-                    {point ? (
-                      <span className={`ml-2 text-xs ${change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                        {`${change >= 0 ? "+" : ""}${(change * 100).toFixed(2)}%`}
-                      </span>
-                    ) : null}
-                  </span>
+                <li key={item.id}>
+                  <label className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-900/60 bg-slate-950/40 px-3 py-2 ${hiddenSeries.has(item.id) ? "opacity-60" : ""}`}>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        aria-label={`Show ${item.label}`}
+                        checked={!hiddenSeries.has(item.id)}
+                        onChange={() => toggleSeries(item.id)}
+                        className="h-4 w-4 shrink-0 accent-indigo-400"
+                      />
+                      <span className="h-0.5 w-4 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="truncate text-sm text-slate-200">{item.label}</span>
+                    </span>
+                    <span className="shrink-0 text-sm tabular-nums">
+                      <span className="font-semibold text-white">{point ? currencyFormatter.format(point.equity_value) : "—"}</span>
+                      {point ? (
+                        <span className={`ml-2 text-xs ${change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {`${change >= 0 ? "+" : ""}${(change * 100).toFixed(2)}%`}
+                        </span>
+                      ) : null}
+                    </span>
+                  </label>
                 </li>
               );
             })}
