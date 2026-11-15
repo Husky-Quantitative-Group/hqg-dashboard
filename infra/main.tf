@@ -1279,6 +1279,8 @@ resource "aws_lambda_function" "auth_granter" {
       JWT_PRIVATE_KEY_PARAMETER      = aws_ssm_parameter.jwt_private_key.name
       JWKS_BUCKET                    = aws_s3_bucket.jwks.bucket
       APP_ENV                        = var.env
+      AUTH_ACCESS_TTL_SECONDS        = "900"
+      AUTH_REFRESH_TTL_SECONDS       = "86400"
       USERS_TABLE                    = aws_dynamodb_table.users.name
       USER_ACCESS_APPLICATIONS_TABLE = aws_dynamodb_table.user_access_applications.name
     }
@@ -1303,8 +1305,9 @@ resource "aws_lambda_function" "auth_checker" {
 
   environment {
     variables = {
-      USERS_TABLE = aws_dynamodb_table.users.name
-      JWKS_BUCKET = aws_s3_bucket.jwks.bucket
+      USERS_TABLE             = aws_dynamodb_table.users.name
+      JWKS_BUCKET             = aws_s3_bucket.jwks.bucket
+      AUTH_ACCESS_TTL_SECONDS = "900"
     }
   }
 
@@ -1650,6 +1653,12 @@ resource "aws_apigatewayv2_route" "auth_callback" {
 resource "aws_apigatewayv2_route" "auth_me" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /auth/me"
+  target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
+}
+
+resource "aws_apigatewayv2_route" "auth_refresh" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "POST /auth/refresh"
   target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
 }
 

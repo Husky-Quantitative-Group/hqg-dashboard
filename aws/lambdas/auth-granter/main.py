@@ -17,7 +17,13 @@ from boto3.dynamodb.conditions import Key
 import jwt
 
 APP_ENV = os.environ.get("APP_ENV", "prod").lower()
-AUTH_COOKIE_MAX_AGE_SECONDS = int(os.environ.get("AUTH_COOKIE_MAX_AGE_SECONDS", "86400"))
+AUTH_ACCESS_TTL_SECONDS = int(
+    os.environ.get(
+        "AUTH_ACCESS_TTL_SECONDS",
+        os.environ.get("AUTH_COOKIE_MAX_AGE_SECONDS", "900"),
+    )
+)
+AUTH_REFRESH_TTL_SECONDS = int(os.environ.get("AUTH_REFRESH_TTL_SECONDS", "86400"))
 
 CAS_BASE = "https://login.uconn.edu/cas"
 CAS_NS = {"cas": "http://www.yale.edu/tp/cas"}
@@ -118,7 +124,7 @@ def _build_auth_cookie(token: str) -> str:
     same_site = "Strict" if is_prod else "Lax"
     secure = "; Secure" if is_prod else ""
     domain = "; Domain=.uconnquant.com" if is_prod else ""
-    return f"hqg_auth_token={token}; Path=/; HttpOnly; SameSite={same_site}; Max-Age={AUTH_COOKIE_MAX_AGE_SECONDS}{domain}{secure}"
+    return f"hqg_auth_token={token}; Path=/; HttpOnly; SameSite={same_site}; Max-Age={AUTH_REFRESH_TTL_SECONDS}{domain}{secure}"
 
 def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     """
@@ -126,6 +132,7 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     - GET /auth/login
     - GET /auth/callback
     - GET /auth/me
+    - POST /auth/refresh
     - POST /auth/apply
     - GET /auth/apply/check
     """
@@ -169,7 +176,11 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         if not token:
             return _json_response(401, {"message": "Unauthorized"})
 
-        netid = _decode_netid(token)
+        payload = _decode_token_payload(token)
+        if not payload:
+            return _json_response(401, {"message": "Unauthorized"})
+
+        netid = _netid_from_payload(payload)
         if not netid:
             return _json_response(401, {"message": "Unauthorized"})
 
@@ -187,8 +198,43 @@ def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
                 "netid": netid,
                 "roles": [str(role) for role in roles],
                 "display_name": display_name,
+                "expires_at": payload["exp"],
+                "refresh_until": payload.get("refresh_until"),
             },
         )
+
+    if route_key == "POST /auth/refresh":
+        token = _extract_token(event)
+        if not token:
+            return _json_response(401, {"message": "Unauthorized"})
+
+        payload = _decode_refresh_payload(token)
+        if not payload:
+            return _json_response(401, {"message": "Unauthorized"})
+
+        netid = payload["sub"].strip()
+        user = _load_user(netid)
+        if not user or user.get("is_banned", False):
+            return _json_response(403, {"message": "Forbidden"})
+
+        roles = user.get("roles") or []
+        if not isinstance(roles, list):
+            roles = [roles]
+
+        token, token_payload = mint_jwt_with_payload(netid, [str(role) for role in roles], payload["refresh_until"])
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Set-Cookie": _build_auth_cookie(token),
+                "Content-Type": "application/json",
+            },
+            "body": json.dumps(
+                {
+                    "expires_at": token_payload["exp"],
+                    "refresh_until": token_payload["refresh_until"],
+                }
+            ),
+        }
 
     if route_key == "POST /auth/apply":
         token = _extract_token(event)
@@ -270,21 +316,33 @@ def validate_cas_ticket(ticket) -> str | None:
 
     return success.findtext("cas:user", default="", namespaces=CAS_NS) or None
 
-def mint_jwt(netid: str, roles: Optional[List[str]] = None):
+def mint_jwt(netid: str, roles: Optional[List[str]] = None, refresh_until: Optional[int] = None):
     """Returns a JSON web token with the user's encoded netid and expiry"""
+    token, _payload = mint_jwt_with_payload(netid, roles, refresh_until)
+    return token
+
+
+def mint_jwt_with_payload(
+    netid: str,
+    roles: Optional[List[str]] = None,
+    refresh_until: Optional[int] = None,
+):
     now = int(time.time())
     roles = roles or []
+    refresh_until = refresh_until or (now + AUTH_REFRESH_TTL_SECONDS)
     payload = {
         "sub": netid, # subject
         "iat": now,
-        "exp": now + AUTH_COOKIE_MAX_AGE_SECONDS,
+        "exp": min(now + AUTH_ACCESS_TTL_SECONDS, refresh_until),
+        "refresh_until": refresh_until,
         "roles": roles,
     }
     headers: Optional[Dict[str, str]] = None
     kid = _get_current_kid()
     if kid:
         headers = {"kid": kid}
-    return jwt.encode(payload, _get_private_key(), algorithm="RS256", headers=headers)
+    token = jwt.encode(payload, _get_private_key(), algorithm="RS256", headers=headers)
+    return token, payload
 
 # ----------------------------
 # Cookie/JWT helpers
@@ -296,6 +354,40 @@ def _extract_token(event: Dict[str, Any]) -> Optional[str]:
 
 
 def _decode_netid(token: str) -> Optional[str]:
+    payload = _decode_token_payload(token)
+    if not payload:
+        return None
+
+    return _netid_from_payload(payload)
+
+
+def _netid_from_payload(payload: Dict[str, Any]) -> Optional[str]:
+    netid = payload.get("sub")
+    if not isinstance(netid, str):
+        return None
+
+    netid = netid.strip()
+    return netid or None
+
+
+def _decode_refresh_payload(token: str) -> Optional[Dict[str, Any]]:
+    payload = _decode_token_payload(token, verify_exp=False)
+    if not payload:
+        return None
+
+    netid = payload.get("sub")
+    refresh_until = payload.get("refresh_until")
+    if not isinstance(netid, str) or not netid.strip():
+        return None
+    if not isinstance(refresh_until, int):
+        return None
+    if int(time.time()) > refresh_until:
+        return None
+
+    return {"sub": netid, "refresh_until": refresh_until}
+
+
+def _decode_token_payload(token: str, verify_exp: bool = True) -> Optional[Dict[str, Any]]:
     public_key = _get_public_key(token)
     if not public_key:
         return None
@@ -305,17 +397,19 @@ def _decode_netid(token: str) -> Optional[str]:
             token,
             public_key,
             algorithms=["RS256"],
-            options={"require": ["exp", "sub"]},
+            options={
+                "verify_exp": verify_exp,
+                "require": ["exp", "sub"],
+            },
         )
     except jwt.PyJWTError:
         return None
 
-    netid = payload.get("sub")
-    if not isinstance(netid, str):
+    issued_at = payload.get("iat")
+    if verify_exp and (not isinstance(issued_at, int) or int(time.time()) > issued_at + AUTH_ACCESS_TTL_SECONDS):
         return None
 
-    netid = netid.strip()
-    return netid or None
+    return payload
 
 
 def _user_allowed(netid: str) -> bool:
