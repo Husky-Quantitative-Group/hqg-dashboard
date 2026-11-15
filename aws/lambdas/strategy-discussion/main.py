@@ -1,0 +1,439 @@
+import json
+import os
+import secrets
+import time
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Any, Dict, Optional
+
+import boto3
+from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
+
+from hqg_permissions import (
+    get_roles_from_event,
+    has_read_permission,
+)
+
+
+dynamo = boto3.resource("dynamodb")
+
+STRATEGY_DISCUSSION_TABLE = os.environ.get("STRATEGY_DISCUSSION_TABLE", "")
+READ_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_READ_PERMISSIONS_TABLE", "")
+WRITE_PERMISSIONS_TABLE = os.environ.get("STRATEGIES_WRITE_PERMISSIONS_TABLE", "")
+READ_PERMISSIONS_DDB = dynamo.Table(READ_PERMISSIONS_TABLE) if READ_PERMISSIONS_TABLE else None
+WRITE_PERMISSIONS_DDB = dynamo.Table(WRITE_PERMISSIONS_TABLE) if WRITE_PERMISSIONS_TABLE else None
+COMMENT_MAX_CHARS = 5000
+
+_CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+
+def handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
+    """
+    Strategy discussion service Lambda.
+    - GET /strategies/{id}/discussion
+    - POST /strategies/{id}/discussion
+    """
+    route_key = (event.get("requestContext") or {}).get("routeKey")
+
+    if route_key == "GET /strategies/{id}/discussion":
+        return list_discussion_comments(event)
+
+    if route_key == "POST /strategies/{id}/discussion":
+        return create_discussion_comment(event)
+
+    return _json(404, {"message": "Not found"})
+
+
+def list_discussion_comments(event: Dict[str, Any]) -> Dict[str, Any]:
+    ctx = _require_strategy_context(event, require_table=True)
+    if isinstance(ctx, dict):
+        return ctx
+    strategy_id, netid = ctx
+
+    roles = get_roles_from_event(event)
+    if not READ_PERMISSIONS_DDB or not WRITE_PERMISSIONS_DDB:
+        return _json(500, {"message": "strategy permission tables are not configured"})
+    if "ADMIN" not in roles and not has_read_permission(
+        strategy_id, netid, roles, READ_PERMISSIONS_DDB, WRITE_PERMISSIONS_DDB
+    ):
+        return _json(403, {"message": "forbidden"})
+
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        limit = int(query_params.get("limit") or 50)
+    except Exception:
+        limit = 50
+    limit = max(1, min(limit, 100))
+
+    cursor = query_params.get("cursor")
+    exclusive_start_key = None
+    if isinstance(cursor, str) and cursor.strip():
+        try:
+            exclusive_start_key = json.loads(cursor)
+        except Exception:
+            return _json(400, {"message": "invalid cursor"})
+
+    order = str(query_params.get("order") or "asc").strip().lower()
+    if order not in {"asc", "desc"}:
+        return _json(400, {"message": "order must be asc or desc"})
+    include_total = str(query_params.get("include_total") or "").strip().lower() == "true"
+    before_comment_id = _optional_nonempty_string(query_params.get("before_comment_id"))
+    after_comment_id = _optional_nonempty_string(query_params.get("after_comment_id"))
+    around_comment_id = _optional_nonempty_string(query_params.get("around_comment_id"))
+
+    mode_count = sum(bool(value) for value in [before_comment_id, after_comment_id, around_comment_id])
+    if mode_count > 1:
+        return _json(400, {"message": "before_comment_id, after_comment_id, and around_comment_id are mutually exclusive"})
+
+    table = dynamo.Table(STRATEGY_DISCUSSION_TABLE)
+    try:
+        if around_comment_id:
+            try:
+                before_limit = int(query_params.get("before_limit") or 10)
+            except Exception:
+                before_limit = 10
+            try:
+                after_limit = int(query_params.get("after_limit") or 10)
+            except Exception:
+                after_limit = 10
+            before_limit = max(0, min(before_limit, 50))
+            after_limit = max(0, min(after_limit, 50))
+            payload = _query_comments_around(
+                table,
+                strategy_id,
+                around_comment_id,
+                before_limit=before_limit,
+                after_limit=after_limit,
+            )
+        elif before_comment_id:
+            payload = _query_comments_before(table, strategy_id, before_comment_id, limit)
+        elif after_comment_id:
+            payload = _query_comments_after(table, strategy_id, after_comment_id, limit)
+        else:
+            query_kwargs = {
+                "KeyConditionExpression": Key("strategy_id").eq(strategy_id),
+                "ScanIndexForward": order == "asc",
+                "Limit": limit,
+            }
+            if exclusive_start_key:
+                query_kwargs["ExclusiveStartKey"] = exclusive_start_key
+            resp = table.query(**query_kwargs)
+            payload = {
+                "items": resp.get("Items", []),
+                "next_cursor": resp.get("LastEvaluatedKey"),
+                "has_more_before": False,
+                "has_more_after": bool(resp.get("LastEvaluatedKey")) if order == "asc" else False,
+                "anchor_comment_id": None,
+            }
+            if order == "desc":
+                payload["has_more_before"] = bool(resp.get("LastEvaluatedKey"))
+                payload["has_more_after"] = False
+    except ClientError as exc:
+        code = (exc.response.get("Error") or {}).get("Code")
+        if code == "ResourceNotFoundException":
+            return _json(404, {"message": "comment not found"})
+        return _json(500, {"message": f"Failed to query discussion comments: {code or 'error'}"})
+
+    items = _clean_decimals(payload.get("items", []))
+    next_cursor = payload.get("next_cursor")
+    total_count = None
+    if include_total:
+        try:
+            total_count = _count_strategy_comments(table, strategy_id)
+        except ClientError as exc:
+            code = (exc.response.get("Error") or {}).get("Code")
+            return _json(500, {"message": f"Failed to count discussion comments: {code or 'error'}"})
+    return _json(
+        200,
+        {
+            "strategy_id": strategy_id,
+            "items": items,
+            "next_cursor": next_cursor,
+            "total_count": total_count,
+            "has_more_before": payload.get("has_more_before"),
+            "has_more_after": payload.get("has_more_after"),
+            "anchor_comment_id": payload.get("anchor_comment_id"),
+        },
+    )
+
+
+def create_discussion_comment(event: Dict[str, Any]) -> Dict[str, Any]:
+    ctx = _require_strategy_context(event, require_table=True)
+    if isinstance(ctx, dict):
+        return ctx
+    strategy_id, netid = ctx
+
+    roles = get_roles_from_event(event)
+    if not READ_PERMISSIONS_DDB or not WRITE_PERMISSIONS_DDB:
+        return _json(500, {"message": "strategy permission tables are not configured"})
+    if "ADMIN" not in roles and not has_read_permission(
+        strategy_id, netid, roles, READ_PERMISSIONS_DDB, WRITE_PERMISSIONS_DDB
+    ):
+        return _json(403, {"message": "forbidden"})
+
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _json(400, {"message": "invalid JSON body"})
+
+    message = body.get("message")
+    if not isinstance(message, str):
+        return _json(400, {"message": "message must be a string"})
+
+    trimmed_message = message.strip()
+    if not trimmed_message:
+        return _json(400, {"message": "message is required"})
+    if len(trimmed_message) > COMMENT_MAX_CHARS:
+        return _json(400, {"message": f"message must be {COMMENT_MAX_CHARS} characters or fewer"})
+
+    table = dynamo.Table(STRATEGY_DISCUSSION_TABLE)
+    parent_comment_id = _optional_nonempty_string(body.get("parent_comment_id"))
+    parent_preview = None
+    if parent_comment_id:
+        try:
+            parent_item = _get_comment(table, strategy_id, parent_comment_id)
+        except ClientError as exc:
+            code = (exc.response.get("Error") or {}).get("Code")
+            return _json(500, {"message": f"Failed to load parent comment: {code or 'error'}"})
+        if not parent_item:
+            return _json(404, {"message": "parent comment not found"})
+        parent_preview = _build_parent_preview(parent_item)
+
+    comment_id = _ulid()
+    now = _now()
+    author_display = _display_name_from_authorizer(event) or netid
+    item = {
+        "strategy_id": strategy_id,
+        "comment_id": comment_id,
+        "message": trimmed_message,
+        "author_netid": netid,
+        "author_display": author_display,
+        "created_at": now,
+        "updated_at": now,
+        "parent_comment_id": parent_comment_id,
+        "parent_preview": parent_preview,
+    }
+    item = {key: value for key, value in item.items() if value is not None}
+
+    try:
+        table.put_item(
+            Item=item,
+            ConditionExpression="attribute_not_exists(strategy_id) AND attribute_not_exists(comment_id)",
+        )
+    except ClientError as exc:
+        code = (exc.response.get("Error") or {}).get("Code")
+        if code == "ConditionalCheckFailedException":
+            return _json(409, {"message": "comment id already exists"})
+        return _json(500, {"message": f"Failed to write discussion comment: {code or 'error'}"})
+
+    return _json(201, _clean_decimals(item))
+
+
+def _require_strategy_context(event: Dict[str, Any], *, require_table: bool = False):
+    if require_table and not STRATEGY_DISCUSSION_TABLE:
+        return _json(500, {"message": "STRATEGY_DISCUSSION_TABLE is not configured"})
+
+    strategy_id = (event.get("pathParameters") or {}).get("id")
+    if not strategy_id:
+        return _json(400, {"message": "strategy id is required"})
+
+    netid = _netid_from_authorizer(event)
+    if not netid:
+        return _json(401, {"message": "unauthorized"})
+
+    return strategy_id, netid
+
+
+def _netid_from_authorizer(event: Dict[str, Any]):
+    authorizer = (event.get("requestContext") or {}).get("authorizer") or {}
+
+    if isinstance(authorizer.get("lambda"), dict):
+        netid = authorizer["lambda"].get("netid")
+        if isinstance(netid, str) and netid.strip():
+            return netid.strip()
+
+    netid = authorizer.get("netid")
+    if isinstance(netid, str) and netid.strip():
+        return netid.strip()
+
+    return None
+
+
+def _display_name_from_authorizer(event: Dict[str, Any]):
+    authorizer = (event.get("requestContext") or {}).get("authorizer") or {}
+
+    if isinstance(authorizer.get("lambda"), dict):
+        display_name = authorizer["lambda"].get("display_name")
+        if isinstance(display_name, str) and display_name.strip():
+            return display_name.strip()
+
+    display_name = authorizer.get("display_name")
+    if isinstance(display_name, str) and display_name.strip():
+        return display_name.strip()
+
+    return None
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _ulid() -> str:
+    ts_ms = int(time.time() * 1000)
+    ts_str = _encode_crockford(ts_ms, 10)
+    rand_str = _encode_crockford(secrets.randbits(80), 16)
+    return ts_str + rand_str
+
+
+def _encode_crockford(value: int, length: int) -> str:
+    chars = []
+    for _ in range(length):
+        chars.append(_CROCKFORD_BASE32[value & 31])
+        value >>= 5
+    return "".join(reversed(chars))
+
+
+def _clean_decimals(data: Any) -> Any:
+    if isinstance(data, list):
+        return [_clean_decimals(item) for item in data]
+    if isinstance(data, dict):
+        return {k: _clean_decimals(v) for k, v in data.items()}
+    if isinstance(data, Decimal):
+        return int(data) if data % 1 == 0 else float(data)
+    return data
+
+
+def _optional_nonempty_string(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
+def _get_comment(table, strategy_id: str, comment_id: str):
+    resp = table.get_item(Key={"strategy_id": strategy_id, "comment_id": comment_id})
+    return resp.get("Item")
+
+
+def _query_comments_before(table, strategy_id: str, before_comment_id: str, limit: int) -> Dict[str, Any]:
+    resp = table.query(
+        KeyConditionExpression=Key("strategy_id").eq(strategy_id) & Key("comment_id").lt(before_comment_id),
+        ScanIndexForward=False,
+        Limit=limit,
+    )
+    items = list(reversed(resp.get("Items", [])))
+    return {
+        "items": items,
+        "next_cursor": None,
+        "has_more_before": bool(resp.get("LastEvaluatedKey")),
+        "has_more_after": False,
+        "anchor_comment_id": None,
+    }
+
+
+def _query_comments_after(table, strategy_id: str, after_comment_id: str, limit: int) -> Dict[str, Any]:
+    resp = table.query(
+        KeyConditionExpression=Key("strategy_id").eq(strategy_id) & Key("comment_id").gt(after_comment_id),
+        ScanIndexForward=True,
+        Limit=limit,
+    )
+    return {
+        "items": resp.get("Items", []),
+        "next_cursor": None,
+        "has_more_before": False,
+        "has_more_after": bool(resp.get("LastEvaluatedKey")),
+        "anchor_comment_id": None,
+    }
+
+
+def _query_comments_around(
+    table,
+    strategy_id: str,
+    around_comment_id: str,
+    *,
+    before_limit: int,
+    after_limit: int,
+) -> Dict[str, Any]:
+    anchor_item = _get_comment(table, strategy_id, around_comment_id)
+    if not anchor_item:
+        raise ClientError(
+            {"Error": {"Code": "ResourceNotFoundException", "Message": "comment not found"}},
+            "GetItem",
+        )
+
+    older_items = []
+    newer_items = []
+    has_more_before = False
+    has_more_after = False
+
+    if before_limit > 0:
+        older_resp = table.query(
+            KeyConditionExpression=Key("strategy_id").eq(strategy_id) & Key("comment_id").lt(around_comment_id),
+            ScanIndexForward=False,
+            Limit=before_limit,
+        )
+        older_items = list(reversed(older_resp.get("Items", [])))
+        has_more_before = bool(older_resp.get("LastEvaluatedKey"))
+
+    if after_limit > 0:
+        newer_resp = table.query(
+            KeyConditionExpression=Key("strategy_id").eq(strategy_id) & Key("comment_id").gt(around_comment_id),
+            ScanIndexForward=True,
+            Limit=after_limit,
+        )
+        newer_items = newer_resp.get("Items", [])
+        has_more_after = bool(newer_resp.get("LastEvaluatedKey"))
+
+    return {
+        "items": [*older_items, anchor_item, *newer_items],
+        "next_cursor": None,
+        "has_more_before": has_more_before,
+        "has_more_after": has_more_after,
+        "anchor_comment_id": around_comment_id,
+    }
+
+
+def _build_parent_preview(parent_item: Dict[str, Any]) -> Dict[str, Any]:
+    excerpt = _preview_excerpt(parent_item.get("message"))
+    return {
+        "comment_id": str(parent_item.get("comment_id") or ""),
+        "author_display": str(parent_item.get("author_display") or "").strip() or str(parent_item.get("author_netid") or "").strip(),
+        "author_netid": str(parent_item.get("author_netid") or "").strip(),
+        "message_excerpt": excerpt,
+    }
+
+
+def _preview_excerpt(message: Any, max_chars: int = 140) -> str:
+    if not isinstance(message, str):
+        return ""
+    cleaned = " ".join(message.strip().split())
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return cleaned[: max_chars - 1].rstrip() + "…"
+
+
+def _count_strategy_comments(table, strategy_id: str) -> int:
+    total = 0
+    last_key = None
+    while True:
+        query_kwargs = {
+            "KeyConditionExpression": Key("strategy_id").eq(strategy_id),
+            "Select": "COUNT",
+        }
+        if last_key:
+            query_kwargs["ExclusiveStartKey"] = last_key
+        resp = table.query(**query_kwargs)
+        total += int(resp.get("Count") or 0)
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+    return total
+
+
+def _json(code: int, body: Any) -> Dict[str, Any]:
+    return {
+        "statusCode": code,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps(body),
+    }

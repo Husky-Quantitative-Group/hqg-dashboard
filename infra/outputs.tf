@@ -83,6 +83,16 @@ output "strategy_backtests_table_arn" {
   description = "ARN of the BacktestMetrics table."
 }
 
+output "strategy_discussion_table_name" {
+  value       = aws_dynamodb_table.strategy_discussion.name
+  description = "Name of the StrategyDiscussion table."
+}
+
+output "strategy_discussion_table_arn" {
+  value       = aws_dynamodb_table.strategy_discussion.arn
+  description = "ARN of the StrategyDiscussion table."
+}
+
 output "strategies_read_permissions_table_name" {
   value       = aws_dynamodb_table.strategies_read_permissions.name
   description = "Name of the StrategiesReadPermissions table."

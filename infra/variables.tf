@@ -67,6 +67,12 @@ variable "strategy_backtests_table_name" {
   default     = null
 }
 
+variable "strategy_discussion_table_name" {
+  description = "Optional explicit name for the StrategyDiscussion table. Defaults to \"<project>-<env>-strategy-discussion\"."
+  type        = string
+  default     = null
+}
+
 variable "strategies_read_permissions_table_name" {
   description = "Optional explicit name for the StrategiesReadPermissions table. Defaults to \"<project>-<env>-strategies-read-permissions\"."
   type        = string

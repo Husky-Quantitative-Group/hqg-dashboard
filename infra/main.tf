@@ -41,6 +41,7 @@ locals {
   users_table_name                        = coalesce(var.users_table_name, "${local.name_prefix}-users")
   user_access_applications_table_name     = coalesce(var.user_access_applications_table_name, "${local.name_prefix}-user-access-applications")
   strategy_backtests_table_name           = coalesce(var.strategy_backtests_table_name, "${local.name_prefix}-strategy-backtests")
+  strategy_discussion_table_name          = coalesce(var.strategy_discussion_table_name, "${local.name_prefix}-strategy-discussion")
   strategies_read_permissions_table_name  = coalesce(var.strategies_read_permissions_table_name, "${local.name_prefix}-strategies-read-permissions")
   strategies_write_permissions_table_name = coalesce(var.strategies_write_permissions_table_name, "${local.name_prefix}-strategies-write-permissions")
   counters_table_name                     = coalesce(var.counters_table_name, "${local.name_prefix}-counters")
@@ -400,6 +401,33 @@ resource "aws_dynamodb_table" "strategy_backtests" {
   tags = local.tags
 }
 
+resource "aws_dynamodb_table" "strategy_discussion" {
+  name         = local.strategy_discussion_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "strategy_id"
+  range_key    = "comment_id"
+
+  attribute {
+    name = "strategy_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "comment_id"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = local.tags
+}
+
 resource "aws_dynamodb_table" "strategies_read_permissions" {
   name         = local.strategies_read_permissions_table_name
   billing_mode = "PAY_PER_REQUEST"
@@ -702,6 +730,37 @@ resource "aws_iam_policy" "strategy_backtests_storage" {
   tags = local.tags
 }
 
+data "aws_iam_policy_document" "strategy_discussion_storage" {
+  statement {
+    sid    = "DynamoStrategyDiscussionAccess"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Query",
+      "dynamodb:DescribeTable",
+    ]
+
+    resources = [
+      aws_dynamodb_table.strategy_discussion.arn,
+      aws_dynamodb_table.strategies_write_permissions.arn,
+      "${aws_dynamodb_table.strategies_write_permissions.arn}/index/*",
+      aws_dynamodb_table.strategies_read_permissions.arn,
+      "${aws_dynamodb_table.strategies_read_permissions.arn}/index/*",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "strategy_discussion_storage" {
+  name   = "${local.name_prefix}-strategy-discussion-storage"
+  policy = data.aws_iam_policy_document.strategy_discussion_storage.json
+
+  tags = local.tags
+}
+
 # ------------------------------
 # SSM parameter for JWT private key
 # ------------------------------
@@ -962,6 +1021,12 @@ data "archive_file" "strategy_backtests_lambda" {
   output_path = "${path.module}/dist/strategy-backtests-lambda.zip"
 }
 
+data "archive_file" "strategy_discussion_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/strategy-discussion"
+  output_path = "${path.module}/dist/strategy-discussion-lambda.zip"
+}
+
 data "archive_file" "users_lambda" {
   type        = "zip"
   source_dir  = "${path.module}/../aws/lambdas/users"
@@ -1033,6 +1098,13 @@ resource "aws_iam_role" "admin_lambda" {
 
 resource "aws_iam_role" "strategy_backtests_lambda" {
   name               = "${local.name_prefix}-strategy-backtests-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = local.tags
+}
+
+resource "aws_iam_role" "strategy_discussion_lambda" {
+  name               = "${local.name_prefix}-strategy-discussion-lambda"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 
   tags = local.tags
@@ -1145,6 +1217,16 @@ resource "aws_iam_role_policy_attachment" "strategy_backtests_lambda_basic_logs"
 resource "aws_iam_role_policy_attachment" "strategy_backtests_lambda_storage" {
   role       = aws_iam_role.strategy_backtests_lambda.name
   policy_arn = aws_iam_policy.strategy_backtests_storage.arn
+}
+
+resource "aws_iam_role_policy_attachment" "strategy_discussion_lambda_basic_logs" {
+  role       = aws_iam_role.strategy_discussion_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "strategy_discussion_lambda_storage" {
+  role       = aws_iam_role.strategy_discussion_lambda.name
+  policy_arn = aws_iam_policy.strategy_discussion_storage.arn
 }
 
 resource "aws_iam_role_policy_attachment" "users_lambda_basic_logs" {
@@ -1279,6 +1361,8 @@ resource "aws_lambda_function" "auth_granter" {
       JWT_PRIVATE_KEY_PARAMETER      = aws_ssm_parameter.jwt_private_key.name
       JWKS_BUCKET                    = aws_s3_bucket.jwks.bucket
       APP_ENV                        = var.env
+      AUTH_ACCESS_TTL_SECONDS        = "900"
+      AUTH_REFRESH_TTL_SECONDS       = "86400"
       USERS_TABLE                    = aws_dynamodb_table.users.name
       USER_ACCESS_APPLICATIONS_TABLE = aws_dynamodb_table.user_access_applications.name
     }
@@ -1303,8 +1387,9 @@ resource "aws_lambda_function" "auth_checker" {
 
   environment {
     variables = {
-      USERS_TABLE = aws_dynamodb_table.users.name
-      JWKS_BUCKET = aws_s3_bucket.jwks.bucket
+      USERS_TABLE             = aws_dynamodb_table.users.name
+      JWKS_BUCKET             = aws_s3_bucket.jwks.bucket
+      AUTH_ACCESS_TTL_SECONDS = "900"
     }
   }
 
@@ -1414,6 +1499,27 @@ resource "aws_lambda_function" "strategy_backtests" {
       STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
       STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
       STRATEGIES_TABLE                   = aws_dynamodb_table.strategies.name
+    }
+  }
+
+  tags = local.tags
+}
+
+resource "aws_lambda_function" "strategy_discussion" {
+  function_name = "${local.name_prefix}-strategy-discussion"
+  role          = aws_iam_role.strategy_discussion_lambda.arn
+  runtime       = "python3.12"
+  handler       = "main.handler"
+
+  filename         = data.archive_file.strategy_discussion_lambda.output_path
+  source_code_hash = data.archive_file.strategy_discussion_lambda.output_base64sha256
+  layers           = [aws_lambda_layer_version.hqg_permissions.arn]
+
+  environment {
+    variables = {
+      STRATEGY_DISCUSSION_TABLE          = aws_dynamodb_table.strategy_discussion.name
+      STRATEGIES_READ_PERMISSIONS_TABLE  = aws_dynamodb_table.strategies_read_permissions.name
+      STRATEGIES_WRITE_PERMISSIONS_TABLE = aws_dynamodb_table.strategies_write_permissions.name
     }
   }
 
@@ -1653,6 +1759,12 @@ resource "aws_apigatewayv2_route" "auth_me" {
   target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
 }
 
+resource "aws_apigatewayv2_route" "auth_refresh" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "POST /auth/refresh"
+  target    = "integrations/${aws_apigatewayv2_integration.auth_granter.id}"
+}
+
 resource "aws_apigatewayv2_route" "auth_apply" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "POST /auth/apply"
@@ -1797,6 +1909,42 @@ resource "aws_lambda_permission" "allow_apigw_invoke_strategy_backtests" {
   statement_id  = "AllowAPIGWInvokeBacktestMetrics"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.strategy_backtests.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+# ------------------------------
+# API Gateway integration/routes for strategy_discussion lambda
+# ------------------------------
+
+resource "aws_apigatewayv2_integration" "strategy_discussion" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.strategy_discussion.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "get_strategy_discussion" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /strategies/{id}/discussion"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_discussion.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_apigatewayv2_route" "post_strategy_discussion" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "POST /strategies/{id}/discussion"
+  target             = "integrations/${aws_apigatewayv2_integration.strategy_discussion.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.auth_checker.id
+}
+
+resource "aws_lambda_permission" "allow_apigw_invoke_strategy_discussion" {
+  statement_id  = "AllowAPIGWInvokeStrategyDiscussion"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.strategy_discussion.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }
