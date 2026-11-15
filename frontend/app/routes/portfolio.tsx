@@ -6,6 +6,9 @@ import {
   CrosshairMode,
   LineSeries,
   createChart,
+  type ChartOptions,
+  type DeepPartial,
+  type ISeriesApi,
   type LineData,
   type UTCTimestamp,
 } from "lightweight-charts";
@@ -16,15 +19,18 @@ import {
   fetchPortfolioEquity,
   fetchPortfolioExecutionEvents,
   fetchPortfolioMetrics,
+  fetchPortfolioReplay,
   fetchPortfolioSnapshot,
   fetchPortfolioStrategyAllocations,
   type AssetAllocationsResponse,
+  type EquityPoint,
   type EquityResponse,
   type MetricsResponse,
   type SnapshotData,
   type StrategyAllocationsResponse,
   type Timeframe,
 } from "~/api/portfolio";
+import { fetchStrategies, type Strategy } from "~/api/strategies";
 import { useUser } from "~/context/UserConext";
 
 type EquityHighlight = {
@@ -88,6 +94,18 @@ type PortfolioMetricsProps = {
   isLoading: boolean;
 };
 
+type ReplaySeries = {
+  id: string;
+  label: string;
+  color: string;
+  data: EquityPoint[];
+};
+
+type StrategyReplayChartProps = {
+  series: ReplaySeries[] | null;
+  error: string | null;
+};
+
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -127,6 +145,36 @@ const PIE_COLORS = [
   "#94a3b8",
 ];
 
+const CHART_OPTIONS: DeepPartial<ChartOptions> = {
+  layout: {
+    background: { type: ColorType.Solid, color: "transparent" },
+    textColor: "#94a3b8",
+  },
+  grid: {
+    vertLines: { color: "rgba(148, 163, 184, 0.08)" },
+    horzLines: { color: "rgba(148, 163, 184, 0.08)" },
+  },
+  crosshair: { mode: CrosshairMode.Normal },
+  rightPriceScale: {
+    visible: true,
+    borderColor: "rgba(148, 163, 184, 0.12)",
+  },
+  timeScale: {
+    borderColor: "rgba(148, 163, 184, 0.12)",
+  },
+};
+
+const REPLAY_CAPITAL = 100_000;
+const REPLAY_TOTAL_COLOR = "#f1f5f9";
+const REPLAY_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
+
+const replayDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
 export default function Portfolio() {
   const { hasRole } = useUser();
   const [allocationView, setAllocationView] = useState<AllocationView>("strategy");
@@ -144,6 +192,8 @@ export default function Portfolio() {
   const [assetAllocations, setAssetAllocations] = useState<AssetAllocationsResponse["allocations"]>({});
   const [strategyAllocations, setStrategyAllocations] = useState<StrategyAllocationsResponse["allocations"]>({});
   const [events, setEvents] = useState<PortfolioEvent[]>([]);
+  const [replaySeries, setReplaySeries] = useState<ReplaySeries[] | null>(null);
+  const [replayError, setReplayError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -228,6 +278,41 @@ export default function Portfolio() {
       cancelled = true;
     };
   }, [portfolioId, timeframe]);
+
+  // Loaded apart from the rest: the replay waits on market data.
+  useEffect(() => {
+    let cancelled = false;
+    setReplaySeries(null);
+    setReplayError(null);
+
+    Promise.all([fetchPortfolioReplay(portfolioId), fetchStrategies().catch((): Strategy[] => [])])
+      .then(([replay, strategies]) => {
+        if (cancelled) {
+          return;
+        }
+        const names = new Map(strategies.map((strategy) => [strategy.id, strategy.name]));
+        setReplaySeries([
+          { id: "total", label: "Total portfolio", color: REPLAY_TOTAL_COLOR, data: replay.total },
+          ...replay.strategies.map((strategy, index) => ({
+            id: `strategy-${strategy.strategy_id}`,
+            label: names.get(strategy.strategy_id) ?? strategy.strategy_id,
+            color: REPLAY_COLORS[index % REPLAY_COLORS.length],
+            data: strategy.data,
+          })),
+        ]);
+      })
+      .catch((loadError) => {
+        if (cancelled) {
+          return;
+        }
+        console.error("Failed to load strategy replay", loadError);
+        const detail = axios.isAxiosError(loadError) ? loadError.response?.data?.detail : null;
+        setReplayError(typeof detail === "string" ? detail : "Failed to replay strategy targets.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [portfolioId]);
 
   const handlePortfolioIdInputChange = (nextValue: string) => {
     setPortfolioIdInput(nextValue);
@@ -397,6 +482,7 @@ export default function Portfolio() {
             timeframe={timeframe}
             onChangeTimeframe={setTimeframe}
           />
+          <StrategyReplayChart series={replaySeries} error={replayError} />
           <PortfolioEventsTable events={events} isLoading={isLoading} />
         </div>
         <div className="space-y-6">
@@ -423,26 +509,7 @@ function PortfolioEquityChart({ data, highlights, timeframe, onChangeTimeframe }
     }
 
     const container = containerRef.current;
-    const chart = createChart(container, {
-      width: container.clientWidth,
-      height: 480,
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#94a3b8",
-      },
-      grid: {
-        vertLines: { color: "rgba(148, 163, 184, 0.08)" },
-        horzLines: { color: "rgba(148, 163, 184, 0.08)" },
-      },
-      crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: {
-        visible: true,
-        borderColor: "rgba(148, 163, 184, 0.12)",
-      },
-      timeScale: {
-        borderColor: "rgba(148, 163, 184, 0.12)",
-      },
-    });
+    const chart = createChart(container, { ...CHART_OPTIONS, width: container.clientWidth, height: 480 });
 
     const series = chart.addSeries(LineSeries, {
       color: "#34d399",
@@ -516,6 +583,137 @@ function PortfolioEquityChart({ data, highlights, timeframe, onChangeTimeframe }
       </div>
 
       <div ref={containerRef} className="mt-6 h-[480px] w-full overflow-hidden rounded-2xl border border-slate-900/50 bg-gradient-to-b from-slate-950 via-slate-950/90 to-transparent" />
+    </article>
+  );
+}
+
+function StrategyReplayChart({ series, error }: StrategyReplayChartProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartSeriesRef = useRef(new Map<string, ISeriesApi<"Line">>());
+  const [hoverDate, setHoverDate] = useState<string | null>(null);
+  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+  const hasData = Boolean(series?.[0]?.data.length);
+  const visibleCount = series?.filter((item) => !hiddenSeries.has(item.id)).length ?? 0;
+
+  const toggleSeries = (id: string) => {
+    setHiddenSeries((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!containerRef.current || !series || !hasData) {
+      return;
+    }
+
+    const container = containerRef.current;
+    const chart = createChart(container, { ...CHART_OPTIONS, width: container.clientWidth, height: 360 });
+    for (const item of series) {
+      const line = chart.addSeries(LineSeries, {
+        color: item.color,
+        lineWidth: item.id === "total" ? 3 : 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      line.setData(item.data.map((point) => ({ time: toUnixTime(point.timestamp), value: point.equity_value })));
+      chartSeriesRef.current.set(item.id, line);
+    }
+    chart.timeScale().fitContent();
+    // The legend reads the values on the hovered date.
+    chart.subscribeCrosshairMove((param) =>
+      setHoverDate(typeof param.time === "number" ? new Date(param.time * 1000).toISOString().slice(0, 10) : null)
+    );
+
+    const resizeObserver = new ResizeObserver(() => chart.applyOptions({ width: container.clientWidth }));
+    resizeObserver.observe(container);
+    return () => {
+      resizeObserver.disconnect();
+      chartSeriesRef.current.clear();
+      chart.remove();
+    };
+  }, [series, hasData]);
+
+  useEffect(() => {
+    for (const [id, line] of chartSeriesRef.current) {
+      line.applyOptions({ visible: !hiddenSeries.has(id) });
+    }
+  }, [hiddenSeries, series]);
+
+  const readoutDate = hoverDate ?? series?.[0]?.data.at(-1)?.timestamp;
+
+  return (
+    <article className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 shadow-xl">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Replay</p>
+          <h2 className="text-xl font-semibold text-white">Strategy Performance</h2>
+          <p className="text-sm text-slate-400">
+            Logged target weights replayed at daily closes, each curve starting at {currencyFormatter.format(REPLAY_CAPITAL)}.
+          </p>
+        </div>
+        {hasData && readoutDate ? (
+          <p className="text-xs text-slate-500">{replayDateFormatter.format(new Date(readoutDate))}</p>
+        ) : null}
+      </header>
+
+      {error ? (
+        <div className="mt-6 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>
+      ) : null}
+      {!error && !hasData ? (
+        <p className="mt-6 text-sm text-slate-400">
+          {series ? "No strategy targets have been logged for this portfolio yet." : "Replaying strategy targets..."}
+        </p>
+      ) : null}
+
+      {series && hasData ? (
+        <>
+          <div className="relative mt-6">
+            <div ref={containerRef} className="h-[360px] w-full overflow-hidden rounded-2xl border border-slate-900/50" />
+            {visibleCount === 0 ? (
+              <p role="status" className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-slate-400">
+                Select at least one curve to display.
+              </p>
+            ) : null}
+          </div>
+          <ul aria-label="Chart curves" className="mt-4 grid gap-2 sm:grid-cols-2">
+            {series.map((item) => {
+              const point = hoverDate ? item.data.find((entry) => entry.timestamp === hoverDate) : item.data.at(-1);
+              const change = point ? point.equity_value / REPLAY_CAPITAL - 1 : 0;
+              return (
+                <li key={item.id}>
+                  <label className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-900/60 bg-slate-950/40 px-3 py-2 ${hiddenSeries.has(item.id) ? "opacity-60" : ""}`}>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        aria-label={`Show ${item.label}`}
+                        checked={!hiddenSeries.has(item.id)}
+                        onChange={() => toggleSeries(item.id)}
+                        className="h-4 w-4 shrink-0 accent-indigo-400"
+                      />
+                      <span className="h-0.5 w-4 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="truncate text-sm text-slate-200">{item.label}</span>
+                    </span>
+                    <span className="shrink-0 text-sm tabular-nums">
+                      <span className="font-semibold text-white">{point ? currencyFormatter.format(point.equity_value) : "—"}</span>
+                      {point ? (
+                        <span className={`ml-2 text-xs ${change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {`${change >= 0 ? "+" : ""}${(change * 100).toFixed(2)}%`}
+                        </span>
+                      ) : null}
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : null}
     </article>
   );
 }

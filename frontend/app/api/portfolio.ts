@@ -79,6 +79,17 @@ export type AllocationEventsResponse = {
   events: AllocationEvent[];
 };
 
+export type StrategyReplay = {
+  strategy_id: string;
+  data: EquityPoint[];
+};
+
+// Logged strategy targets replayed at daily closes.
+export type ReplayResponse = {
+  total: EquityPoint[];
+  strategies: StrategyReplay[];
+};
+
 type TimeframeQuery = {
   timeframe?: Exclude<Timeframe, null>;
 };
@@ -159,5 +170,10 @@ export const fetchPortfolioAllocationEvents = async (
     `/portfolio/${portfolioId}/events/allocations`,
     { params: withTimeframe(timeframe) }
   );
+  return response.data;
+};
+
+export const fetchPortfolioReplay = async (portfolioId: string | number): Promise<ReplayResponse> => {
+  const response = await engineApi.get<ReplayResponse>(`/portfolio/${portfolioId}/replay`);
   return response.data;
 };
